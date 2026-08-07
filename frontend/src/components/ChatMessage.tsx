@@ -2,10 +2,9 @@
  * 聊天消息气泡组件 - 道教卷轴风格
  * 用户消息: 右侧，朱砂红边框
  * AI 消息: 左侧，金色边框，卷轴风格
- * 支持 markdown 渲染和引用来源展开
+ * 支持 markdown 渲染（RAG 引用来源展示已移除）
  */
-import { useState } from 'react'
-import { User, Bot, BookOpen, ChevronDown, ChevronUp, Sparkles } from 'lucide-react'
+import { User, Bot } from 'lucide-react'
 import type { ChatMessage as ChatMessageType } from '@/services/types'
 import MarkdownRenderer from './MarkdownRenderer'
 
@@ -17,7 +16,6 @@ interface ChatMessageProps {
 
 export default function ChatMessage({ message, streaming = false }: ChatMessageProps) {
   const isUser = message.role === 'user'
-  const [showSources, setShowSources] = useState(false)
 
   return (
     <div className={`
@@ -86,45 +84,6 @@ export default function ChatMessage({ message, streaming = false }: ChatMessageP
             <span className="inline-block w-2 h-4 bg-gold-400 ml-1 animate-pulse" />
           )}
         </div>
-
-        {/* 引用来源（仅 AI 消息） */}
-        {!isUser && message.sources && message.sources.length > 0 && (
-          <div className="mt-2">
-            <button
-              onClick={() => setShowSources(!showSources)}
-              className="flex items-center gap-1 text-xs text-gold-400/60 hover:text-gold-400 transition-colors"
-            >
-              <BookOpen className="w-3.5 h-3.5" />
-              <span>引用来源 ({message.sources.length})</span>
-              {showSources ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-            </button>
-
-            {showSources && (
-              <div className="mt-2 space-y-2 animate-fade-in">
-                {message.sources.map((source, index) => (
-                  <div
-                    key={index}
-                    className="p-3 rounded-lg bg-jade-500/5 border border-jade-500/20 text-xs"
-                  >
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <Sparkles className="w-3 h-3 text-jade-400" />
-                      <span className="text-jade-300 font-medium">
-                        {source.metadata?.filename || '未知来源'}
-                      </span>
-                      {source.metadata?.page && (
-                        <span className="text-ink-500">第 {source.metadata.page} 页</span>
-                      )}
-                      <span className="ml-auto text-ink-500">
-                        相关度: {(source.score * 100).toFixed(1)}%
-                      </span>
-                    </div>
-                    <p className="text-ink-400 line-clamp-2">{source.content}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
       </div>
     </div>
   )

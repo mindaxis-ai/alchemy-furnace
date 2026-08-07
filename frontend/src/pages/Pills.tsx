@@ -1,11 +1,11 @@
 /**
- * 金丹阁页面 - 知识库管理
+ * 金丹阁页面 - 语言模式技能包管理
  * 金丹列表卡片（道教丹药风格）
- * 创建金丹按钮 + 表单
+ * 关键词搜索 + 内置过滤 + 快捷赠予道人 + 炼制新金丹
  * H5 优化: 单列卡片布局
  */
-import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Plus,
   Search,
@@ -16,35 +16,64 @@ import {
 } from 'lucide-react'
 import { usePill } from '@/contexts/PillContext'
 import PillCard from '@/components/PillCard'
+import BindAgentModal from '@/components/BindAgentModal'
 import Layout from '@/components/Layout'
+import { emptySkillSchema } from '@/services/pillService'
+import type { Pill } from '@/services/types'
+
+/** 内置过滤选项 */
+type BuiltinFilter = 'all' | 'builtin' | 'custom'
 
 export default function Pills() {
+  const navigate = useNavigate()
   const { state, fetchPills, addPill } = usePill()
   const [showCreate, setShowCreate] = useState(false)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
+  const [builtinFilter, setBuiltinFilter] = useState<BuiltinFilter>('all')
+  const [bindingPill, setBindingPill] = useState<Pill | null>(null)
+  const [creating, setCreating] = useState(false)
+
+  /** 按搜索条件加载金丹列表 */
+  const loadPills = useCallback((keyword: string, filter: BuiltinFilter) => {
+    fetchPills({
+      keyword: keyword.trim() || undefined,
+      is_builtin: filter === 'all' ? undefined : filter === 'builtin',
+    })
+  }, [fetchPills])
 
   // 初始化加载
   useEffect(() => {
-    fetchPills()
-  }, [fetchPills])
+    loadPills('', 'all')
+  }, [loadPills])
 
-  /** 创建金丹 */
+  // 搜索防抖
+  useEffect(() => {
+    const timer = setTimeout(() => loadPills(searchQuery, builtinFilter), 300)
+    return () => clearTimeout(timer)
+  }, [searchQuery, builtinFilter, loadPills])
+
+  /** 创建金丹（携带空 skill_schema，创建后进入编辑器完善） */
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!name.trim()) return
-    await addPill(name.trim(), description.trim() || undefined)
-    setShowCreate(false)
-    setName('')
-    setDescription('')
+    setCreating(true)
+    const pill = await addPill({
+      name: name.trim(),
+      description: description.trim() || undefined,
+      skill_schema: emptySkillSchema(),
+      tags: [],
+      version: '1.0.0',
+    })
+    setCreating(false)
+    if (pill) {
+      setShowCreate(false)
+      setName('')
+      setDescription('')
+      navigate(`/pills/${pill.id}`)
+    }
   }
-
-  /** 过滤金丹 */
-  const filteredPills = state.pills.filter(pill =>
-    pill.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (pill.description?.toLowerCase() || '').includes(searchQuery.toLowerCase())
-  )
 
   return (
     <Layout>
@@ -55,7 +84,7 @@ export default function Pills() {
             <CircleDot className="w-6 h-6 text-gold-400" />
             <h1 className="page-title">金丹阁</h1>
           </div>
-          <p className="page-subtitle">管理你的知识金丹</p>
+          <p className="page-subtitle">炼制语言模式金丹，塑造道人性情</p>
         </div>
 
         <button
@@ -67,16 +96,27 @@ export default function Pills() {
         </button>
       </div>
 
-      {/* 搜索栏 */}
-      <div className="relative mb-6">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-400" />
-        <input
-          type="text"
-          placeholder="搜索金丹..."
-          value={searchQuery}
-          onChange={e => setSearchQuery(e.target.value)}
-          className="dao-input pl-10"
-        />
+      {/* 搜索栏 + 内置过滤 */}
+      <div className="flex flex-col sm:flex-row gap-3 mb-6">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-400" />
+          <input
+            type="text"
+            placeholder="搜索金丹名称或描述..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            className="dao-input pl-10"
+          />
+        </div>
+        <select
+          value={builtinFilter}
+          onChange={e => setBuiltinFilter(e.target.value as BuiltinFilter)}
+          className="dao-input sm:w-36"
+        >
+          <option value="all">全部金丹</option>
+          <option value="builtin">系统内置</option>
+          <option value="custom">自行炼制</option>
+        </select>
       </div>
 
       {/* 创建金丹弹窗 */}
@@ -103,7 +143,7 @@ export default function Pills() {
                   type="text"
                   value={name}
                   onChange={e => setName(e.target.value)}
-                  placeholder="如：九转还魂丹"
+                  placeholder="如：文言文金丹"
                   className="dao-input"
                   autoFocus
                   required
@@ -111,14 +151,17 @@ export default function Pills() {
               </div>
 
               <div>
-                <label className="dao-label">描述</label>
+                <label className="dao-label">描述（含触发语、反触发语）</label>
                 <textarea
                   value={description}
                   onChange={e => setDescription(e.target.value)}
-                  placeholder="描述这颗金丹的用途..."
+                  placeholder="描述这颗金丹赋予的语言模式或人格特质..."
                   className="dao-textarea"
                   rows={3}
                 />
+                <p className="text-[10px] text-ink-500 mt-1">
+                  创建后将进入炼丹房编辑器，完善表达 DNA、心智模型等结构化内容
+                </p>
               </div>
 
               <div className="flex items-center gap-3 pt-2">
@@ -131,10 +174,10 @@ export default function Pills() {
                 </button>
                 <button
                   type="submit"
-                  disabled={!name.trim() || state.loading}
+                  disabled={!name.trim() || creating}
                   className="dao-btn-primary flex-1 disabled:opacity-50"
                 >
-                  {state.loading ? (
+                  {creating ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
                     <FlaskConical className="w-4 h-4" />
@@ -156,16 +199,16 @@ export default function Pills() {
       )}
 
       {/* 空状态 */}
-      {!state.loading && filteredPills.length === 0 && (
+      {!state.loading && state.pills.length === 0 && (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <CircleDot className="w-12 h-12 text-ink-600 mb-3" />
           <h3 className="text-base font-medium text-ink-400 mb-1">
-            {searchQuery ? '未找到匹配的金丹' : '暂无金丹'}
+            {searchQuery || builtinFilter !== 'all' ? '未找到匹配的金丹' : '暂无金丹'}
           </h3>
           <p className="text-sm text-ink-500 mb-4">
-            {searchQuery ? '尝试其他关键词' : '点击上方按钮开始炼制你的第一颗金丹'}
+            {searchQuery || builtinFilter !== 'all' ? '尝试其他关键词或过滤条件' : '点击上方按钮开始炼制你的第一颗金丹'}
           </p>
-          {!searchQuery && (
+          {!searchQuery && builtinFilter === 'all' && (
             <button onClick={() => setShowCreate(true)} className="dao-btn-primary">
               <Plus className="w-4 h-4" />
               炼制新金丹
@@ -175,12 +218,17 @@ export default function Pills() {
       )}
 
       {/* 金丹列表 - 桌面端网格，H5 单列 */}
-      {filteredPills.length > 0 && (
+      {state.pills.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredPills.map(pill => (
-            <PillCard key={pill.id} pill={pill} />
+          {state.pills.map(pill => (
+            <PillCard key={pill.id} pill={pill} onBind={setBindingPill} />
           ))}
         </div>
+      )}
+
+      {/* 从金丹到道人 - 快捷绑定弹窗 */}
+      {bindingPill && (
+        <BindAgentModal pill={bindingPill} onClose={() => setBindingPill(null)} />
       )}
     </Layout>
   )

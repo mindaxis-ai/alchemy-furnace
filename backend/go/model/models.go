@@ -1,6 +1,6 @@
-// Package model 定义「炼丹炉」的全部 GORM 数据模型
-// 对应数据库表：金丹(elixir_pills)、丹方(elixir_recipes)、道人(dao_agents)、
-// 服用记录(agent_pills)、对话会话(chat_sessions)、对话消息(chat_messages)
+// Package model 定义「炼丹炉 · 金丹化性」的全部 GORM 数据模型
+// 对应数据库表：金丹(elixir_pills)、道人(dao_agents)、服用记录(agent_pills)、
+// 语言模式缓存(language_patterns)、对话会话(chat_sessions)、对话消息(chat_messages)
 // 所有模型使用 GORM v2 标签，支持自动迁移
 package model
 
@@ -11,21 +11,23 @@ import (
 	"time"
 )
 
-// ---------- 金丹（知识库） ----------
+// ---------- 金丹（语言模式/人格特质技能包） ----------
 
 // ElixirPill 金丹模型，对应 elixir_pills 表
-// 金丹是知识库的载体，一个金丹包含多个丹方（文档），对应 Qdrant 中一组向量
+// 金丹是一套可影响语言模式的结构化技能包，基于 nuwa-skill 的 SKILL.md 结构
+// SkillSchema 存储于 PostgreSQL JSONB 中
 type ElixirPill struct {
 	ID          uint      `json:"id" gorm:"primaryKey;autoIncrement;comment:金丹唯一标识"`
 	Name        string    `json:"name" gorm:"size:100;not null;comment:金丹名称"`
-	Description string    `json:"description" gorm:"type:text;comment:金丹描述"`
-	Status      string    `json:"status" gorm:"size:20;default:refining;comment:炼丹状态: refining(炼制中)/refined(炼制成功)/failed(炼制失败)"`
-	VectorCount int       `json:"vector_count" gorm:"default:0;comment:向量数量"`
+	Description string    `json:"description" gorm:"type:text;comment:金丹简介（含触发语、反触发语）"`
+	SkillSchema JSONMap   `json:"skill_schema" gorm:"type:jsonb;not null;comment:nuwa-skill 结构化内容"`
+	Tags        JSONList  `json:"tags" gorm:"type:jsonb;comment:标签数组"`
+	Author      string    `json:"author" gorm:"size:100;comment:作者"`
+	Version     string    `json:"version" gorm:"size:20;default:1.0.0;comment:版本号"`
+	IsBuiltin   bool      `json:"is_builtin" gorm:"default:false;index;comment:是否系统内置示例金丹"`
 	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime;comment:更新时间"`
 
-	// 关联关系：一个金丹有多个丹方
-	Recipes []ElixirRecipe `json:"recipes,omitempty" gorm:"foreignKey:PillID;references:ID;constraint:OnDelete:CASCADE;"`
 	// 关联关系：一个金丹被多个道人服用
 	AgentPills []AgentPill `json:"agent_pills,omitempty" gorm:"foreignKey:PillID;references:ID;constraint:OnDelete:CASCADE;"`
 }
@@ -35,40 +37,15 @@ func (ElixirPill) TableName() string {
 	return "elixir_pills"
 }
 
-// ---------- 丹方（文档文件） ----------
-
-// ElixirRecipe 丹方模型，对应 elixir_recipes 表
-// 丹方是用户上传的文档文件，经过 Python RAG 提取文本并切分后向量化入库
-type ElixirRecipe struct {
-	ID            uint      `json:"id" gorm:"primaryKey;autoIncrement;comment:丹方唯一标识"`
-	PillID        uint      `json:"pill_id" gorm:"not null;index;comment:所属金丹ID"`
-	Filename      string    `json:"filename" gorm:"size:255;not null;comment:原始文件名"`
-	FileType      string    `json:"file_type" gorm:"size:50;not null;comment:文件类型:doc/xlsx/md/txt/pdf/audio/video"`
-	FileSize      int64     `json:"file_size" gorm:"comment:文件大小(字节)"`
-	FilePath      string    `json:"file_path" gorm:"size:500;comment:文件存储路径"`
-	ExtractStatus string    `json:"extract_status" gorm:"size:20;default:pending;comment:提取状态: pending(待提取)/extracting(提取中)/success(提取成功)/failed(提取失败)"`
-	ExtractResult string    `json:"extract_result" gorm:"type:text;comment:提取的文本内容摘要"`
-	ChunkCount    int       `json:"chunk_count" gorm:"default:0;comment:文本切分块数"`
-	CreatedAt     time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
-
-	// 关联关系：丹方属于一个金丹
-	Pill ElixirPill `json:"pill,omitempty" gorm:"foreignKey:PillID;references:ID"`
-}
-
-// TableName 指定表名
-func (ElixirRecipe) TableName() string {
-	return "elixir_recipes"
-}
-
 // ---------- 道人（AI Agent） ----------
 
 // DaoAgent 道人模型，对应 dao_agents 表
-// 道人是 AI 对话代理，拥有独特的性格和系统提示词，可服用多个金丹获得知识
+// 道人是 AI 对话代理，拥有基础性格，可服用多个金丹获得语言模式/人格特质
 type DaoAgent struct {
 	ID          uint      `json:"id" gorm:"primaryKey;autoIncrement;comment:道人唯一标识"`
 	Name        string    `json:"name" gorm:"size:100;not null;comment:道人名称"`
 	Avatar      string    `json:"avatar" gorm:"size:255;comment:头像URL"`
-	Personality string    `json:"personality" gorm:"type:text;comment:性格描述/系统提示词"`
+	Personality string    `json:"personality" gorm:"type:text;comment:基础性格描述/系统提示词"`
 	ModelName   string    `json:"model_name" gorm:"size:50;default:gpt-4o;comment:使用的LLM模型名称"`
 	Status      string    `json:"status" gorm:"size:20;default:active;comment:状态: active(活跃)/inactive(停用)"`
 	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
@@ -77,6 +54,8 @@ type DaoAgent struct {
 	AgentPills []AgentPill `json:"agent_pills,omitempty" gorm:"foreignKey:AgentID;references:ID;constraint:OnDelete:CASCADE;"`
 	// 关联关系：一个道人参与多个会话
 	Sessions []ChatSession `json:"sessions,omitempty" gorm:"foreignKey:AgentID;references:ID;constraint:OnDelete:CASCADE;"`
+	// 关联关系：一个道人有一个语言模式缓存
+	LanguagePattern *LanguagePattern `json:"language_pattern,omitempty" gorm:"foreignKey:AgentID;references:ID;constraint:OnDelete:CASCADE;"`
 }
 
 // TableName 指定表名
@@ -87,12 +66,14 @@ func (DaoAgent) TableName() string {
 // ---------- 服用记录（Agent 绑定金丹） ----------
 
 // AgentPill 服用记录模型，对应 agent_pills 表
-// 记录道人与金丹的绑定关系，一个道人可以服用多个金丹，一个金丹可被多个道人服用
+// 记录道人与金丹的绑定关系，支持权重和服用顺序
 // agent_id 和 pill_id 联合唯一
 type AgentPill struct {
 	ID        uint      `json:"id" gorm:"primaryKey;autoIncrement;comment:服用记录唯一标识"`
-	AgentID   uint      `json:"agent_id" gorm:"not null;uniqueIndex:idx_agent_pill;comment:道人ID"`
-	PillID    uint      `json:"pill_id" gorm:"not null;uniqueIndex:idx_agent_pill;comment:金丹ID"`
+	AgentID   uint      `json:"agent_id" gorm:"not null;uniqueIndex:idx_agent_pill;index;comment:道人ID"`
+	PillID    uint      `json:"pill_id" gorm:"not null;uniqueIndex:idx_agent_pill;index;comment:金丹ID"`
+	Weight    float64   `json:"weight" gorm:"default:1.0;comment:剂量/权重(0-10)"`
+	SortOrder int       `json:"sort_order" gorm:"default:0;comment:服用顺序"`
 	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime;comment:服用时间"`
 
 	// 关联关系
@@ -103,6 +84,31 @@ type AgentPill struct {
 // TableName 指定表名
 func (AgentPill) TableName() string {
 	return "agent_pills"
+}
+
+// ---------- 语言模式缓存 ----------
+
+// LanguagePattern 语言模式缓存模型，对应 language_patterns 表
+// 缓存每个道人合成后的系统提示词与涌现规则，避免每次对话重复合成
+// 当道人性格、服用金丹或金丹内容变化时失效/重建
+type LanguagePattern struct {
+	ID                uint      `json:"id" gorm:"primaryKey;autoIncrement;comment:缓存唯一标识"`
+	AgentID           uint      `json:"agent_id" gorm:"not null;uniqueIndex;comment:关联道人ID"`
+	SystemPrompt      string    `json:"system_prompt" gorm:"type:text;not null;comment:合成后的系统提示词"`
+	EmergenceRules    JSONList  `json:"emergence_rules" gorm:"type:jsonb;comment:涌现规则列表"`
+	InnerTensions     JSONList  `json:"inner_tensions" gorm:"type:jsonb;comment:检测到的内在冲突"`
+	SourceFingerprint string    `json:"source_fingerprint" gorm:"size:64;not null;comment:来源指纹(SHA256)"`
+	IsValid           bool      `json:"is_valid" gorm:"default:true;comment:是否有效"`
+	CreatedAt         time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
+	UpdatedAt         time.Time `json:"updated_at" gorm:"autoUpdateTime;comment:更新时间"`
+
+	// 关联关系
+	Agent DaoAgent `json:"agent,omitempty" gorm:"foreignKey:AgentID;references:ID"`
+}
+
+// TableName 指定表名
+func (LanguagePattern) TableName() string {
+	return "language_patterns"
 }
 
 // ---------- 对话会话 ----------
@@ -117,7 +123,7 @@ type ChatSession struct {
 	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime;comment:更新时间"`
 
 	// 关联关系
-	Agent    DaoAgent       `json:"agent,omitempty" gorm:"foreignKey:AgentID;references:ID"`
+	Agent    DaoAgent      `json:"agent,omitempty" gorm:"foreignKey:AgentID;references:ID"`
 	Messages []ChatMessage `json:"messages,omitempty" gorm:"foreignKey:SessionID;references:ID;constraint:OnDelete:CASCADE;"`
 }
 
@@ -129,15 +135,16 @@ func (ChatSession) TableName() string {
 // ---------- 对话消息 ----------
 
 // ChatMessage 对话消息模型，对应 chat_messages 表
-// 存储用户与道人的对话内容，包括 RAG 引用来源
+// 存储用户与道人的对话内容
 // role: user(用户提问) / assistant(道人回答) / system(系统提示)
+// sources 字段已废弃，保留 JSONB 列以兼容历史数据，不再写入新数据
 type ChatMessage struct {
-	ID        uint        `json:"id" gorm:"primaryKey;autoIncrement;comment:消息唯一标识"`
-	SessionID uint        `json:"session_id" gorm:"not null;index;comment:所属会话ID"`
-	Role      string      `json:"role" gorm:"size:20;not null;comment:角色: user/assistant/system"`
-	Content   string      `json:"content" gorm:"type:text;not null;comment:消息内容"`
-	Sources   JSONMap     `json:"sources" gorm:"type:jsonb;comment:RAG引用来源(JSONB格式)"`
-	CreatedAt time.Time   `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
+	ID        uint      `json:"id" gorm:"primaryKey;autoIncrement;comment:消息唯一标识"`
+	SessionID uint      `json:"session_id" gorm:"not null;index;comment:所属会话ID"`
+	Role      string    `json:"role" gorm:"size:20;not null;comment:角色: user/assistant/system"`
+	Content   string    `json:"content" gorm:"type:text;not null;comment:消息内容"`
+	Sources   JSONMap   `json:"sources,omitempty" gorm:"type:jsonb;comment:废弃: 原RAG引用来源(JSONB格式)"`
+	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 
 	// 关联关系
 	Session ChatSession `json:"session,omitempty" gorm:"foreignKey:SessionID;references:ID"`
@@ -187,59 +194,105 @@ func (j *JSONMap) Scan(value interface{}) error {
 	return json.Unmarshal(bytes, j)
 }
 
+// JSONList 是 []interface{} 的包装类型，用于支持 PostgreSQL 的 JSONB 数组字段
+type JSONList []interface{}
+
+// Value 实现 driver.Valuer 接口
+func (j JSONList) Value() (driver.Value, error) {
+	if j == nil {
+		return "[]", nil
+	}
+	bytes, err := json.Marshal(j)
+	if err != nil {
+		return nil, err
+	}
+	return string(bytes), nil
+}
+
+// Scan 实现 sql.Scanner 接口
+func (j *JSONList) Scan(value interface{}) error {
+	if value == nil {
+		*j = JSONList{}
+		return nil
+	}
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
+		return errors.New("不支持的 JSONB 扫描类型")
+	}
+	if len(bytes) == 0 {
+		*j = JSONList{}
+		return nil
+	}
+	return json.Unmarshal(bytes, j)
+}
+
 // ---------- 请求/响应 DTO ----------
 
 // CreatePillRequest 创建金丹请求
- type CreatePillRequest struct {
-	Name        string `json:"name" binding:"required,max=100"` // 金丹名称
-	Description string `json:"description"`                    // 金丹描述
+type CreatePillRequest struct {
+	Name        string   `json:"name" binding:"required,max=100"` // 金丹名称
+	Description string   `json:"description"`                     // 金丹简介（含触发语、反触发语）
+	SkillSchema JSONMap  `json:"skill_schema" binding:"required"` // nuwa-skill 结构化内容
+	Tags        JSONList `json:"tags"`                            // 标签数组
+	Author      string   `json:"author" binding:"max=100"`        // 作者
+	Version     string   `json:"version" binding:"max=20"`        // 版本号
 }
 
 // UpdatePillRequest 更新金丹请求
- type UpdatePillRequest struct {
-	Name        string `json:"name" binding:"max=100"` // 金丹名称
-	Description string `json:"description"`             // 金丹描述
+type UpdatePillRequest struct {
+	Name        string   `json:"name" binding:"max=100"`   // 金丹名称
+	Description string   `json:"description"`              // 金丹简介
+	SkillSchema JSONMap  `json:"skill_schema"`             // nuwa-skill 结构化内容
+	Tags        JSONList `json:"tags"`                     // 标签数组
+	Author      string   `json:"author" binding:"max=100"` // 作者
+	Version     string   `json:"version" binding:"max=20"` // 版本号
 }
 
 // CreateAgentRequest 创建道人请求
- type CreateAgentRequest struct {
-	Name        string `json:"name" binding:"required,max=100"`       // 道人名称
-	Avatar      string `json:"avatar"`                                  // 头像URL
-	Personality string `json:"personality"`                             // 性格描述/系统提示词
-	ModelName   string `json:"model_name" binding:"max=50"`             // 使用的LLM模型
+type CreateAgentRequest struct {
+	Name        string `json:"name" binding:"required,max=100"` // 道人名称
+	Avatar      string `json:"avatar"`                          // 头像URL
+	Personality string `json:"personality"`                     // 基础性格描述/系统提示词
+	ModelName   string `json:"model_name" binding:"max=50"`     // 使用的LLM模型
 }
 
 // UpdateAgentRequest 更新道人请求
- type UpdateAgentRequest struct {
-	Name        string `json:"name" binding:"max=100"`      // 道人名称
-	Avatar      string `json:"avatar"`                       // 头像URL
-	Personality string `json:"personality"`                  // 性格描述/系统提示词
-	ModelName   string `json:"model_name" binding:"max=50"`  // 使用的LLM模型
+type UpdateAgentRequest struct {
+	Name        string `json:"name" binding:"max=100"`                           // 道人名称
+	Avatar      string `json:"avatar"`                                           // 头像URL
+	Personality string `json:"personality"`                                      // 基础性格描述/系统提示词
+	ModelName   string `json:"model_name" binding:"max=50"`                      // 使用的LLM模型
 	Status      string `json:"status" binding:"omitempty,oneof=active inactive"` // 状态
 }
 
 // BindPillRequest 服用金丹请求
- type BindPillRequest struct {
-	PillID uint `json:"pill_id" binding:"required"` // 金丹ID
+type BindPillRequest struct {
+	PillID    uint    `json:"pill_id" binding:"required"`    // 金丹ID
+	Weight    float64 `json:"weight" binding:"gte=0,lte=10"` // 剂量/权重
+	SortOrder int     `json:"sort_order" binding:"gte=0"`    // 服用顺序
 }
 
 // CreateSessionRequest 创建会话请求
- type CreateSessionRequest struct {
+type CreateSessionRequest struct {
 	AgentID uint   `json:"agent_id" binding:"required"` // 道人ID
 	Title   string `json:"title" binding:"max=200"`     // 会话标题
 }
 
 // ChatMessageRequest 聊天消息请求结构
- type ChatMessageRequest struct {
+type ChatMessageRequest struct {
 	Content string `json:"content" binding:"required"` // 消息内容
 }
 
 // HealthCheckResponse 健康检查响应
- type HealthCheckResponse struct {
-	Status    string `json:"status"`              // 状态: ok/degraded/down
-	Version   string `json:"version"`             // 版本号
-	Timestamp int64  `json:"timestamp"`           // 时间戳
-	DB        string `json:"db"`                  // 数据库状态
-	Qdrant    string `json:"qdrant"`              // Qdrant状态
-	PythonRAG string `json:"python_rag"`          // Python RAG服务状态
+type HealthCheckResponse struct {
+	Status       string `json:"status"`        // 状态: ok/degraded/down
+	Version      string `json:"version"`       // 版本号
+	Timestamp    int64  `json:"timestamp"`     // 时间戳
+	DB           string `json:"db"`            // 数据库状态
+	PythonEngine string `json:"python_engine"` // Python 语言引擎状态
 }

@@ -1,4 +1,4 @@
-// Package config 负责管理「炼丹炉」的全局配置
+// Package config 负责管理「炼丹炉 · 金丹化性」的全局配置
 // 使用 Viper 从环境变量读取配置，支持默认值，确保各层组件能正确初始化
 package config
 
@@ -10,13 +10,10 @@ import (
 	"github.com/spf13/viper"
 )
 
-// Config 是「炼丹炉」的全局配置总纲，包含数据库、向量库、LLM、服务器等全部配置项
+// Config 是「炼丹炉」的全局配置总纲，包含数据库、LLM、服务器等全部配置项
 type Config struct {
 	// Database 数据库配置（PostgreSQL）
 	Database DatabaseConfig `mapstructure:"database"`
-
-	// Qdrant 向量数据库配置
-	Qdrant QdrantConfig `mapstructure:"qdrant"`
 
 	// LLM 大语言模型配置
 	LLM LLMConfig `mapstructure:"llm"`
@@ -24,14 +21,11 @@ type Config struct {
 	// Server HTTP 服务配置
 	Server ServerConfig `mapstructure:"server"`
 
-	// PythonRAG Python RAG 引擎服务地址
-	PythonRAG PythonRAGConfig `mapstructure:"python_rag"`
-
-	// Upload 文件上传配置
-	Upload UploadConfig `mapstructure:"upload"`
+	// PythonEngine Python 语言引擎服务地址
+	PythonEngine PythonEngineConfig `mapstructure:"python_engine"`
 }
 
-// DatabaseConfig 数据库配置，用于连接 PostgreSQL 存储金丹、丹方、道人等业务数据
+// DatabaseConfig 数据库配置，用于连接 PostgreSQL 存储金丹、道人、语言模式等业务数据
 type DatabaseConfig struct {
 	Host     string `mapstructure:"host"`
 	Port     int    `mapstructure:"port"`
@@ -41,19 +35,13 @@ type DatabaseConfig struct {
 	SSLMode  string `mapstructure:"sslmode"`
 }
 
-// QdrantConfig Qdrant 向量数据库配置，存储丹方切分后的向量 embeddings
-type QdrantConfig struct {
-	Host       string `mapstructure:"host"`
-	Port       int    `mapstructure:"port"`
-	Collection string `mapstructure:"collection"`
-}
-
-// LLMConfig 大语言模型配置，用于炼丹（RAG）过程中的对话生成
+// LLMConfig 大语言模型配置，用于对话生成与语言模式合成
 type LLMConfig struct {
-	APIKey       string   `mapstructure:"api_key"`
-	BaseURL      string   `mapstructure:"base_url"`
-	DefaultModel string   `mapstructure:"default_model"`
-	Models       []string `mapstructure:"models"` // 可用的模型列表
+	APIKey         string   `mapstructure:"api_key"`
+	BaseURL        string   `mapstructure:"base_url"`
+	DefaultModel   string   `mapstructure:"default_model"`
+	SynthesisModel string   `mapstructure:"synthesis_model"`
+	Models         []string `mapstructure:"models"` // 可用的模型列表
 }
 
 // ServerConfig HTTP 服务器配置
@@ -63,16 +51,9 @@ type ServerConfig struct {
 	AllowOrigins string `mapstructure:"allow_origins"`
 }
 
-// PythonRAGConfig Python RAG 引擎配置，用于与 Python 服务通信
-type PythonRAGConfig struct {
+// PythonEngineConfig Python 语言引擎配置，用于与 Python 服务通信
+type PythonEngineConfig struct {
 	BaseURL string `mapstructure:"base_url"`
-}
-
-// UploadConfig 文件上传配置，用于保存用户上传的丹方文件
-type UploadConfig struct {
-	Dir        string `mapstructure:"dir"`
-	MaxSize    int64  `mapstructure:"max_size"` // 单位：MB
-	AllowTypes string `mapstructure:"allow_types"`
 }
 
 // globalConfig 全局配置实例，初始化后只读
@@ -104,15 +85,11 @@ func Load() (*Config, error) {
 	v.SetDefault("database.dbname", getEnv(v, "DB_NAME", "alchemy_db"))
 	v.SetDefault("database.sslmode", getEnv(v, "DB_SSLMODE", "disable"))
 
-	// Qdrant 默认配置
-	v.SetDefault("qdrant.host", getEnv(v, "QDRANT_HOST", "localhost"))
-	v.SetDefault("qdrant.port", getEnvInt(v, "QDRANT_PORT", 6333))
-	v.SetDefault("qdrant.collection", getEnv(v, "QDRANT_COLLECTION", "elixir_pills"))
-
 	// LLM 默认配置
 	v.SetDefault("llm.api_key", getEnv(v, "OPENAI_API_KEY", ""))
 	v.SetDefault("llm.base_url", getEnv(v, "OPENAI_BASE_URL", "https://api.openai.com/v1"))
 	v.SetDefault("llm.default_model", getEnv(v, "DEFAULT_MODEL", "gpt-4o"))
+	v.SetDefault("llm.synthesis_model", getEnv(v, "SYNTHESIS_MODEL", "gpt-4o-mini"))
 	v.SetDefault("llm.models", []string{"gpt-4o", "gpt-4o-mini", "deepseek-chat", "qwen-max"})
 
 	// 服务器默认配置
@@ -120,13 +97,8 @@ func Load() (*Config, error) {
 	v.SetDefault("server.mode", getEnv(v, "GIN_MODE", "debug"))
 	v.SetDefault("server.allow_origins", getEnv(v, "ALLOW_ORIGINS", "*"))
 
-	// Python RAG 默认配置
-	v.SetDefault("python_rag.base_url", getEnv(v, "PYTHON_RAG_URL", "http://localhost:8000"))
-
-	// 上传文件默认配置
-	v.SetDefault("upload.dir", getEnv(v, "UPLOAD_DIR", "./uploads"))
-	v.SetDefault("upload.max_size", getEnvInt(v, "MAX_FILE_SIZE_MB", 100))
-	v.SetDefault("upload.allow_types", getEnv(v, "ALLOW_TYPES", ".doc,.docx,.xls,.xlsx,.md,.txt,.pdf,.mp3,.wav,.m4a,.mp4,.avi,.mov"))
+	// Python 语言引擎默认配置
+	v.SetDefault("python_engine.base_url", getEnv(v, "PYTHON_ENGINE_BASE_URL", "http://localhost:8000"))
 
 	// 解析配置到结构体
 	var cfg Config
@@ -156,11 +128,6 @@ func Get() *Config {
 func (d *DatabaseConfig) DSN() string {
 	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
 		d.Host, d.Port, d.User, d.Password, d.DBName, d.SSLMode)
-}
-
-// QdrantURL 返回 Qdrant 服务的完整 URL
-func (q *QdrantConfig) QdrantURL() string {
-	return fmt.Sprintf("http://%s:%d", q.Host, q.Port)
 }
 
 // getEnv 从环境变量获取字符串值，若不存在则返回默认值

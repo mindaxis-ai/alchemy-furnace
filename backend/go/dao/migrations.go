@@ -38,15 +38,17 @@ func createIndexes(db *gorm.DB) error {
 
 	// 使用原生 SQL 创建索引（如果 GORM tag 中的索引不够）
 	indexes := []string{
-		// elixir_recipes 表索引
-		`CREATE INDEX IF NOT EXISTS idx_recipes_pill_id ON elixir_recipes(pill_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_recipes_extract_status ON elixir_recipes(extract_status)`,
-
 		// dao_agents 表索引
 		`CREATE INDEX IF NOT EXISTS idx_agents_status ON dao_agents(status)`,
 
 		// agent_pills 表索引（联合唯一索引由 GORM 创建）
 		`CREATE INDEX IF NOT EXISTS idx_agent_pills_pill_id ON agent_pills(pill_id)`,
+
+		// language_patterns 表索引
+		`CREATE INDEX IF NOT EXISTS idx_language_patterns_agent_id ON language_patterns(agent_id)`,
+
+		// elixir_pills 表索引
+		`CREATE INDEX IF NOT EXISTS idx_elixir_pills_is_builtin ON elixir_pills(is_builtin)`,
 
 		// chat_sessions 表索引
 		`CREATE INDEX IF NOT EXISTS idx_sessions_agent_id ON chat_sessions(agent_id)`,
@@ -101,6 +103,7 @@ func DropAllTables(db *gorm.DB) error {
 	tables := []string{
 		"chat_messages",
 		"chat_sessions",
+		"language_patterns",
 		"agent_pills",
 		"dao_agents",
 		"elixir_recipes",

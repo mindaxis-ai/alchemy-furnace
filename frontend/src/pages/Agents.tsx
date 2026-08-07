@@ -5,7 +5,6 @@
  * H5 优化: 单列卡片
  */
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
 import {
   Plus,
   Users,
@@ -19,23 +18,15 @@ import {
 import { useAgent } from '@/contexts/AgentContext'
 import AgentCard from '@/components/AgentCard'
 import Layout from '@/components/Layout'
-import { mockModels } from '@/services/mockData'
+import { AVAILABLE_MODELS, DEFAULT_MODEL } from '@/services/models'
 
 export default function Agents() {
   const { state, fetchAgents, addAgent } = useAgent()
   const [showCreate, setShowCreate] = useState(false)
   const [name, setName] = useState('')
   const [personality, setPersonality] = useState('')
-  const [modelName, setModelName] = useState(mockModels[0].id)
+  const [modelName, setModelName] = useState(DEFAULT_MODEL)
   const [searchQuery, setSearchQuery] = useState('')
-
-  // 模拟每个道人已服用金丹数
-  const pillCounts: Record<number, number> = {
-    1: 3,
-    2: 2,
-    3: 2,
-    4: 0,
-  }
 
   // 初始化加载
   useEffect(() => {
@@ -46,11 +37,17 @@ export default function Agents() {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!name.trim()) return
-    await addAgent(name.trim(), modelName, personality.trim() || undefined)
-    setShowCreate(false)
-    setName('')
-    setPersonality('')
-    setModelName(mockModels[0].id)
+    const agent = await addAgent({
+      name: name.trim(),
+      model_name: modelName,
+      personality: personality.trim() || undefined,
+    })
+    if (agent) {
+      setShowCreate(false)
+      setName('')
+      setPersonality('')
+      setModelName(DEFAULT_MODEL)
+    }
   }
 
   /** 过滤道人 */
@@ -124,16 +121,16 @@ export default function Agents() {
               </div>
 
               <div>
-                <label className="dao-label">性格 / 系统提示词</label>
+                <label className="dao-label">基础性格 / 系统提示词</label>
                 <textarea
                   value={personality}
                   onChange={e => setPersonality(e.target.value)}
-                  placeholder="描述这位道人的性格特点和回答风格..."
+                  placeholder="描述这位道人的性格特点和语言风格..."
                   className="dao-textarea"
                   rows={4}
                 />
                 <p className="text-[10px] text-ink-500 mt-1">
-                  这将决定道人的回答风格和知识领域
+                  基础性格将与已服用金丹的语言模式合成，决定道人的表达风格
                 </p>
               </div>
 
@@ -147,7 +144,7 @@ export default function Agents() {
                   onChange={e => setModelName(e.target.value)}
                   className="dao-input"
                 >
-                  {mockModels.map(model => (
+                  {AVAILABLE_MODELS.map(model => (
                     <option key={model.id} value={model.id}>
                       {model.name} - {model.description}
                     </option>
@@ -215,7 +212,6 @@ export default function Agents() {
             <AgentCard
               key={agent.id}
               agent={agent}
-              pillCount={pillCounts[agent.id] || 0}
             />
           ))}
         </div>

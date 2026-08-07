@@ -41,14 +41,9 @@ npm-debug.log*
 *~
 .DS_Store
 
-# 上传文件
-uploads/
-backend/**/uploads/
-
 # 数据卷（开发时）
 data/
 postgres_data/
-qdrant_data/
 
 # Claude workspace files
 .claude/

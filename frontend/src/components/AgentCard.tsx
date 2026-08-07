@@ -4,14 +4,12 @@
  * 响应式：桌面端网格卡片，H5 纵向卡片
  */
 import { Link } from 'react-router-dom'
-import { User, Pill, Cpu, ChevronRight, Sparkles } from 'lucide-react'
+import { Cpu, ChevronRight, Sparkles } from 'lucide-react'
 import type { Agent } from '@/services/types'
 import { truncateText } from '@/utils/format'
 
 interface AgentCardProps {
   agent: Agent
-  /** 已服用金丹数量 */
-  pillCount?: number
   /** 紧凑模式 */
   compact?: boolean
 }
@@ -37,7 +35,7 @@ const STATUS_MAP: Record<string, { label: string; className: string }> = {
   inactive: { label: '沉睡', className: 'bg-ink-500/30 text-ink-400 border-ink-400/20' },
 }
 
-export default function AgentCard({ agent, pillCount = 0, compact = false }: AgentCardProps) {
+export default function AgentCard({ agent, compact = false }: AgentCardProps) {
   const statusInfo = STATUS_MAP[agent.status] || STATUS_MAP.inactive
   const avatarGradient = getAvatarColor(agent.name)
 
@@ -72,15 +70,11 @@ export default function AgentCard({ agent, pillCount = 0, compact = false }: Age
           </p>
         </div>
 
-        {/* 模型 + 金丹数 */}
+        {/* 模型 */}
         <div className="hidden sm:flex items-center gap-3 text-xs text-ink-400">
           <span className="flex items-center gap-1">
             <Cpu className="w-3.5 h-3.5" />
             {agent.model_name}
-          </span>
-          <span className="flex items-center gap-1">
-            <Pill className="w-3.5 h-3.5" />
-            {pillCount} 金丹
           </span>
         </div>
 
@@ -134,10 +128,6 @@ export default function AgentCard({ agent, pillCount = 0, compact = false }: Age
         <span className="flex items-center gap-1">
           <Cpu className="w-3.5 h-3.5" />
           {agent.model_name}
-        </span>
-        <span className="flex items-center gap-1">
-          <Pill className="w-3.5 h-3.5" />
-          {pillCount} 金丹
         </span>
       </div>
     </Link>

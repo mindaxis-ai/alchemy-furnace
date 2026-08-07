@@ -1,35 +1,76 @@
 // Package service 金丹业务逻辑层
-// 处理金丹的增删改查，以及级联删除相关的向量数据和丹方
-// 金丹是知识库的载体，每个金丹包含多个丹方（文档）
+// 处理金丹（语言模式/人格特质技能包）的增删改查
+// 金丹基于 nuwa-skill 结构，skill_schema 存储于 JSONB
 package service
 
 import (
+	"errors"
 	"fmt"
-	"net/http"
-	"os"
 	"time"
 
 	"github.com/alchemy-furnace/server/dao"
 	"github.com/alchemy-furnace/server/model"
-	"github.com/alchemy-furnace/server/pkg/config"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
+// ErrInvalidSkillSchema 表示 skill_schema 校验失败（缺少 expression_dna 或数组超限）
+var ErrInvalidSkillSchema = errors.New("skill_schema 校验失败")
+
+// validateSkillSchema 校验 nuwa-skill 结构化内容：
+// - expression_dna 必须存在且为对象
+// - mental_models 长度 0-20
+// - example_dialogues 长度 0-10
+func validateSkillSchema(schema model.JSONMap) error {
+	if len(schema) == 0 {
+		return fmt.Errorf("%w: skill_schema 不能为空", ErrInvalidSkillSchema)
+	}
+
+	dna, ok := schema["expression_dna"]
+	if !ok || dna == nil {
+		return fmt.Errorf("%w: 缺少 expression_dna", ErrInvalidSkillSchema)
+	}
+	if dnaMap, ok := dna.(map[string]interface{}); !ok || len(dnaMap) == 0 {
+		return fmt.Errorf("%w: expression_dna 必须为非空对象", ErrInvalidSkillSchema)
+	}
+
+	if models, ok := schema["mental_models"]; ok && models != nil {
+		list, ok := models.([]interface{})
+		if !ok {
+			return fmt.Errorf("%w: mental_models 必须为数组", ErrInvalidSkillSchema)
+		}
+		if len(list) > 20 {
+			return fmt.Errorf("%w: mental_models 长度不能超过 20", ErrInvalidSkillSchema)
+		}
+	}
+
+	if dialogues, ok := schema["example_dialogues"]; ok && dialogues != nil {
+		list, ok := dialogues.([]interface{})
+		if !ok {
+			return fmt.Errorf("%w: example_dialogues 必须为数组", ErrInvalidSkillSchema)
+		}
+		if len(list) > 10 {
+			return fmt.Errorf("%w: example_dialogues 长度不能超过 10", ErrInvalidSkillSchema)
+		}
+	}
+
+	return nil
+}
+
 // PillService 金丹业务逻辑
 type PillService struct {
-	ragBaseURL string // Python RAG 服务地址
+	patterns *LanguagePatternService
 }
 
 // NewPillService 创建金丹业务实例
 func NewPillService() *PillService {
 	return &PillService{
-		ragBaseURL: config.Get().PythonRAG.BaseURL,
+		patterns: NewLanguagePatternService(),
 	}
 }
 
-// ListPills 获取金丹列表，支持分页和关键字搜索
-func (s *PillService) ListPills(page, pageSize int, keyword string) ([]model.ElixirPill, int64, error) {
+// ListPills 获取金丹列表，支持分页、关键字搜索与内置过滤
+func (s *PillService) ListPills(page, pageSize int, keyword string, isBuiltin *bool) ([]model.ElixirPill, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -50,6 +91,11 @@ func (s *PillService) ListPills(page, pageSize int, keyword string) ([]model.Eli
 		db = db.Where("name LIKE ? OR description LIKE ?", "%"+keyword+"%", "%"+keyword+"%")
 	}
 
+	// 内置金丹过滤
+	if isBuiltin != nil {
+		db = db.Where("is_builtin = ?", *isBuiltin)
+	}
+
 	// 统计总数
 	if err := db.Count(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("查询金丹总数失败: %w", err)
@@ -57,40 +103,57 @@ func (s *PillService) ListPills(page, pageSize int, keyword string) ([]model.Eli
 
 	// 分页查询
 	offset := (page - 1) * pageSize
-	if err := db.Order("updated_at DESC").Offset(offset).Limit(pageSize).Find(&pills).Error; err != nil {
+	if err := db.Order("is_builtin DESC, updated_at DESC").Offset(offset).Limit(pageSize).Find(&pills).Error; err != nil {
 		return nil, 0, fmt.Errorf("查询金丹列表失败: %w", err)
 	}
 
 	return pills, total, nil
 }
 
-// GetPill 根据 ID 获取金丹详情，包含关联的丹方列表
+// GetPill 根据 ID 获取金丹详情
 func (s *PillService) GetPill(id uint) (*model.ElixirPill, error) {
 	var pill model.ElixirPill
-	if err := dao.GetDB().Preload("Recipes").First(&pill, id).Error; err != nil {
+	if err := dao.GetDB().First(&pill, id).Error; err != nil {
 		return nil, fmt.Errorf("查询金丹(id=%d)失败: %w", id, err)
 	}
 	return &pill, nil
 }
 
 // CreatePill 创建新的金丹
+// skill_schema 必填且必须包含 expression_dna；tags/author/version 可选
 func (s *PillService) CreatePill(req *model.CreatePillRequest) (*model.ElixirPill, error) {
+	if err := validateSkillSchema(req.SkillSchema); err != nil {
+		return nil, err
+	}
+
+	version := req.Version
+	if version == "" {
+		version = "1.0.0"
+	}
+	tags := req.Tags
+	if tags == nil {
+		tags = model.JSONList{}
+	}
+
 	pill := model.ElixirPill{
 		Name:        req.Name,
 		Description: req.Description,
-		Status:      "refining",
-		VectorCount: 0,
+		SkillSchema: req.SkillSchema,
+		Tags:        tags,
+		Author:      req.Author,
+		Version:     version,
+		IsBuiltin:   false,
 	}
 
 	if err := dao.GetDB().Create(&pill).Error; err != nil {
 		return nil, fmt.Errorf("创建金丹失败: %w", err)
 	}
 
-	zap.L().Info("[炼丹炉] 金丹炼制启动", zap.String("name", pill.Name), zap.Uint("id", pill.ID))
+	zap.L().Info("[炼丹炉] 金丹炼成", zap.String("name", pill.Name), zap.Uint("id", pill.ID))
 	return &pill, nil
 }
 
-// UpdatePill 更新金丹信息
+// UpdatePill 更新金丹信息，并失效所有服用该金丹的道人的语言模式缓存
 func (s *PillService) UpdatePill(id uint, req *model.UpdatePillRequest) (*model.ElixirPill, error) {
 	var pill model.ElixirPill
 	if err := dao.GetDB().First(&pill, id).Error; err != nil {
@@ -105,9 +168,29 @@ func (s *PillService) UpdatePill(id uint, req *model.UpdatePillRequest) (*model.
 	if req.Description != "" {
 		updates["description"] = req.Description
 	}
+	if req.SkillSchema != nil {
+		if err := validateSkillSchema(req.SkillSchema); err != nil {
+			return nil, err
+		}
+		updates["skill_schema"] = req.SkillSchema
+	}
+	if req.Tags != nil {
+		updates["tags"] = req.Tags
+	}
+	if req.Author != "" {
+		updates["author"] = req.Author
+	}
+	if req.Version != "" {
+		updates["version"] = req.Version
+	}
 
 	if err := dao.GetDB().Model(&pill).Updates(updates).Error; err != nil {
 		return nil, fmt.Errorf("更新金丹(id=%d)失败: %w", id, err)
+	}
+
+	// 失效服用该金丹的道人的语言模式缓存
+	if err := s.patterns.InvalidateByPillID(id); err != nil {
+		zap.L().Warn("[炼丹炉] 失效语言模式缓存失败", zap.Uint("pill_id", id), zap.Error(err))
 	}
 
 	// 重新查询获取更新后的数据
@@ -119,36 +202,24 @@ func (s *PillService) UpdatePill(id uint, req *model.UpdatePillRequest) (*model.
 	return &pill, nil
 }
 
-// DeletePill 删除金丹，级联删除所有关联的丹方文件和向量数据
-// 这是一个危险操作，会：1. 删除 Qdrant 中的向量 2. 删除数据库记录 3. 删除上传的文件
+// DeletePill 删除金丹，级联删除服用记录并失效相关道人的语言模式缓存
 func (s *PillService) DeletePill(id uint) error {
 	db := dao.GetDB()
 
-	// 1. 先获取金丹信息，确认存在
+	// 先获取金丹信息，确认存在
 	var pill model.ElixirPill
 	if err := db.First(&pill, id).Error; err != nil {
 		return fmt.Errorf("金丹(id=%d)不存在: %w", id, err)
 	}
 
-	// 2. 获取关联的丹方列表（用于后续删除文件）
-	var recipes []model.ElixirRecipe
-	if err := db.Where("pill_id = ?", id).Find(&recipes).Error; err != nil {
-		zap.L().Warn("[炼丹炉] 查询关联丹方失败", zap.Uint("pill_id", id), zap.Error(err))
+	// 先失效服用该金丹的道人的语言模式缓存
+	// 注意：必须在删除服用记录之前执行，否则无法找到受影响的道人
+	if err := s.patterns.InvalidateByPillID(id); err != nil {
+		zap.L().Warn("[炼丹炉] 失效语言模式缓存失败", zap.Uint("pill_id", id), zap.Error(err))
 	}
 
-	// 3. 删除 Qdrant 中的向量数据（调用 Python RAG 服务）
-	if err := s.deleteVectorsFromRAG(id); err != nil {
-		zap.L().Warn("[炼丹炉] 删除向量数据失败", zap.Uint("pill_id", id), zap.Error(err))
-		// 不阻断删除流程，继续删除数据库记录
-	}
-
-	// 4. 在事务中删除数据库记录（金丹、丹方、服用记录）
+	// 在事务中删除数据库记录（服用记录、金丹），Qdrant 向量已随架构移除，无需清理
 	if err := dao.Transaction(func(tx *gorm.DB) error {
-		// 删除关联的丹方记录
-		if err := tx.Where("pill_id = ?", id).Delete(&model.ElixirRecipe{}).Error; err != nil {
-			return fmt.Errorf("删除丹方记录失败: %w", err)
-		}
-
 		// 删除服用记录
 		if err := tx.Where("pill_id = ?", id).Delete(&model.AgentPill{}).Error; err != nil {
 			return fmt.Errorf("删除服用记录失败: %w", err)
@@ -164,41 +235,6 @@ func (s *PillService) DeletePill(id uint) error {
 		return err
 	}
 
-	// 5. 删除物理文件
-	for _, recipe := range recipes {
-		if recipe.FilePath != "" {
-			// 异步删除文件，不阻塞响应
-			go func(path string) {
-				if err := os.Remove(path); err != nil {
-					zap.L().Warn("[炼丹炉] 删除文件失败", zap.String("path", path), zap.Error(err))
-				}
-			}(recipe.FilePath)
-		}
-	}
-
 	zap.L().Info("[炼丹炉] 金丹已销毁", zap.Uint("id", id), zap.String("name", pill.Name))
-	return nil
-}
-
-// deleteVectorsFromRAG 调用 Python RAG 服务删除金丹的所有向量数据
-func (s *PillService) deleteVectorsFromRAG(pillID uint) error {
-	url := fmt.Sprintf("%s/api/v1/vectors/pill/%d", s.ragBaseURL, pillID)
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest(http.MethodDelete, url, nil)
-	if err != nil {
-		return fmt.Errorf("构建删除向量请求失败: %w", err)
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("调用 RAG 服务删除向量失败: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("RAG 服务返回错误状态码: %d", resp.StatusCode)
-	}
-
 	return nil
 }

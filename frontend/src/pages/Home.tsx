@@ -21,8 +21,8 @@ const features = [
   {
     path: '/pills',
     title: '金丹阁',
-    subtitle: '知识库管理',
-    description: '炼制金丹，汇聚知识。上传文档，炼就属于你的知识金丹。',
+    subtitle: '语言模式金丹',
+    description: '炼制金丹，铸就性情。以表达 DNA、心智模型与决策启发式塑造语言风格。',
     icon: CircleDot,
     color: 'from-gold-500/20 to-gold-700/10',
     iconColor: 'text-gold-400',
@@ -42,9 +42,9 @@ const features = [
   },
   {
     path: '/chat',
-    title: '炼丹室',
-    subtitle: 'RAG 对话',
-    description: '选择道人，开始论道。让 AI 借助金丹之力为你答疑解惑。',
+    title: '论道',
+    subtitle: '金丹化性对话',
+    description: '选择道人，开始论道。让 AI 以金丹化性后的性情与你对谈。',
     icon: MessageSquare,
     color: 'from-cinnabar-500/20 to-cinnabar-700/10',
     iconColor: 'text-cinnabar-400',
@@ -57,8 +57,7 @@ const features = [
 const stats = [
   { label: '金丹', value: '12', icon: CircleDot },
   { label: '道人', value: '5', icon: Users },
-  { label: '对话', value: '128', icon: MessageSquare },
-  { label: '丹方', value: '56', icon: BookOpen },
+  { label: '论道', value: '128', icon: MessageSquare },
 ]
 
 export default function Home() {
@@ -104,7 +103,7 @@ export default function Home() {
           炼丹炉
         </h1>
         <p className="text-sm md:text-base text-ink-400 text-center max-w-md px-4">
-          以道教炼丹为灵感的 RAG 知识库对话系统
+          以道教炼丹为灵感的金丹化性系统：炼语言模式之丹，铸 AI 道人之性
         </p>
 
         {/* 标语 */}
@@ -116,7 +115,7 @@ export default function Home() {
       </section>
 
       {/* ========== 统计数据栏 ========== */}
-      <section className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 max-w-3xl mx-auto">
+      <section className="grid grid-cols-3 gap-3 md:gap-4 max-w-3xl mx-auto">
         {stats.map(stat => {
           const Icon = stat.icon
           return (
@@ -202,10 +201,10 @@ export default function Home() {
         <div className="dao-card p-5 md:p-6">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-6">
             {[
-              { step: '壹', title: '炼制金丹', desc: '创建知识库，汇聚你的文档资料', icon: CircleDot },
-              { step: '贰', title: '上传丹方', desc: '添加文档文件，支持多种格式', icon: BookOpen },
-              { step: '叁', title: '招募道人', desc: '创建 AI Agent，赋予独特性格', icon: Users },
-              { step: '肆', title: '服用金丹', desc: '让道人绑定知识库，开启智慧', icon: Sparkles },
+              { step: '壹', title: '炼制金丹', desc: '编辑表达 DNA 与心智模型，炼成语言模式金丹', icon: CircleDot },
+              { step: '贰', title: '招募道人', desc: '创建 AI 道人，赋予基础性格', icon: Users },
+              { step: '叁', title: '服用金丹', desc: '为道人绑定金丹，调配权重与顺序', icon: Sparkles },
+              { step: '肆', title: '围炉论道', desc: '与化性后的道人对话，体会丹性涌现', icon: MessageSquare },
             ].map((item, index) => {
               const Icon = item.icon
               return (

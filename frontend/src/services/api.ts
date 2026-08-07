@@ -1,25 +1,14 @@
 /**
  * API 基础封装层
- * 基于 fetch 的统一请求封装，包含错误处理、拦截器等功能
- * 前端演示模式: 使用 MOCK_DELAY 模拟网络延迟
+ * 基于 fetch 的统一请求封装，自动解包后端 { code, message, data } 响应信封
  */
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 
-// 模拟网络延迟（演示模式）
-const MOCK_DELAY = 400
-
 /**
- * 模拟延迟（演示模式使用）
+ * 统一 API 响应信封
  */
-export function mockDelay(ms = MOCK_DELAY): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms))
-}
-
-/**
- * 统一 API 响应格式
- */
-export interface ApiResponse<T> {
+export interface ApiEnvelope<T> {
   code: number
   message: string
   data: T
@@ -29,27 +18,38 @@ export interface ApiResponse<T> {
  * 请求选项
  */
 interface RequestOptions extends RequestInit {
-  params?: Record<string, string | number | boolean>
+  params?: Record<string, string | number | boolean | undefined>
 }
 
 /**
  * 构建完整 URL（带查询参数）
  */
-function buildUrl(path: string, params?: Record<string, string | number | boolean>): string {
+function buildUrl(path: string, params?: Record<string, string | number | boolean | undefined>): string {
   const url = new URL(API_BASE + path, window.location.origin)
   if (params) {
     Object.entries(params).forEach(([key, value]) => {
-      url.searchParams.append(key, String(value))
+      if (value !== undefined && value !== '') {
+        url.searchParams.append(key, String(value))
+      }
     })
   }
   return url.toString()
 }
 
 /**
+ * 构建 WebSocket URL
+ */
+export function buildWsUrl(path: string): string {
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${proto}//${window.location.host}${API_BASE}${path}`
+}
+
+/**
  * 统一请求函数
+ * 自动解包 { code, message, data } 信封：code !== 0 时抛出 ApiError
  * @param path API 路径
  * @param options 请求选项
- * @returns 解析后的 JSON 数据
+ * @returns 解包后的 data 数据
  */
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { params, ...fetchOptions } = options
@@ -58,7 +58,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   // 默认请求头
   const headers: Record<string, string> = {
     'Accept': 'application/json',
-    ...(!(fetchOptions.body instanceof FormData) && { 'Content-Type': 'application/json' }),
+    'Content-Type': 'application/json',
     ...((fetchOptions.headers as Record<string, string>) || {}),
   }
 
@@ -83,7 +83,17 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
       return undefined as T
     }
 
-    return await response.json()
+    const body = await response.json()
+
+    // 解包 { code, message, data } 信封
+    if (body && typeof body === 'object' && typeof body.code === 'number' && 'data' in body) {
+      if (body.code !== 0) {
+        throw new ApiError(body.message || '请求失败', body.code, body)
+      }
+      return body.data as T
+    }
+
+    return body as T
   } catch (error) {
     if (error instanceof ApiError) {
       throw error
@@ -113,7 +123,7 @@ export class ApiError extends Error {
 /**
  * GET 请求快捷方法
  */
-export function get<T>(path: string, params?: Record<string, string | number | boolean>): Promise<T> {
+export function get<T>(path: string, params?: Record<string, string | number | boolean | undefined>): Promise<T> {
   return request<T>(path, { method: 'GET', params })
 }
 
@@ -123,7 +133,7 @@ export function get<T>(path: string, params?: Record<string, string | number | b
 export function post<T>(path: string, body?: unknown): Promise<T> {
   return request<T>(path, {
     method: 'POST',
-    body: body instanceof FormData ? body : JSON.stringify(body),
+    body: JSON.stringify(body),
   })
 }
 
@@ -142,29 +152,4 @@ export function put<T>(path: string, body?: unknown): Promise<T> {
  */
 export function del<T>(path: string): Promise<T> {
   return request<T>(path, { method: 'DELETE' })
-}
-
-/**
- * 上传文件请求
- * @param path API 路径
- * @param files 文件列表
- * @param extraData 额外表单数据
- * @returns 解析后的 JSON 数据
- */
-export function upload<T>(
-  path: string,
-  files: File[],
-  extraData?: Record<string, string>
-): Promise<T> {
-  const formData = new FormData()
-  files.forEach(file => formData.append('files[]', file))
-  if (extraData) {
-    Object.entries(extraData).forEach(([key, value]) => {
-      formData.append(key, value)
-    })
-  }
-  return request<T>(path, {
-    method: 'POST',
-    body: formData,
-  })
 }

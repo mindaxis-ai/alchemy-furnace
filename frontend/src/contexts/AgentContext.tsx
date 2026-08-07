@@ -1,26 +1,25 @@
 /**
  * 道人状态管理 Context
- * 使用 React Context + useReducer 管理 AI Agent 相关状态
- * 包含道人列表、当前选中的道人、已服用金丹等
+ * 使用 React Context + useReducer 管理道人（AI Agent）相关状态
+ * 道人详情包含已服用金丹（weight/sort_order）与语言模式缓存
  */
 import React, { createContext, useContext, useReducer, useCallback } from 'react'
 import * as agentService from '@/services/agentService'
-import type { Agent, Pill } from '@/services/types'
+import type { Agent, AgentDetail, CreateAgentRequest, UpdateAgentRequest } from '@/services/types'
 
 /** 道人状态 */
 interface AgentState {
   agents: Agent[]
-  currentAgent: Agent | null
-  currentAgentPills: Pill[]
+  total: number
+  currentAgent: AgentDetail | null
   loading: boolean
   error: string | null
 }
 
 /** 操作类型 */
 type AgentAction =
-  | { type: 'SET_AGENTS'; payload: Agent[] }
-  | { type: 'SET_CURRENT_AGENT'; payload: Agent | null }
-  | { type: 'SET_CURRENT_AGENT_PILLS'; payload: Pill[] }
+  | { type: 'SET_AGENTS'; payload: { list: Agent[]; total: number } }
+  | { type: 'SET_CURRENT_AGENT'; payload: AgentDetail | null }
   | { type: 'ADD_AGENT'; payload: Agent }
   | { type: 'UPDATE_AGENT'; payload: Agent }
   | { type: 'REMOVE_AGENT'; payload: number }
@@ -30,8 +29,8 @@ type AgentAction =
 /** 初始状态 */
 const initialState: AgentState = {
   agents: [],
+  total: 0,
   currentAgent: null,
-  currentAgentPills: [],
   loading: false,
   error: null,
 }
@@ -40,18 +39,19 @@ const initialState: AgentState = {
 function agentReducer(state: AgentState, action: AgentAction): AgentState {
   switch (action.type) {
     case 'SET_AGENTS':
-      return { ...state, agents: action.payload, loading: false }
+      return { ...state, agents: action.payload.list, total: action.payload.total, loading: false }
     case 'SET_CURRENT_AGENT':
-      return { ...state, currentAgent: action.payload }
-    case 'SET_CURRENT_AGENT_PILLS':
-      return { ...state, currentAgentPills: action.payload }
+      return { ...state, currentAgent: action.payload, loading: false }
     case 'ADD_AGENT':
-      return { ...state, agents: [action.payload, ...state.agents] }
+      return { ...state, agents: [action.payload, ...state.agents], loading: false }
     case 'UPDATE_AGENT':
       return {
         ...state,
-        agents: state.agents.map(a => (a.id === action.payload.id ? action.payload : a)),
-        currentAgent: state.currentAgent?.id === action.payload.id ? action.payload : state.currentAgent,
+        agents: state.agents.map(a => (a.id === action.payload.id ? { ...a, ...action.payload } : a)),
+        currentAgent: state.currentAgent?.id === action.payload.id
+          ? { ...state.currentAgent, ...action.payload }
+          : state.currentAgent,
+        loading: false,
       }
     case 'REMOVE_AGENT':
       return {
@@ -75,11 +75,15 @@ interface AgentContextType {
   // 异步操作
   fetchAgents: () => Promise<void>
   fetchAgent: (id: number) => Promise<void>
-  fetchAgentPills: (agentId: number) => Promise<void>
-  addAgent: (name: string, modelName: string, personality?: string) => Promise<void>
-  removeAgent: (id: number) => Promise<void>
-  bindPill: (agentId: number, pillId: number) => Promise<void>
-  unbindPill: (agentId: number, pillId: number) => Promise<void>
+  addAgent: (data: CreateAgentRequest) => Promise<Agent | null>
+  editAgent: (id: number, data: UpdateAgentRequest) => Promise<Agent | null>
+  removeAgent: (id: number) => Promise<boolean>
+  /** 服用金丹（绑定），成功后刷新道人详情 */
+  bindPill: (agentId: number, pillId: number, weight?: number, sortOrder?: number) => Promise<boolean>
+  /** 更新服用记录（权重/顺序），成功后刷新道人详情 */
+  updateAgentPill: (agentId: number, pillId: number, weight: number, sortOrder: number) => Promise<boolean>
+  /** 解除金丹绑定，成功后刷新道人详情 */
+  unbindPill: (agentId: number, pillId: number) => Promise<boolean>
 }
 
 const AgentContext = createContext<AgentContextType | null>(null)
@@ -92,14 +96,14 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   const fetchAgents = useCallback(async () => {
     dispatch({ type: 'SET_LOADING', payload: true })
     try {
-      const agents = await agentService.getAgents()
-      dispatch({ type: 'SET_AGENTS', payload: agents })
+      const data = await agentService.listAgents()
+      dispatch({ type: 'SET_AGENTS', payload: { list: data.list || [], total: data.total } })
     } catch (error) {
       dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '获取道人列表失败' })
     }
   }, [])
 
-  /** 获取单个道人 */
+  /** 获取单个道人详情 */
   const fetchAgent = useCallback(async (id: number) => {
     dispatch({ type: 'SET_LOADING', payload: true })
     try {
@@ -110,60 +114,89 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  /** 获取道人已服用金丹 */
-  const fetchAgentPills = useCallback(async (agentId: number) => {
+  /** 创建道人 */
+  const addAgent = useCallback(async (data: CreateAgentRequest): Promise<Agent | null> => {
+    dispatch({ type: 'SET_LOADING', payload: true })
     try {
-      const pills = await agentService.getAgentPills(agentId)
-      dispatch({ type: 'SET_CURRENT_AGENT_PILLS', payload: pills })
+      const agent = await agentService.createAgent(data)
+      dispatch({ type: 'ADD_AGENT', payload: agent })
+      return agent
     } catch (error) {
-      dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '获取金丹列表失败' })
+      dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '创建道人失败' })
+      return null
     }
   }, [])
 
-  /** 创建道人 */
-  const addAgent = useCallback(async (name: string, modelName: string, personality?: string) => {
-    dispatch({ type: 'SET_LOADING', payload: true })
+  /** 更新道人 */
+  const editAgent = useCallback(async (id: number, data: UpdateAgentRequest): Promise<Agent | null> => {
     try {
-      const agent = await agentService.createAgent({ name, model_name: modelName, personality })
-      dispatch({ type: 'ADD_AGENT', payload: agent })
+      const agent = await agentService.updateAgent(id, data)
+      dispatch({ type: 'UPDATE_AGENT', payload: agent })
+      return agent
     } catch (error) {
-      dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '创建道人失败' })
+      dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '更新道人失败' })
+      return null
     }
   }, [])
 
   /** 删除道人 */
-  const removeAgent = useCallback(async (id: number) => {
+  const removeAgent = useCallback(async (id: number): Promise<boolean> => {
     try {
       await agentService.deleteAgent(id)
       dispatch({ type: 'REMOVE_AGENT', payload: id })
+      return true
     } catch (error) {
       dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '删除道人失败' })
+      return false
     }
+  }, [])
+
+  /** 刷新当前道人详情的辅助逻辑 */
+  const refreshAgent = useCallback(async (agentId: number) => {
+    const agent = await agentService.getAgent(agentId)
+    dispatch({ type: 'SET_CURRENT_AGENT', payload: agent })
   }, [])
 
   /** 服用金丹（绑定） */
-  const bindPill = useCallback(async (agentId: number, pillId: number) => {
+  const bindPill = useCallback(async (agentId: number, pillId: number, weight = 1, sortOrder = 0): Promise<boolean> => {
     try {
-      await agentService.bindPill(agentId, pillId)
-      // 刷新已服用金丹列表
-      const pills = await agentService.getAgentPills(agentId)
-      dispatch({ type: 'SET_CURRENT_AGENT_PILLS', payload: pills })
+      await agentService.bindPill(agentId, pillId, weight, sortOrder)
+      await refreshAgent(agentId)
+      return true
     } catch (error) {
       dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '服用金丹失败' })
+      return false
     }
-  }, [])
+  }, [refreshAgent])
+
+  /** 更新服用记录（权重/顺序） */
+  const updateAgentPill = useCallback(async (
+    agentId: number,
+    pillId: number,
+    weight: number,
+    sortOrder: number
+  ): Promise<boolean> => {
+    try {
+      await agentService.updateAgentPill(agentId, pillId, weight, sortOrder)
+      await refreshAgent(agentId)
+      return true
+    } catch (error) {
+      dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '更新服用记录失败' })
+      return false
+    }
+  }, [refreshAgent])
 
   /** 解除金丹绑定 */
-  const unbindPill = useCallback(async (agentId: number, pillId: number) => {
+  const unbindPill = useCallback(async (agentId: number, pillId: number): Promise<boolean> => {
     try {
       await agentService.unbindPill(agentId, pillId)
-      // 刷新已服用金丹列表
-      const pills = await agentService.getAgentPills(agentId)
-      dispatch({ type: 'SET_CURRENT_AGENT_PILLS', payload: pills })
+      await refreshAgent(agentId)
+      return true
     } catch (error) {
       dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '解除绑定失败' })
+      return false
     }
-  }, [])
+  }, [refreshAgent])
 
   return (
     <AgentContext.Provider
@@ -172,10 +205,11 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
         dispatch,
         fetchAgents,
         fetchAgent,
-        fetchAgentPills,
         addAgent,
+        editAgent,
         removeAgent,
         bindPill,
+        updateAgentPill,
         unbindPill,
       }}
     >

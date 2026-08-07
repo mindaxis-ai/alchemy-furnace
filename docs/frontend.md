@@ -23,16 +23,16 @@ frontend/src/
 │   ├── Layout.tsx          # 页面布局
 │   ├── PillCard.tsx        # 金丹卡片
 │   ├── AgentCard.tsx       # 道人卡片
+│   ├── BindAgentModal.tsx  # 服用金丹弹窗（选择金丹/权重/顺序）
 │   ├── ChatMessage.tsx     # 聊天气泡
-│   ├── MarkdownRenderer.tsx # Markdown 渲染
-│   └── UploadDropzone.tsx  # 拖拽上传
+│   └── MarkdownRenderer.tsx # Markdown 渲染
 ├── pages/                  # 页面组件
 │   ├── Home.tsx            # 首页（炼丹炉动画）
-│   ├── Pills.tsx           # 金丹阁
-│   ├── PillDetail.tsx      # 金丹详情
-│   ├── Agents.tsx          # 道人府
-│   ├── AgentDetail.tsx     # 道人详情
-│   ├── Chat.tsx            # 炼丹室
+│   ├── Pills.tsx           # 金丹列表
+│   ├── PillDetail.tsx      # 金丹编辑（skill_schema 结构化表单）
+│   ├── Agents.tsx          # 道人列表
+│   ├── AgentDetail.tsx     # 道人详情（服用金丹、调权重/排序）
+│   ├── Chat.tsx            # 论道（对话大厅）
 │   └── Settings.tsx        # 设置
 ├── contexts/               # 状态管理 (Context API)
 │   ├── PillContext.tsx     # 金丹状态
@@ -41,28 +41,34 @@ frontend/src/
 ├── services/               # API 服务层
 │   ├── api.ts              # 请求封装
 │   ├── types.ts            # 类型定义
-│   ├── mockData.ts         # Mock 数据
+│   ├── models.ts           # 模型列表
 │   ├── pillService.ts      # 金丹 API
-│   ├── agentService.ts     # 道人 API
-│   └── chatService.ts      # 对话 API
+│   ├── agentService.ts     # 道人 API（含服用/解绑金丹）
+│   └── chatService.ts      # 对话 API（WebSocket）
 ├── utils/
 │   └── format.ts           # 格式化工具
 └── styles/
     └── globals.css         # 全局样式
 ```
 
-## 路由设计
+## 页面与路由设计
 
 | 路由 | 页面 | 说明 |
 |------|------|------|
 | `/` | Home | 首页，炼丹炉主殿 |
-| `/pills` | Pills | 金丹阁，知识库列表 |
-| `/pills/:id` | PillDetail | 金丹详情，丹方管理 |
-| `/agents` | Agents | 道人府，Agent 列表 |
-| `/agents/:id` | AgentDetail | 道人详情，配置金丹 |
-| `/chat` | Chat | 炼丹室，对话大厅 |
+| `/pills` | Pills | 金丹列表，支持按关键词/内置筛选 |
+| `/pills/:id` | PillDetail | 金丹编辑：结构化编辑 skill_schema（表达 DNA、心智模型、决策启发式、示例对话等） |
+| `/agents` | Agents | 道人列表 |
+| `/agents/:id` | AgentDetail | 道人详情：配置基础性格，服用金丹（BindAgentModal），拖拽调整服用顺序（sort_order），调节权重（weight） |
+| `/chat` | Chat | 论道，对话大厅 |
 | `/chat/:sessionId` | Chat | 具体对话 |
 | `/settings` | Settings | 系统设置 |
+
+### 关键交互
+
+- **服用金丹**：道人详情页通过 `BindAgentModal` 选择金丹并设定初始权重与顺序；已服用列表支持**拖拽排序**（更新 `sort_order`）与权重调节（更新 `weight`）
+- **丹性相冲警告**：多颗金丹维度冲突时，后端在 `language_pattern.inner_tensions` 中返回冲突信息，道人详情页/论道页据此展示「丹性相冲」提示
+- **金丹编辑**：PillDetail 以结构化表单编辑 skill_schema，无需上传任何文件
 
 ## 响应式断点
 
@@ -83,7 +89,6 @@ screens: {
 3. **道人列表**: 桌面端 4 列网格 → H5 单列卡片
 4. **聊天界面**: 桌面端侧边栏+对话区 → H5 底部 Sheet 弹窗选择会话
 5. **表格**: 桌面端完整表格 → H5 卡片式列表
-6. **上传区域**: 桌面端大面积拖拽区 → H5 全宽按钮+小区域
 
 ## 设计系统
 
@@ -142,9 +147,8 @@ font-family: 'Noto Sans SC', sans-serif;
 
 ```typescript
 interface PillState {
-  pills: Pill[];           // 金丹列表
-  currentPill: Pill | null; // 当前选中
-  recipes: Recipe[];       // 当前金丹的丹方
+  pills: Pill[];             // 金丹列表
+  currentPill: Pill | null;  // 当前选中（含 skill_schema）
   loading: boolean;
   error: string | null;
 }
@@ -154,9 +158,9 @@ interface PillState {
 
 ```typescript
 interface AgentState {
-  agents: Agent[];           // 道人列表
-  currentAgent: Agent | null; // 当前选中
-  agentPills: Pill[];        // 当前道人已服用金丹
+  agents: Agent[];             // 道人列表
+  currentAgent: Agent | null;  // 当前选中
+  agentPills: AgentPill[];     // 当前道人已服用金丹（含 weight / sort_order）
   loading: boolean;
   error: string | null;
 }
@@ -178,13 +182,19 @@ interface ChatState {
 
 ```typescript
 // 获取金丹列表
-const pills = await pillService.list({ page: 1, pageSize: 10 });
+const pills = await pillService.list({ page: 1, pageSize: 10, isBuiltin: true });
 
-// 创建金丹
-const newPill = await pillService.create({ name: '新金丹', description: '描述' });
+// 创建金丹（结构化技能包）
+const newPill = await pillService.create({
+  name: '文言文金丹',
+  description: '令道人开口便是之乎者也',
+  skill_schema: { /* expression_dna ... */ },
+  tags: ['文言文', '古雅'],
+  version: '1.0.0',
+});
 
-// 上传丹方
-const result = await recipeService.upload(files, pillId);
+// 服用金丹（含权重与顺序）
+await agentService.bindPill(agentId, { pill_id: 1, weight: 1.0, sort_order: 0 });
 
 // 流式对话
 for await (const chunk of chatService.streamMessage(sessionId, message)) {
@@ -222,6 +232,6 @@ npm run lint
    { "type": "chunk", "content": "片段" }
    { "type": "chunk", "content": "片段" }
    ...
-   { "type": "done", "sources": [...] }
+   { "type": "done" }
 4. 关闭连接
 ```

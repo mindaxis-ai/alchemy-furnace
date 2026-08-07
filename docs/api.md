@@ -29,11 +29,22 @@
 
 ## 金丹管理 (Pills)
 
+金丹是语言模式/人格特质的结构化技能包，核心内容为 `skill_schema`（表达 DNA、心智模型、决策启发式、禁忌、诚实边界、示例对话等），详见 [data-model.md](../specs/001-skill-persona-alchemy-pivot/data-model.md)。
+
 ### 获取金丹列表
 
 ```
-GET /api/v1/pills?page=1&page_size=10
+GET /api/v1/pills?page=1&page_size=10&keyword=文言&is_builtin=true
 ```
+
+查询参数：
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| page | int | 页码，默认 1 |
+| page_size | int | 每页数量，默认 10，最大 100 |
+| keyword | string | 可选，搜索名称/描述 |
+| is_builtin | bool | 可选，筛选内置金丹 |
 
 响应:
 ```json
@@ -41,18 +52,22 @@ GET /api/v1/pills?page=1&page_size=10
   "code": 0,
   "message": "ok",
   "data": {
-    "total": 10,
-    "items": [
+    "list": [
       {
         "id": 1,
-        "name": "太上老君丹",
-        "description": "包含道德经核心要义",
-        "status": "refined",
-        "vector_count": 156,
-        "created_at": "2025-01-01T00:00:00Z",
-        "updated_at": "2025-01-01T00:00:00Z"
+        "name": "文言文金丹",
+        "description": "令回复带有文言色彩",
+        "tags": ["文言文", "古雅"],
+        "author": "系统",
+        "version": "1.0.0",
+        "is_builtin": true,
+        "created_at": "2026-08-07T10:00:00Z",
+        "updated_at": "2026-08-07T10:00:00Z"
       }
-    ]
+    ],
+    "total": 50,
+    "page": 1,
+    "page_size": 10
   }
 }
 ```
@@ -66,10 +81,28 @@ POST /api/v1/pills
 请求体:
 ```json
 {
-  "name": "新金丹",
-  "description": "金丹描述"
+  "name": "文言文金丹",
+  "description": "令道人开口便是之乎者也",
+  "skill_schema": {
+    "identity_card": "我是一位熟读经史的古人，说话喜用文言。",
+    "expression_dna": {
+      "sentence_length": "medium",
+      "formality": 0.9,
+      "vocabulary": ["之", "乎", "者", "也"],
+      "taboo_words": ["你", "我", "的", "了"]
+    },
+    "mental_models": [],
+    "decision_heuristics": [],
+    "honest_limits": [],
+    "example_dialogues": []
+  },
+  "tags": ["文言文", "古雅"],
+  "author": "用户A",
+  "version": "1.0.0"
 }
 ```
+
+> `skill_schema.expression_dna` 必填；更新金丹后，所有引用它的道人语言模式缓存自动失效。
 
 ### 获取金丹详情
 
@@ -77,19 +110,15 @@ POST /api/v1/pills
 GET /api/v1/pills/:id
 ```
 
+响应中包含完整的 `skill_schema`。
+
 ### 更新金丹
 
 ```
 PUT /api/v1/pills/:id
 ```
 
-请求体:
-```json
-{
-  "name": "更新名称",
-  "description": "更新描述"
-}
-```
+请求体同创建（字段可选）。
 
 ### 删除金丹
 
@@ -97,68 +126,17 @@ PUT /api/v1/pills/:id
 DELETE /api/v1/pills/:id
 ```
 
-> 级联删除该金丹下的所有丹方和向量数据
-
-## 丹方管理 (Recipes)
-
-### 上传丹方
-
-```
-POST /api/v1/recipes/upload
-```
-
-请求格式: `multipart/form-data`
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| files[] | File | 文件列表，支持多文件 |
-| pill_id | integer | 所属金丹 ID |
-
-响应:
-```json
-{
-  "code": 0,
-  "message": "ok",
-  "data": {
-    "uploaded": [
-      {
-        "id": 1,
-        "filename": "document.docx",
-        "file_type": "docx",
-        "file_size": 10240,
-        "extract_status": "pending"
-      }
-    ],
-    "failed": []
-  }
-}
-```
-
-### 获取金丹下的丹方列表
-
-```
-GET /api/v1/recipes/pill/:pill_id?page=1&page_size=20
-```
-
-### 删除丹方
-
-```
-DELETE /api/v1/recipes/:id
-```
-
-### 重新提取
-
-```
-POST /api/v1/recipes/:id/re-extract
-```
+> 级联删除该金丹的所有服用记录，并使相关道人的语言模式缓存失效。
 
 ## 道人管理 (Agents)
 
 ### 获取道人列表
 
 ```
-GET /api/v1/agents?page=1&page_size=10
+GET /api/v1/agents?page=1&page_size=10&status=active
 ```
+
+`status` 可选：`active` | `inactive`。
 
 ### 创建道人
 
@@ -171,7 +149,7 @@ POST /api/v1/agents
 {
   "name": "太上老君",
   "avatar": "https://example.com/avatar.png",
-  "personality": "你是太上老君，道教的始祖，言谈充满智慧...",
+  "personality": "你是太上老君，道家的始祖，言谈充满智慧...",
   "model_name": "gpt-4o"
 }
 ```
@@ -182,11 +160,38 @@ POST /api/v1/agents
 GET /api/v1/agents/:id
 ```
 
+响应中包含已服用金丹列表（含 weight/sort_order）与当前语言模式缓存状态：
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "id": 1,
+    "name": "太上老君",
+    "personality": "...",
+    "model_name": "gpt-4o",
+    "status": "active",
+    "pills": [
+      { "id": 2, "name": "文言文金丹", "weight": 1.0, "sort_order": 0 }
+    ],
+    "language_pattern": {
+      "is_valid": true,
+      "system_prompt": "...",
+      "emergence_rules": [],
+      "inner_tensions": []
+    }
+  }
+}
+```
+
 ### 更新道人
 
 ```
 PUT /api/v1/agents/:id
 ```
+
+> 修改 `personality` 会使语言模式缓存失效。
 
 ### 删除道人
 
@@ -194,7 +199,9 @@ PUT /api/v1/agents/:id
 DELETE /api/v1/agents/:id
 ```
 
-### 服用金丹（绑定知识库）
+> 级联删除服用记录、会话、消息与语言模式缓存。
+
+### 服用金丹（绑定）
 
 ```
 POST /api/v1/agents/:id/pills
@@ -203,7 +210,25 @@ POST /api/v1/agents/:id/pills
 请求体:
 ```json
 {
-  "pill_id": 1
+  "pill_id": 2,
+  "weight": 1.5,
+  "sort_order": 1
+}
+```
+
+> `(agent_id, pill_id)` 联合唯一；`weight` 范围 [0, 10]；绑定后语言模式缓存失效。
+
+### 更新服用记录（权重/顺序）
+
+```
+PUT /api/v1/agents/:id/pills/:pill_id
+```
+
+请求体:
+```json
+{
+  "weight": 2.0,
+  "sort_order": 0
 }
 ```
 
@@ -217,6 +242,75 @@ DELETE /api/v1/agents/:id/pills/:pill_id
 
 ```
 GET /api/v1/agents/:id/pills
+```
+
+## 试丹 (Trial)
+
+临时组合性格与金丹，不绑定道人即可预览合成效果，不落库。
+
+### 合成预览
+
+```
+POST /api/v1/trial/synthesis
+```
+
+请求体:
+```json
+{
+  "personality": "沉稳内敛",
+  "pills": [
+    { "pill_id": 2, "weight": 1.0, "sort_order": 0 }
+  ],
+  "model_name": "gpt-4o-mini"
+}
+```
+
+响应:
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "system_prompt": "...",
+    "emergence_rules": ["..."],
+    "inner_tensions": []
+  }
+}
+```
+
+### 试丹对话（非流式）
+
+```
+POST /api/v1/trial/chat
+```
+
+请求体:
+```json
+{
+  "personality": "沉稳内敛",
+  "pills": [
+    { "pill_id": 2, "weight": 1.0, "sort_order": 0 }
+  ],
+  "messages": [
+    { "role": "user", "content": "何为道？" }
+  ],
+  "model": "gpt-4o",
+  "temperature": 0.7,
+  "max_tokens": 4096
+}
+```
+
+响应:
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "content": "道者，万物之奥也...",
+    "model": "gpt-4o",
+    "usage": { "prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150 }
+  }
+}
 ```
 
 ## 对话管理 (Chat)
@@ -253,30 +347,25 @@ GET /api/v1/chat/sessions/:id/messages?page=1&page_size=50
   "code": 0,
   "message": "ok",
   "data": {
-    "total": 10,
-    "items": [
+    "list": [
       {
         "id": 1,
         "session_id": 1,
         "role": "user",
         "content": "何为道？",
-        "sources": null,
-        "created_at": "2025-01-01T00:00:00Z"
+        "created_at": "2026-08-07T10:00:00Z"
       },
       {
         "id": 2,
         "session_id": 1,
         "role": "assistant",
         "content": "道可道，非常道...",
-        "sources": [
-          {
-            "content": "道可道，非常道；名可名，非常名。",
-            "metadata": {"filename": "道德经.md", "chunk_index": 0}
-          }
-        ],
-        "created_at": "2025-01-01T00:00:01Z"
+        "created_at": "2026-08-07T10:00:01Z"
       }
-    ]
+    ],
+    "total": 10,
+    "page": 1,
+    "page_size": 50
   }
 }
 ```
@@ -300,7 +389,7 @@ WS /api/v1/chat/ws/:session_id
 {"type": "chunk", "content": "可"}
 {"type": "chunk", "content": "道"}
 ...
-{"type": "done", "sources": [...]}
+{"type": "done"}
 ```
 
 错误返回:
@@ -326,8 +415,7 @@ GET /api/v1/system/health
     "version": "1.0.0",
     "services": {
       "database": "connected",
-      "qdrant": "connected",
-      "python_rag": "connected"
+      "python_engine": "connected"
     }
   }
 }
@@ -350,8 +438,8 @@ GET /api/v1/system/config
       {"id": "gpt-4o-mini", "name": "GPT-4o Mini"},
       {"id": "deepseek-chat", "name": "DeepSeek"}
     ],
-    "file_types": ["doc", "docx", "xls", "xlsx", "md", "txt", "pdf", "mp3", "wav", "mp4"],
-    "max_file_size": 104857600
+    "default_model": "gpt-4o",
+    "synthesis_model": "gpt-4o-mini"
   }
 }
 ```
@@ -364,11 +452,8 @@ GET /api/v1/system/config
 | 1001 | 参数错误 |
 | 1002 | 未找到资源 |
 | 1003 | 权限不足 |
-| 2001 | 文件上传失败 |
-| 2002 | 不支持的文件类型 |
-| 2003 | 文件过大 |
-| 3001 | RAG 服务调用失败 |
-| 3002 | 向量操作失败 |
+| 3001 | 语言引擎调用失败 |
+| 3002 | 语言模式合成失败 |
 | 4001 | LLM 调用失败 |
 | 5001 | 数据库错误 |
 | 5002 | WebSocket 错误 |

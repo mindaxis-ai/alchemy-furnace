@@ -128,7 +128,7 @@ func (h *AgentHandler) DeleteAgent(c *gin.Context) {
 
 // BindPill 道人服用金丹
 // POST /api/v1/agents/:id/pills
-// Body: { "pill_id": 1 }
+// Body: { "pill_id": 1, "weight": 1.0, "sort_order": 0 }
 func (h *AgentHandler) BindPill(c *gin.Context) {
 	agentID, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
@@ -142,7 +142,7 @@ func (h *AgentHandler) BindPill(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.BindPill(uint(agentID), req.PillID); err != nil {
+	if err := h.service.BindPill(uint(agentID), req.PillID, req.Weight, req.SortOrder); err != nil {
 		zap.L().Error("[炼丹炉] 服用金丹失败",
 			zap.Uint64("agent_id", agentID),
 			zap.Uint("pill_id", req.PillID),
@@ -152,6 +152,39 @@ func (h *AgentHandler) BindPill(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{"bound": true})
+}
+
+// UpdateAgentPill 更新服用记录（权重/顺序）
+// PUT /api/v1/agents/:id/pills/:pill_id
+// Body: { "weight": 1.5, "sort_order": 2 }
+func (h *AgentHandler) UpdateAgentPill(c *gin.Context) {
+	agentID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		response.BadRequest(c, "道人ID格式不正确")
+		return
+	}
+	pillID, err := strconv.ParseUint(c.Param("pill_id"), 10, 32)
+	if err != nil {
+		response.BadRequest(c, "金丹ID格式不正确")
+		return
+	}
+
+	var req model.BindPillRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "请求参数错误: "+err.Error())
+		return
+	}
+
+	if err := h.service.UpdateAgentPill(uint(agentID), uint(pillID), req.Weight, req.SortOrder); err != nil {
+		zap.L().Error("[炼丹炉] 更新服用记录失败",
+			zap.Uint64("agent_id", agentID),
+			zap.Uint64("pill_id", pillID),
+			zap.Error(err))
+		response.Error(c, 4003, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{"updated": true})
 }
 
 // UnbindPill 道人解除金丹绑定

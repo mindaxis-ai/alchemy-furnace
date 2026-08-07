@@ -1,146 +1,71 @@
 /**
- * 金丹服务 - 知识库管理 API
- * 提供金丹的增删改查操作（演示模式使用 Mock 数据）
+ * 金丹服务 - 语言模式技能包管理 API
+ * 对接后端 /api/v1/pills
  */
-import { mockDelay } from './api'
-import { mockPills, mockRecipes } from './mockData'
-import type { Pill, Recipe, CreatePillRequest } from './types'
-
-let pills = [...mockPills]
-let recipes = { ...mockRecipes }
-let nextPillId = Math.max(...pills.map(p => p.id)) + 1
-let nextRecipeId = Math.max(...Object.values(recipes).flat().map(r => r.id)) + 1
+import { get, post, put, del } from './api'
+import type { Pill, CreatePillRequest, UpdatePillRequest, PagedList, PillListParams, SkillSchema } from './types'
 
 /**
- * 获取金丹列表
+ * 获取金丹列表（支持关键词搜索与内置过滤）
  */
-export async function getPills(): Promise<Pill[]> {
-  await mockDelay()
-  return [...pills].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+export function listPills(params: PillListParams = {}): Promise<PagedList<Pill>> {
+  return get<PagedList<Pill>>('/pills', {
+    page: params.page ?? 1,
+    page_size: params.page_size ?? 100,
+    keyword: params.keyword,
+    is_builtin: params.is_builtin,
+  })
 }
 
 /**
  * 获取单个金丹详情
  */
-export async function getPill(id: number): Promise<Pill> {
-  await mockDelay()
-  const pill = pills.find(p => p.id === id)
-  if (!pill) throw new Error('金丹不存在')
-  return { ...pill }
+export function getPill(id: number): Promise<Pill> {
+  return get<Pill>(`/pills/${id}`)
 }
 
 /**
  * 创建金丹
  */
-export async function createPill(data: CreatePillRequest): Promise<Pill> {
-  await mockDelay(600)
-  const pill: Pill = {
-    id: nextPillId++,
-    name: data.name,
-    description: data.description,
-    status: 'refining',
-    vector_count: 0,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  }
-  pills.push(pill)
-  recipes[pill.id] = []
-  return { ...pill }
+export function createPill(data: CreatePillRequest): Promise<Pill> {
+  return post<Pill>('/pills', data)
 }
 
 /**
  * 更新金丹
  */
-export async function updatePill(id: number, data: Partial<CreatePillRequest>): Promise<Pill> {
-  await mockDelay()
-  const index = pills.findIndex(p => p.id === id)
-  if (index === -1) throw new Error('金丹不存在')
-  pills[index] = {
-    ...pills[index],
-    ...data,
-    updated_at: new Date().toISOString(),
-  }
-  return { ...pills[index] }
+export function updatePill(id: number, data: UpdatePillRequest): Promise<Pill> {
+  return put<Pill>(`/pills/${id}`, data)
 }
 
 /**
- * 删除金丹（级联删除丹方）
+ * 删除金丹
  */
-export async function deletePill(id: number): Promise<void> {
-  await mockDelay()
-  pills = pills.filter(p => p.id !== id)
-  delete recipes[id]
+export function deletePill(id: number): Promise<void> {
+  return del<void>(`/pills/${id}`)
 }
 
 /**
- * 获取金丹下的丹方列表
+ * 新建金丹时的默认空 skill_schema
  */
-export async function getRecipesByPill(pillId: number): Promise<Recipe[]> {
-  await mockDelay()
-  return [...(recipes[pillId] || [])]
-}
-
-/**
- * 上传丹方文件
- */
-export async function uploadRecipes(pillId: number, files: FileList): Promise<Recipe[]> {
-  await mockDelay(1000)
-  const newRecipes: Recipe[] = []
-  for (const file of Array.from(files)) {
-    const ext = file.name.split('.').pop()?.toLowerCase() || 'txt'
-    const recipe: Recipe = {
-      id: nextRecipeId++,
-      pill_id: pillId,
-      filename: file.name,
-      file_type: ext,
-      file_size: file.size,
-      file_path: `/uploads/${pillId}/${file.name}`,
-      extract_status: 'pending',
-      chunk_count: 0,
-      created_at: new Date().toISOString(),
-    }
-    newRecipes.push(recipe)
-  }
-  if (!recipes[pillId]) recipes[pillId] = []
-  recipes[pillId].push(...newRecipes)
-
-  // 更新金丹的丹方数量和向量数
-  const pillIndex = pills.findIndex(p => p.id === pillId)
-  if (pillIndex !== -1) {
-    pills[pillIndex] = {
-      ...pills[pillIndex],
-      updated_at: new Date().toISOString(),
-    }
-  }
-
-  return newRecipes
-}
-
-/**
- * 删除丹方
- */
-export async function deleteRecipe(id: number): Promise<void> {
-  await mockDelay()
-  for (const pillId of Object.keys(recipes)) {
-    recipes[Number(pillId)] = recipes[Number(pillId)].filter(r => r.id !== id)
-  }
-}
-
-/**
- * 重新提取丹方
- */
-export async function reExtractRecipe(id: number): Promise<void> {
-  await mockDelay(800)
-  for (const pillId of Object.keys(recipes)) {
-    const recipe = recipes[Number(pillId)].find(r => r.id === id)
-    if (recipe) {
-      recipe.extract_status = 'extracting'
-      // 模拟异步完成
-      setTimeout(() => {
-        recipe.extract_status = 'completed'
-        recipe.chunk_count = Math.floor(Math.random() * 200) + 50
-      }, 2000)
-      break
-    }
+export function emptySkillSchema(): SkillSchema {
+  return {
+    identity_card: '',
+    expression_dna: {
+      sentence_length: 'mixed',
+      formality: 0.5,
+      vocabulary: [],
+      taboo_words: [],
+      rhythm: '',
+      humor_type: '',
+      certainty_style: '',
+      citation_habit: '',
+    },
+    mental_models: [],
+    decision_heuristics: [],
+    values: [],
+    anti_patterns: [],
+    honest_limits: [],
+    example_dialogues: [],
   }
 }

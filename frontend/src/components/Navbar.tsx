@@ -20,7 +20,7 @@ const navItems = [
   { path: '/', label: '主殿', icon: Home },
   { path: '/pills', label: '金丹阁', icon: CircleDot },
   { path: '/agents', label: '道人府', icon: Users },
-  { path: '/chat', label: '炼丹室', icon: MessageSquare },
+  { path: '/chat', label: '论道', icon: MessageSquare },
   { path: '/settings', label: '设置', icon: Settings },
 ]
 

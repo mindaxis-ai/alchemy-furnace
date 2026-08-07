@@ -22,51 +22,23 @@ services:
       timeout: 5s
       retries: 5
 
-  # Qdrant - 向量数据库
-  qdrant:
-    image: qdrant/qdrant:latest
-    container_name: alchemy-qdrant
-    restart: unless-stopped
-    volumes:
-      - qdrant_data:/qdrant/storage
-    ports:
-      - "${QDRANT_PORT:-6333}:6333"
-    networks:
-      - alchemy-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # Python RAG 引擎 - 炼丹核心
-  python-rag:
+  # Python 语言引擎 - 金丹合成核心
+  python-engine:
     build:
       context: ./backend/python
       dockerfile: Dockerfile
-    container_name: alchemy-python-rag
+    container_name: alchemy-python-engine
     restart: unless-stopped
     environment:
       - PYTHON_PORT=${PYTHON_PORT:-8000}
-      - QDRANT_HOST=qdrant
-      - QDRANT_PORT=6333
-      - QDRANT_COLLECTION=${QDRANT_COLLECTION:-elixir_pills}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
-      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-3-small}
-      - CHUNK_SIZE=${CHUNK_SIZE:-500}
-      - CHUNK_OVERLAP=${CHUNK_OVERLAP:-50}
-      - TOP_K=${TOP_K:-5}
-      - MAX_FILE_SIZE=${MAX_FILE_SIZE:-104857600}
-    volumes:
-      - uploads_data:/app/uploads
+      - DEFAULT_MODEL=${DEFAULT_MODEL:-gpt-4o}
+      - SYNTHESIS_MODEL=${SYNTHESIS_MODEL:-gpt-4o-mini}
     ports:
       - "${PYTHON_PORT:-8000}:8000"
     networks:
       - alchemy-network
-    depends_on:
-      qdrant:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 15s
@@ -87,11 +59,7 @@ services:
       - DB_USER=${DB_USER:-alchemy}
       - DB_PASSWORD=${DB_PASSWORD:-alchemy123}
       - DB_NAME=${DB_NAME:-alchemy_db}
-      - PYTHON_RAG_URL=http://python-rag:8000
-      - UPLOAD_DIR=/app/uploads
-      - MAX_FILE_SIZE=${MAX_FILE_SIZE:-104857600}
-    volumes:
-      - uploads_data:/app/uploads
+      - PYTHON_ENGINE_BASE_URL=http://python-engine:8000
     ports:
       - "${GO_PORT:-8080}:8080"
     networks:
@@ -99,7 +67,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      python-rag:
+      python-engine:
         condition: service_healthy
 
   # Nginx - 反向代理 + 静态文件
@@ -116,7 +84,7 @@ services:
       - alchemy-network
     depends_on:
       - go-api
-      - python-rag
+      - python-engine
 
   # Frontend Builder - 构建前端静态文件
   frontend-builder:
@@ -134,10 +102,6 @@ services:
 
 volumes:
   postgres_data:
-    driver: local
-  qdrant_data:
-    driver: local
-  uploads_data:
     driver: local
   frontend_dist:
     driver: local

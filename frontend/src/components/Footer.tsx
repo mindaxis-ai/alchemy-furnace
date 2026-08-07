@@ -22,7 +22,7 @@ export default function Footer() {
 
           {/* 中间：技术栈标签 */}
           <div className="flex flex-wrap items-center justify-center gap-2">
-            {['React 18', 'TypeScript', 'Tailwind CSS', 'RAG'].map(tag => (
+            {['React 18', 'TypeScript', 'Tailwind CSS', '金丹化性'].map(tag => (
               <span
                 key={tag}
                 className="px-2 py-0.5 text-[10px] rounded-full bg-jade-500/10 text-jade-400/70 border border-jade-500/20"
@@ -52,7 +52,7 @@ export default function Footer() {
         {/* 底部分隔 + 版权 */}
         <div className="mt-4 pt-4 border-t border-ink-700/50 text-center">
           <p className="text-[10px] text-ink-500">
-            炼丹炉 - 以道教文化为灵感的 RAG 知识库对话系统
+            炼丹炉 - 以道教文化为灵感的金丹化性（Skill-Persona Alchemy）系统
           </p>
         </div>
       </div>

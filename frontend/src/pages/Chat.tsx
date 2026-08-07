@@ -1,8 +1,8 @@
 /**
- * 炼丹室页面 - 对话大厅
+ * 论道页面 - 对话大厅
  * 左侧: 会话列表（可折叠，H5 默认折叠为底部 sheet）
  * 右侧: 聊天界面
- * 选择道人后开始对话
+ * 选择道人后开始对话（WebSocket 流式输出，无 RAG 引用来源）
  */
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -10,15 +10,14 @@ import {
   MessageSquare,
   Plus,
   Loader2,
-  Trash2,
   ChevronLeft,
-  ChevronRight,
   Bot,
   Send,
   X,
   Menu,
   Sparkles,
   Users,
+  Square,
 } from 'lucide-react'
 import { useChat } from '@/contexts/ChatContext'
 import { useAgent } from '@/contexts/AgentContext'
@@ -29,7 +28,7 @@ export default function Chat() {
   const { sessionId } = useParams<{ sessionId?: string }>()
   const navigate = useNavigate()
 
-  const { state: chatState, fetchSessions, loadMessages, streamMessage, createSession, deleteSession, cancelStream } = useChat()
+  const { state: chatState, dispatch, fetchSessions, loadMessages, streamMessage, createSession, cancelStream } = useChat()
   const { state: agentState, fetchAgents } = useAgent()
 
   const [input, setInput] = useState('')
@@ -53,8 +52,10 @@ export default function Chat() {
     if (sessionId) {
       const sid = Number(sessionId)
       loadMessages(sid)
+    } else {
+      dispatch({ type: 'CLEAR_CURRENT' })
     }
-  }, [sessionId])
+  }, [sessionId, loadMessages, dispatch])
 
   // 自动滚动到底部
   useEffect(() => {
@@ -72,8 +73,9 @@ export default function Chat() {
   /** 创建会话并跳转 */
   const handleCreateSession = async (agentId: number) => {
     const agent = agents.find(a => a.id === agentId)
-    await createSession(agentId, `与${agent?.name || '未知道人'}的对话`)
+    const session = await createSession(agentId, `与${agent?.name || '未知道人'}的论道`)
     setShowAgentSelect(false)
+    if (session) navigate(`/chat/${session.id}`)
   }
 
   /** 选择会话 */
@@ -100,10 +102,10 @@ export default function Chat() {
         <div className="flex flex-col items-center justify-center h-[60vh] text-center px-4">
           <MessageSquare className="w-16 h-16 text-ink-600 mb-4" />
           <h2 className="text-xl font-serif font-bold text-rice-paper-100 mb-2">
-            炼丹室
+            论道
           </h2>
           <p className="text-sm text-ink-400 mb-6 max-w-sm">
-            选择一位道人，开始你的论道之旅。道人将借助已服用金丹的知识为你答疑解惑。
+            选择一位道人，开始你的论道之旅。道人将以基础性格融合已服用金丹的丹性与你对谈。
           </p>
 
           <button
@@ -227,15 +229,6 @@ export default function Chat() {
                     </p>
                     <p className="text-[10px] text-ink-400">{getAgentName(session.agent_id)}</p>
                   </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      deleteSession(session.id)
-                    }}
-                    className="p-1 rounded opacity-0 group-hover:opacity-100 hover:opacity-100 hover:bg-cinnabar-500/20 text-ink-400 hover:text-cinnabar-400 transition-all"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
                 </button>
               ))}
             </div>
@@ -329,7 +322,7 @@ export default function Chat() {
               <div className="flex flex-col items-center justify-center h-full text-center">
                 <Sparkles className="w-10 h-10 text-ink-600 mb-3" />
                 <p className="text-sm text-ink-400">发送消息开始论道</p>
-                <p className="text-xs text-ink-500 mt-1">道人将借助金丹之力为你解答</p>
+                <p className="text-xs text-ink-500 mt-1">道人将以金丹化性后的性情为你作答</p>
               </div>
             )}
 
@@ -376,12 +369,13 @@ export default function Chat() {
                 rows={1}
               />
               <button
-                onClick={handleSend}
-                disabled={!input.trim() || chatState.streaming}
+                onClick={chatState.streaming ? cancelStream : handleSend}
+                disabled={!chatState.streaming && !input.trim()}
                 className="dao-btn-primary px-3 py-2.5 flex-shrink-0 disabled:opacity-40"
+                title={chatState.streaming ? '停止输出' : '发送'}
               >
                 {chatState.streaming ? (
-                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <Square className="w-5 h-5" />
                 ) : (
                   <Send className="w-5 h-5" />
                 )}

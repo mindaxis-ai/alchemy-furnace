@@ -4,7 +4,7 @@
   <img src="https://img.shields.io/badge/React-18-61DAFB?logo=react" />
   <img src="https://img.shields.io/badge/Go-1.21-00ADD8?logo=go" />
   <img src="https://img.shields.io/badge/Python-3.11-3776AB?logo=python" />
-  <img src="https://img.shields.io/badge/Qdrant-Vector_DB-FD6096?logo=qdrant" />
+  <img src="https://img.shields.io/badge/PostgreSQL-14-4169E1?logo=postgresql" />
   <img src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker" />
   <img src="https://img.shields.io/badge/License-Custom-orange.svg" />
 </p>
@@ -27,9 +27,9 @@
 
 ## 简介
 
-**炼丹炉**（Alchemy Furnace）是一款以道教炼丹文化为设计灵感的 RAG（检索增强生成）对话系统。在这里，你的文档化作**丹方**，知识库化作**金丹**，AI Agent 化作**道人**——道人服用金丹后，便能运用其中蕴含的知识与你论道对答。
+**炼丹炉**（Alchemy Furnace）是一款以道教炼丹文化为设计灵感的**金丹化性（Skill-Persona Alchemy）**人格塑造系统。在这里，语言模式与人格特质化作**金丹**，AI Agent 化作**道人**——道人服用金丹后，其言谈举止、思维方式便被金丹的"丹性"所化，以焕然一新的语言风格与你论道对答。
 
-> 古人云："丹成而龙虎伏，道备而鬼神惊。"今人以 AI 为火，以数据为药，炼就知识之金丹，养出智慧之道人。
+> 古人云："丹成而龙虎伏，道备而鬼神惊。"今人以 AI 为火，以语言模式为药，炼就人格之金丹，养出性情各异之道人。
 
 ## 关于作者
 
@@ -43,18 +43,20 @@
 
 ### 核心能力
 
-- **丹方萃取** - 支持 Word、Excel、Markdown、PDF、纯文本、音频、视频等十余种文件格式，自动提取内容
-- **炼丹入炉** - 智能文本切分（固定长度 / 段落 / 语义三种策略），向量化入库
-- **道人养成** - 创建个性化 AI Agent，配置性格、系统提示词、选用大模型
-- **服用金丹** - 一个道人可服用多颗金丹，汇聚众家之长
-- **论道对答** - 基于 RAG 的流式对话，自动引用金丹中的知识，显示来源
+- **炼丹入炉** - 以结构化技能包（skill schema）炼制金丹：表达 DNA、心智模型、决策启发式、禁忌、诚实边界、示例对话，一应俱全
+- **道人养成** - 创建个性化 AI Agent（道人），配置基础性格、选用大模型
+- **服用金丹** - 一个道人可服用多颗金丹，支持权重与服用顺序调节
+- **金丹化性** - 语言模式合成引擎将道人基础性格与所服金丹结构化合并，再经 LLM 涌现推导，生成统一的"丹性"系统提示词
+- **多丹融合** - 多颗金丹按权重折中融合，冲突维度自动检测（丹性相冲），涌现规则提炼，避免风格撕裂
+- **试丹预览** - 临时组合性格与金丹，不绑定道人即可快速预览合成效果
+- **论道对答** - 流式对话，道人始终以融合后的语言风格回应
 
 ### 技术亮点
 
 - **响应式设计** - 一套 React 代码同时兼容桌面 Web 端和手机 H5 端
-- **微服务架构** - Go 负责 API 网关，Python 负责 RAG 引擎，职责分明
+- **微服务架构** - Go 负责 API 网关与业务数据，Python 负责语言模式合成引擎与 LLM 调用，职责分明
 - **流式对话** - WebSocket 实时传输，打字机效果呈现 AI 回复
-- **异步炼丹** - 文件上传后后台自动处理，无需等待
+- **合成缓存** - 道人当前的合成系统提示词按需缓存，性格或金丹变化时自动失效重建
 - **道教美学** - 朱砂红、金箔黄、宣纸米白，CSS 动画炼丹特效，沉浸式体验
 
 ## 架构
@@ -65,23 +67,22 @@
                     南天门（Nginx）
                     /          \
               左青龙        右白虎
-           （Go API）    （Python RAG）
+           （Go API）   （Python 语言引擎）
               │              │
-         玉简库（PG）    丹房（Qdrant）
+         玉简库（PG）    LLM（OpenAI 兼容）
 ```
 
 | 服务 | 技术 | 职责 | 端口 |
 |------|------|------|------|
 | **紫府** | React 18 + TypeScript + Tailwind CSS | 用户界面 | 80 (Nginx) |
-| **左青龙** | Go 1.21 + Gin + GORM | API 网关、业务逻辑 | 8080 |
-| **右白虎** | Python 3.11 + FastAPI + LangChain | RAG 引擎、LLM 调用 | 8000 |
+| **左青龙** | Go 1.21 + Gin + GORM | API 网关、业务逻辑、道人/金丹/会话持久化 | 8080 |
+| **右白虎** | Python 3.11 + FastAPI | 语言模式合成引擎、LLM 调用 | 8000 |
 | **玉简库** | PostgreSQL 14 | 业务数据持久化 | 5432 |
-| **丹房** | Qdrant | 向量存储与检索 | 6333 |
 | **南天门** | Nginx | 反向代理、静态文件 | 80 |
 
 ## 快速开始
 
-###  prerequisites
+### 环境要求
 
 - [Docker](https://docs.docker.com/get-docker/) 20.10+
 - [Docker Compose](https://docs.docker.com/compose/install/) 2.0+
@@ -118,16 +119,34 @@ make ps         # 查看状态
 make clean      # 清理所有数据
 make dev-front  # 前端开发模式
 make dev-go     # Go 后端开发模式
-make dev-python # Python RAG 开发模式
+make dev-python # Python 语言引擎开发模式
+```
+
+### 本地开发（无 Docker）
+
+需要本机具备：PostgreSQL 14+（如 [Postgres.app](https://postgresapp.com/)）、Go 1.21+、Python 3.11+、Node.js 20+。
+
+```bash
+# 1. 准备数据库（本地 PostgreSQL 监听 5432）
+createuser alchemy && createdb -O alchemy alchemy_db
+psql -c "ALTER USER alchemy PASSWORD 'alchemy123';"
+
+# 2. 配置环境（DB_HOST 改为 localhost，PYTHON_ENGINE_BASE_URL 改为 http://localhost:8000）
+cp .env.example .env  # 按本机地址编辑
+
+# 3. 分三个终端启动
+make dev-python   # Python 语言引擎 → http://localhost:8000
+make dev-go       # Go API 网关（自动迁移 + 写入内置金丹）→ http://localhost:8080
+make dev-front    # React 前端 → http://localhost:3000
 ```
 
 ### 首次使用指南
 
-1. **创建金丹** - 进入「金丹阁」，点击「炼制新丹」，输入名称和描述
-2. **上传丹方** - 进入金丹详情页，拖拽或选择文件上传（支持 docx/xlsx/md/pdf/音频/视频等）
-3. **孕育道人** - 进入「道人府」，点击「收徒」，配置道人的名称、性格和选用的大模型
-4. **服用金丹** - 进入道人详情页，选择已炼制好的金丹让道人服用
-5. **开炉论道** - 进入「炼丹室」，选择道人，开始对话！
+1. **炼制金丹** - 进入「炼丹房」，创建金丹：填写表达 DNA（句式长度、正式程度、常用词汇、禁忌词）、心智模型、决策启发式、示例对话等结构化内容
+2. **孕育道人** - 进入「道人府」，点击「收徒」，配置道人的名称、基础性格和选用的大模型
+3. **服用金丹** - 进入道人详情页，选择已炼制好的金丹让道人服用，可调节权重与服用顺序
+4. **试丹预览**（可选）- 进入「试丹」页面临时组合性格与金丹，快速预览合成效果
+5. **开炉论道** - 进入「论道」，选择道人，开始对话！
 
 ## 概念
 
@@ -135,54 +154,48 @@ make dev-python # Python RAG 开发模式
 
 > "金丹者，混元一气之所结也。"
 
-金丹即**知识库**。你可以创建多个金丹，每个金丹包含一组相关的丹方（文档）。金丹有状态：炼制中（refining）→ 炼成（refined）。
+金丹即**语言模式/人格特质的结构化技能包**。每颗金丹包含：
 
-### 丹方（Elixir Recipe）
-
-> "丹方者，采药之规程也。"
-
-丹方即**文档文件**。支持十余种格式：
-
-| 格式 | 扩展名 | 说明 |
-|------|--------|------|
-| Word | .doc, .docx | 自动提取正文 |
-| Excel | .xls, .xlsx | 逐 Sheet 提取 |
-| Markdown | .md | 原生支持 |
-| 文本 | .txt | 原生支持 |
-| PDF | .pdf | 逐页提取 |
-| 音频 | .mp3, .wav, .m4a | Whisper 转录 |
-| 视频 | .mp4, .avi, .mov | 提取字幕 |
+| 字段 | 说明 |
+|------|------|
+| identity_card | 身份卡：金丹所化人格的自我认知 |
+| expression_dna | 表达 DNA：句式长度、正式程度、常用词汇、禁忌词 |
+| mental_models | 心智模型：看待问题的思维框架 |
+| decision_heuristics | 决策启发式：特定情境下的表达策略 |
+| values / anti_patterns | 价值取向与反模式 |
+| honest_limits | 诚实边界：能力局限的坦诚声明 |
+| example_dialogues | 示例对话：风格的具体示范 |
 
 ### 道人（Dao Agent）
 
 > "道者，万物之所系也。"
 
-道人即 **AI Agent**。每个道人有独立的性格、系统提示词和选用的大模型。一个道人可以服用多颗金丹，从而拥有多个领域的知识。
+道人即 **AI Agent**。每个道人有独立的基础性格、系统提示词和选用的大模型。道人的言谈由"基础性格 + 所服金丹"共同塑造。
 
 ### 服用金丹（Bind Pill）
 
 > "服食金丹，脱胎换骨，通达古今。"
 
-将金丹与道人绑定，道人在对话时便能引用该金丹中的知识。一个道人可服用多颗金丹，知识库越丰富，论道越精彩。
+将金丹与道人绑定，可配置**权重**（weight）与**服用顺序**（sort_order）。一个道人可服用多颗金丹，众丹之性融于一身。
 
-### 炼丹（RAG Pipeline）
+### 金丹化性（Language Pattern Synthesis）
 
 > "采药 → 配比 → 入炉 → 温养 → 开炉取丹"
 
-对应 RAG 流程：
+对应合成流程：
 
-| 炼丹步骤 | RAG 步骤 | 说明 |
+| 炼丹步骤 | 合成步骤 | 说明 |
 |---------|---------|------|
-| 采药 | 文档提取 | 解析文件获取原始文本 |
-| 配比 | 文本切分 | 按策略切分为 chunks |
-| 入炉 | 向量化 | Embedding 转换为向量 |
-| 温养 | 入库 | 存入 Qdrant 向量库 |
-| 开炉取丹 | 检索 | 对话时相似度搜索 |
+| 采药 | 取性 | 读取道人基础性格与所服金丹 |
+| 配比 | 结构化合并 | 按权重 blending 表达 DNA 与心智模型，去重、检测冲突 |
+| 入炉 | 涌现推导 | 一次 LLM 调用提炼融合后的"丹性"与涌现规则 |
+| 温养 | 缓存 | 合成后的系统提示词缓存于道人，变化时自动重建 |
+| 开炉取丹 | 论道 | 以合成提示词调用 LLM 生成回复 |
 
 ## 截图
 
 <p align="center">
-  <i>🖼️ 金丹阁 - 知识库管理</i>
+  <i>🖼️ 炼丹房 - 金丹（技能包）管理</i>
 </p>
 
 <p align="center">
@@ -190,7 +203,7 @@ make dev-python # Python RAG 开发模式
 </p>
 
 <p align="center">
-  <i>🖼️ 炼丹室 - 流式对话</i>
+  <i>🖼️ 论道 - 流式对话</i>
 </p>
 
 ## API
@@ -200,32 +213,42 @@ make dev-python # Python RAG 开发模式
 ### 快速示例
 
 ```bash
-# 创建金丹
+# 创建金丹（结构化技能包）
 curl -X POST http://localhost:8080/api/v1/pills \
   -H "Content-Type: application/json" \
-  -d '{"name": "道德经", "description": "老子五千言"}'
-
-# 上传丹方
-curl -X POST http://localhost:8080/api/v1/recipes/upload \
-  -F "files[]=@dao_de_jing.md" \
-  -F "pill_id=1"
+  -d '{
+    "name": "文言文金丹",
+    "description": "令道人开口便是之乎者也",
+    "skill_schema": {
+      "identity_card": "我是一位熟读经史的古人，说话喜用文言。",
+      "expression_dna": {
+        "sentence_length": "medium",
+        "formality": 0.9,
+        "vocabulary": ["之", "乎", "者", "也"],
+        "taboo_words": ["你", "我", "的", "了"]
+      }
+    },
+    "tags": ["文言文", "古雅"],
+    "author": "system",
+    "version": "1.0.0"
+  }'
 
 # 创建道人
 curl -X POST http://localhost:8080/api/v1/agents \
   -H "Content-Type: application/json" \
   -d '{
     "name": "太上老君",
-    "personality": "你是太上老君，道家的始祖。言谈充满无上智慧，善用《道德经》的哲理来阐释万物。语气超然物外，又平易近人。",
+    "personality": "你是太上老君，道家的始祖。言谈充满无上智慧，善用《道德经》的哲理来阐释万物。",
     "model_name": "gpt-4o"
   }'
 
-# 服用金丹
+# 服用金丹（支持权重与顺序）
 curl -X POST http://localhost:8080/api/v1/agents/1/pills \
   -H "Content-Type: application/json" \
-  -d '{"pill_id": 1}'
+  -d '{"pill_id": 1, "weight": 1.0, "sort_order": 0}'
 
 # 创建会话并对话（WebSocket）
-# 详见 API 文档
+# 详见 API 文档与 specs/001-skill-persona-alchemy-pivot/quickstart.md
 ```
 
 ## 文档
@@ -235,8 +258,8 @@ curl -X POST http://localhost:8080/api/v1/agents/1/pills \
 | [docs/architecture.md](docs/architecture.md) | 系统架构详解 |
 | [docs/api.md](docs/api.md) | API 接口文档 |
 | [docs/frontend.md](docs/frontend.md) | 前端开发文档 |
-| [docs/rag-engine.md](docs/rag-engine.md) | RAG 引擎文档 |
 | [docs/deployment.md](docs/deployment.md) | 部署指南 |
+| [specs/001-skill-persona-alchemy-pivot/quickstart.md](specs/001-skill-persona-alchemy-pivot/quickstart.md) | 金丹化性系统快速验证指南 |
 
 ## 项目结构
 
@@ -250,20 +273,23 @@ alchemy-furnace/
 │   ├── architecture.md          # 架构文档
 │   ├── api.md                   # API 文档
 │   ├── frontend.md              # 前端文档
-│   ├── rag-engine.md            # RAG 引擎文档
 │   └── deployment.md            # 部署指南
 ├── backend/
 │   ├── go/                      # Go API 网关
 │   │   ├── cmd/server/
-│   │   ├── internal/
+│   │   ├── dao/
+│   │   ├── handler/
+│   │   ├── model/
 │   │   ├── pkg/
+│   │   ├── service/
 │   │   ├── go.mod
 │   │   └── Dockerfile
-│   └── python/                  # Python RAG 引擎
+│   └── python/                  # Python 语言模式合成引擎
 │       ├── app/
-│       ├── core/
-│       ├── models/
-│       ├── services/
+│       │   ├── api/
+│       │   ├── core/
+│       │   ├── models/
+│       │   └── services/
 │       ├── requirements.txt
 │       └── Dockerfile
 └── frontend/                    # React 前端
@@ -290,25 +316,21 @@ alchemy-furnace/
 - RESTful API
 - Zap 日志
 
-### RAG 引擎
+### 语言模式合成引擎
 - Python 3.11 + FastAPI
-- LangChain + OpenAI
-- Qdrant 向量数据库
-- Whisper（音频转录）
-- FFmpeg（视频处理）
+- OpenAI SDK（兼容任意 OpenAI 接口）
+- 结构化合并 + LLM 涌现推导
 
 ## 开发计划
 
-- [x] 金丹管理（知识库 CRUD）
-- [x] 丹方管理（文件上传、解析）
+- [x] 金丹管理（技能包 CRUD）
 - [x] 道人管理（Agent CRUD）
-- [x] 服用金丹（知识库绑定）
+- [x] 服用金丹（权重与顺序配置）
+- [x] 语言模式合成引擎（结构化合并 + LLM 涌现推导）
+- [x] 试丹预览（临时组合快速验证）
 - [x] 流式对话（WebSocket）
-- [x] 音频转录（Whisper）
-- [x] 视频字幕提取
-- [x] RAG 检索增强
 - [ ] 多轮对话上下文优化
-- [ ] 知识图谱支持
+- [ ] 丹性相冲可视化提示
 - [ ] 多用户权限管理
 - [ ] 炼丹过程可视化
 - [ ] 金丹分享与 marketplace

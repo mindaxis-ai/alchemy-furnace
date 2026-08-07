@@ -1,6 +1,6 @@
 # ═══════════════════════════════════════════
-# 炼丹炉 RAG 系统 - Makefile
-# Alchemy Furnace RAG System
+# 炼丹炉 · 金丹化性系统 - Makefile
+# Alchemy Furnace Skill-Persona System
 # ═══════════════════════════════════════════
 
 .PHONY: help init build up down logs ps clean dev-front dev-go dev-python test
@@ -15,7 +15,7 @@ help:
 	@echo " ██║  ██║███████╗╚██████╗██║  ██║███████╗██║ ╚═╝ ██║   ██║   "
 	@echo " ╚═╝  ╚═╝╚══════╝ ╚═════╝╚═╝  ╚═╝╚══════╝╚═╝     ╚═╝   ╚═╝   "
 	@echo ""
-	@echo "  🏺 炼丹炉 RAG 系统 - 可用命令"
+	@echo "  🏺 炼丹炉 · 金丹化性系统 - 可用命令"
 	@echo ""
 	@echo "  系统管理:"
 	@echo "    make init         初始化环境（复制 .env 文件）"
@@ -30,11 +30,12 @@ help:
 	@echo "  独立开发:"
 	@echo "    make dev-front    启动前端开发服务器"
 	@echo "    make dev-go       启动 Go 后端开发服务器"
-	@echo "    make dev-python   启动 Python RAG 开发服务器"
+	@echo "    make dev-python   启动 Python 语言引擎开发服务器"
 	@echo ""
 	@echo "  测试与维护:"
 	@echo "    make test         运行所有测试"
 	@echo "    make migrate      执行数据库迁移"
+	@echo "    make seed         写入内置示例金丹"
 	@echo "    make format       格式化所有代码"
 	@echo ""
 
@@ -56,8 +57,7 @@ up:
 	@echo "✅ 炼丹炉已启动"
 	@echo "   前端: http://localhost"
 	@echo "   Go API: http://localhost:8080"
-	@echo "   Python RAG: http://localhost:8000"
-	@echo "   Qdrant: http://localhost:6333"
+	@echo "   Python 语言引擎: http://localhost:8000"
 
 down:
 	@echo "🛑 停止炼丹炉..."
@@ -73,7 +73,7 @@ logs-go:
 	docker-compose logs -f go-api
 
 logs-python:
-	docker-compose logs -f python-rag
+	docker-compose logs -f python-engine
 
 logs-db:
 	docker-compose logs -f postgres
@@ -98,7 +98,7 @@ dev-go:
 	cd backend/go && go mod tidy && go run cmd/server/main.go
 
 dev-python:
-	@echo "⚡ 启动 Python RAG 开发服务器..."
+	@echo "⚡ 启动 Python 语言引擎开发服务器..."
 	cd backend/python && pip install -r requirements.txt && uvicorn app.main:app --reload
 
 # ─── 测试与维护 ───
@@ -108,9 +108,25 @@ test:
 	cd backend/go && go test ./...
 	cd backend/python && pytest
 
+test-go:
+	@echo "🧪 运行 Go 测试..."
+	cd backend/go && go test ./...
+
+test-python:
+	@echo "🧪 运行 Python 测试..."
+	cd backend/python && pytest
+
+test-frontend:
+	@echo "🧪 运行前端类型检查与构建..."
+	cd frontend && npm run build
+
 migrate:
 	@echo "🗃️  执行数据库迁移..."
 	cd backend/go && go run cmd/server/main.go migrate
+
+seed:
+	@echo "💊 写入内置示例金丹..."
+	cd backend/go && go run cmd/server/main.go seed
 
 format:
 	@echo "🎨 格式化代码..."

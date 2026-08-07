@@ -31,7 +31,7 @@ function App() {
               {/* 首页 - 炼丹炉主殿 */}
               <Route path="/" element={<Home />} />
 
-              {/* 金丹阁 - 知识库管理 */}
+              {/* 金丹阁 - 语言模式金丹管理 */}
               <Route path="/pills" element={<Pills />} />
               <Route path="/pills/:id" element={<PillDetail />} />
 
@@ -39,7 +39,7 @@ function App() {
               <Route path="/agents" element={<Agents />} />
               <Route path="/agents/:id" element={<AgentDetail />} />
 
-              {/* 炼丹室 - 对话 */}
+              {/* 论道 - 对话 */}
               <Route path="/chat" element={<Chat />} />
               <Route path="/chat/:sessionId" element={<Chat />} />
 

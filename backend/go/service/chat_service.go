@@ -19,13 +19,13 @@ import (
 
 // ChatService 对话业务逻辑
 type ChatService struct {
-	ragBaseURL string
+	engineBaseURL string
 }
 
 // NewChatService 创建对话业务实例
 func NewChatService() *ChatService {
 	return &ChatService{
-		ragBaseURL: config.Get().PythonRAG.BaseURL,
+		engineBaseURL: config.Get().PythonEngine.BaseURL,
 	}
 }
 
@@ -150,14 +150,14 @@ func (s *ChatService) SaveMessage(sessionID uint, role, content string, sources 
 	return &msg, nil
 }
 
-// CallRAGStream 调用 Python RAG 的流式对话接口（SSE），返回响应流
+// CallChatStream 调用 Python 语言引擎的流式对话接口（SSE），返回响应流
+// messages 应已包含合成后的 system 消息（由 LanguagePatternService 提供）
 // 此函数由 handler 的 WebSocket 调用，获取 SSE 流后转发给客户端
-func (s *ChatService) CallRAGStream(messages []map[string]string, pillIDs []uint, modelName string) (io.ReadCloser, error) {
-	url := fmt.Sprintf("%s/api/v1/chat/completions/stream", s.ragBaseURL)
+func (s *ChatService) CallChatStream(messages []map[string]string, modelName string) (io.ReadCloser, error) {
+	url := fmt.Sprintf("%s/api/v1/chat/completions/stream", s.engineBaseURL)
 
 	reqBody := map[string]interface{}{
 		"messages": messages,
-		"pill_ids": pillIDs,
 		"model":    modelName,
 	}
 	jsonBody, _ := json.Marshal(reqBody)
@@ -165,39 +165,31 @@ func (s *ChatService) CallRAGStream(messages []map[string]string, pillIDs []uint
 	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Post(url, "application/json", bytes.NewBuffer(jsonBody))
 	if err != nil {
-		return nil, fmt.Errorf("调用 RAG 流式对话接口失败: %w", err)
+		return nil, fmt.Errorf("调用语言引擎流式对话接口失败: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		return nil, fmt.Errorf("RAG 流式接口返回错误: status=%d, body=%s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("语言引擎流式接口返回错误: status=%d, body=%s", resp.StatusCode, string(body))
 	}
 
 	return resp.Body, nil
 }
 
-// GetSessionAgentInfo 获取会话关联的道人信息，包括模型名和已服用金丹列表
-// 用于 WebSocket 聊天时构建 RAG 请求
-func (s *ChatService) GetSessionAgentInfo(sessionID uint) (agentID uint, modelName string, pillIDs []uint, err error) {
+// GetSessionAgentInfo 获取会话关联的道人信息（ID 与模型名）
+// 用于 WebSocket 聊天时构建对话请求
+func (s *ChatService) GetSessionAgentInfo(sessionID uint) (agentID uint, modelName string, err error) {
 	// 查询会话
 	var session model.ChatSession
 	if err := dao.GetDB().First(&session, sessionID).Error; err != nil {
-		return 0, "", nil, fmt.Errorf("会话(id=%d)不存在: %w", sessionID, err)
+		return 0, "", fmt.Errorf("会话(id=%d)不存在: %w", sessionID, err)
 	}
 
 	// 查询道人信息
 	var agent model.DaoAgent
 	if err := dao.GetDB().First(&agent, session.AgentID).Error; err != nil {
-		return 0, "", nil, fmt.Errorf("道人(id=%d)不存在: %w", session.AgentID, err)
-	}
-
-	// 查询道人已服用的金丹
-	var ids []uint
-	if err := dao.GetDB().Model(&model.AgentPill{}).
-		Where("agent_id = ?", session.AgentID).
-		Pluck("pill_id", &ids).Error; err != nil {
-		return 0, "", nil, fmt.Errorf("获取道人金丹列表失败: %w", err)
+		return 0, "", fmt.Errorf("道人(id=%d)不存在: %w", session.AgentID, err)
 	}
 
 	modelName = agent.ModelName
@@ -205,7 +197,7 @@ func (s *ChatService) GetSessionAgentInfo(sessionID uint) (agentID uint, modelNa
 		modelName = config.Get().LLM.DefaultModel
 	}
 
-	return session.AgentID, modelName, ids, nil
+	return session.AgentID, modelName, nil
 }
 
 // UpdateSessionTitle 更新会话标题

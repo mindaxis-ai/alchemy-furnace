@@ -21,7 +21,7 @@ type SystemHandler struct {
 // NewSystemHandler 创建系统处理器
 func NewSystemHandler() *SystemHandler {
 	return &SystemHandler{
-		version: "1.0.0",
+		version: "2.0.0",
 	}
 }
 
@@ -29,18 +29,36 @@ func NewSystemHandler() *SystemHandler {
 // GET /api/v1/system/health
 // 返回各个组件的健康状态，用于监控和负载均衡
 func (h *SystemHandler) HealthCheck(c *gin.Context) {
-	health := model.HealthCheckResponse{
-		Status:    "ok",
-		Version:   h.version,
-		Timestamp: time.Now().Unix(),
-		DB:        "ok",
-		Qdrant:    "unknown", // 可通过实际请求检测
-		PythonRAG: "unknown", // 可通过实际请求检测
+	pythonEngine := "unknown"
+	if pingEngine(config.Get().PythonEngine.BaseURL) {
+		pythonEngine = "ok"
 	}
 
-	// TODO: 可以在这里添加对 Qdrant 和 Python RAG 的实际连通性检查
+	status := "ok"
+	if pythonEngine != "ok" {
+		status = "degraded"
+	}
+
+	health := model.HealthCheckResponse{
+		Status:       status,
+		Version:      h.version,
+		Timestamp:    time.Now().Unix(),
+		DB:           "ok",
+		PythonEngine: pythonEngine,
+	}
 
 	c.JSON(http.StatusOK, health)
+}
+
+// pingEngine 检测 Python 语言引擎连通性
+func pingEngine(baseURL string) bool {
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get(baseURL + "/health")
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
 }
 
 // GetConfig 获取系统配置
@@ -50,14 +68,10 @@ func (h *SystemHandler) GetConfig(c *gin.Context) {
 	cfg := config.Get()
 
 	data := gin.H{
-		"version":       h.version,
-		"models":        cfg.LLM.Models,
-		"default_model": cfg.LLM.DefaultModel,
-		"upload": gin.H{
-			"max_size_mb":   cfg.Upload.MaxSize,
-			"allow_types":   cfg.Upload.AllowTypes,
-			"max_files":     20,
-		},
+		"version":         h.version,
+		"models":          cfg.LLM.Models,
+		"default_model":   cfg.LLM.DefaultModel,
+		"synthesis_model": cfg.LLM.SynthesisModel,
 	}
 
 	response.Success(c, data)

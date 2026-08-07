@@ -53,6 +53,12 @@ func main() {
 	}
 	defer dao.CloseDatabase()
 
+	// 子命令: migrate / seed（InitDatabase 已包含自动迁移与内置金丹种子写入，均为幂等）
+	if len(os.Args) > 1 && (os.Args[1] == "migrate" || os.Args[1] == "seed") {
+		log.Printf("[炼丹炉] 子命令 %s 执行完成（迁移与种子数据均已就绪）", os.Args[1])
+		return
+	}
+
 	// ---------- 4. 设置 Gin 模式 ----------
 	gin.SetMode(cfg.Server.Mode)
 
@@ -69,13 +75,13 @@ func main() {
 
 	// ---------- 7. 初始化处理器 ----------
 	pillHandler := handler.NewPillHandler()
-	recipeHandler := handler.NewRecipeHandler()
 	agentHandler := handler.NewAgentHandler()
 	chatHandler := handler.NewChatHandler()
 	systemHandler := handler.NewSystemHandler()
+	trialHandler := handler.NewTrialHandler()
 
 	// ---------- 8. 注册路由 ----------
-	setupRoutes(r, pillHandler, recipeHandler, agentHandler, chatHandler, systemHandler)
+	setupRoutes(r, pillHandler, agentHandler, chatHandler, systemHandler, trialHandler)
 
 	// ---------- 9. 启动 HTTP 服务 ----------
 	port := cfg.Server.Port
@@ -122,10 +128,10 @@ func main() {
 func setupRoutes(
 	r *gin.Engine,
 	pill *handler.PillHandler,
-	recipe *handler.RecipeHandler,
 	agent *handler.AgentHandler,
 	chat *handler.ChatHandler,
 	system *handler.SystemHandler,
+	trial *handler.TrialHandler,
 ) {
 	// API v1 根路径
 	v1 := r.Group("/api/v1")
@@ -140,35 +146,34 @@ func setupRoutes(
 		pills.DELETE("/:id", pill.DeletePill) // 删除金丹
 	}
 
-	// ---------- 丹方管理 ----------
-	recipes := v1.Group("/recipes")
-	{
-		recipes.POST("/upload", recipe.UploadRecipes)         // 上传丹方
-		recipes.GET("/pill/:pill_id", recipe.ListRecipesByPill) // 金丹下丹方列表
-		recipes.DELETE("/:id", recipe.DeleteRecipe)           // 删除丹方
-		recipes.POST("/:id/re-extract", recipe.ReExtract)     // 重新提取
-	}
-
 	// ---------- 道人管理 ----------
 	agents := v1.Group("/agents")
 	{
-		agents.GET("", agent.ListAgents)                // 道人列表
-		agents.POST("", agent.CreateAgent)              // 创建道人
-		agents.GET("/:id", agent.GetAgent)              // 道人详情
-		agents.PUT("/:id", agent.UpdateAgent)           // 更新道人
-		agents.DELETE("/:id", agent.DeleteAgent)        // 删除道人
-		agents.POST("/:id/pills", agent.BindPill)       // 服用金丹
-		agents.DELETE("/:id/pills/:pill_id", agent.UnbindPill) // 解除绑定
-		agents.GET("/:id/pills", agent.ListAgentPills)  // 已服用金丹列表
+		agents.GET("", agent.ListAgents)                         // 道人列表
+		agents.POST("", agent.CreateAgent)                       // 创建道人
+		agents.GET("/:id", agent.GetAgent)                       // 道人详情
+		agents.PUT("/:id", agent.UpdateAgent)                    // 更新道人
+		agents.DELETE("/:id", agent.DeleteAgent)                 // 删除道人
+		agents.POST("/:id/pills", agent.BindPill)                // 服用金丹
+		agents.PUT("/:id/pills/:pill_id", agent.UpdateAgentPill) // 更新服用记录（权重/顺序）
+		agents.DELETE("/:id/pills/:pill_id", agent.UnbindPill)   // 解除绑定
+		agents.GET("/:id/pills", agent.ListAgentPills)           // 已服用金丹列表
 	}
 
 	// ---------- 对话管理 ----------
 	chatGroup := v1.Group("/chat")
 	{
-		chatGroup.POST("/sessions", chat.CreateSession)         // 创建会话
-		chatGroup.GET("/sessions", chat.ListSessions)           // 会话列表
+		chatGroup.POST("/sessions", chat.CreateSession)           // 创建会话
+		chatGroup.GET("/sessions", chat.ListSessions)             // 会话列表
 		chatGroup.GET("/sessions/:id/messages", chat.GetMessages) // 消息历史
-		chatGroup.GET("/ws/:session_id", chat.WebSocketChat)    // WebSocket 流式对话
+		chatGroup.GET("/ws/:session_id", chat.WebSocketChat)      // WebSocket 流式对话
+	}
+
+	// ---------- 试丹（临时组合预览） ----------
+	trialGroup := v1.Group("/trial")
+	{
+		trialGroup.POST("/synthesis", trial.Synthesize) // 合成预览
+		trialGroup.POST("/chat", trial.Chat)            // 临时对话（非流式）
 	}
 
 	// ---------- 系统接口 ----------

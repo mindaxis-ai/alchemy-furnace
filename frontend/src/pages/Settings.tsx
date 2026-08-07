@@ -17,12 +17,12 @@ import {
   Heart,
 } from 'lucide-react'
 import Layout from '@/components/Layout'
-import { mockModels } from '@/services/mockData'
+import { AVAILABLE_MODELS, DEFAULT_MODEL } from '@/services/models'
 
 export default function Settings() {
   const [apiKey, setApiKey] = useState('')
   const [baseUrl, setBaseUrl] = useState('https://api.openai.com/v1')
-  const [defaultModel, setDefaultModel] = useState('gpt-4o')
+  const [defaultModel, setDefaultModel] = useState(DEFAULT_MODEL)
   const [saved, setSaved] = useState(false)
 
   /** 保存设置 */
@@ -95,7 +95,7 @@ export default function Settings() {
                   onChange={e => setDefaultModel(e.target.value)}
                   className="dao-input"
                 >
-                  {mockModels.map(model => (
+                  {AVAILABLE_MODELS.map(model => (
                     <option key={model.id} value={model.id}>
                       {model.name} ({model.provider})
                     </option>
@@ -113,7 +113,7 @@ export default function Settings() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {mockModels.map(model => (
+              {AVAILABLE_MODELS.map(model => (
                 <div
                   key={model.id}
                   className="flex items-center gap-3 p-3 rounded-lg bg-ink-800/50 border border-bronze-600/20"
@@ -169,8 +169,8 @@ export default function Settings() {
               <p className="text-xs text-ink-400 mb-4">v1.0.0</p>
 
               <p className="text-sm text-ink-400 leading-relaxed mb-4">
-                以道教炼丹文化为设计灵感的 RAG 知识库对话系统。
-                金丹即知识库，丹方即文档，道人即 AI Agent。
+                以道教炼丹文化为设计灵感的金丹化性系统。
+                金丹即语言模式技能包，道人即 AI Agent，服丹化性，围炉论道。
               </p>
 
               <div className="dao-divider text-[10px] w-full mb-4">
@@ -195,7 +195,7 @@ export default function Settings() {
           <section className="dao-card p-5">
             <h3 className="text-sm font-medium text-gold-300 mb-3">技术栈</h3>
             <div className="flex flex-wrap gap-2">
-              {['React 18', 'TypeScript', 'Tailwind CSS', 'Vite', 'Go', 'Python', 'PostgreSQL', 'Qdrant'].map(tech => (
+              {['React 18', 'TypeScript', 'Tailwind CSS', 'Vite', 'Go API', 'Python 语言引擎', 'PostgreSQL'].map(tech => (
                 <span
                   key={tech}
                   className="px-2.5 py-1 text-[11px] rounded-full bg-jade-500/10 text-jade-400 border border-jade-500/20"

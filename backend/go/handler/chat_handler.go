@@ -4,8 +4,8 @@
 // WebSocket 聊天流程:
 //  1. 接收用户消息
 //  2. 查询会话关联的道人
-//  3. 获取道人已服用的金丹(pill_ids)
-//  4. 调用 Python RAG /chat/completions/stream (SSE)
+//  3. 加载/合成道人的语言模式（系统提示词）
+//  4. 调用 Python 语言引擎 /chat/completions/stream (SSE)
 //  5. 流式转发给 WebSocket 客户端
 //  6. 保存消息到数据库
 package handler
@@ -38,13 +38,15 @@ var upgrader = websocket.Upgrader{
 
 // ChatHandler 对话 HTTP 处理器
 type ChatHandler struct {
-	service *service.ChatService
+	service  *service.ChatService
+	patterns *service.LanguagePatternService
 }
 
 // NewChatHandler 创建对话处理器
 func NewChatHandler() *ChatHandler {
 	return &ChatHandler{
-		service: service.NewChatService(),
+		service:  service.NewChatService(),
+		patterns: service.NewLanguagePatternService(),
 	}
 }
 
@@ -111,10 +113,11 @@ func (h *ChatHandler) GetMessages(c *gin.Context) {
 // 协议: WebSocket
 //
 // 消息格式（JSON）:
-//   客户端 -> 服务端: { "content": "用户问题" }
-//   服务端 -> 客户端: { "type": "chunk", "content": "回答片段" }
-//   服务端 -> 客户端: { "type": "done", "content": "" }
-//   服务端 -> 客户端: { "type": "error", "content": "错误信息" }
+//
+//	客户端 -> 服务端: { "content": "用户问题" }
+//	服务端 -> 客户端: { "type": "chunk", "content": "回答片段" }
+//	服务端 -> 客户端: { "type": "done", "content": "" }
+//	服务端 -> 客户端: { "type": "error", "content": "错误信息" }
 func (h *ChatHandler) WebSocketChat(c *gin.Context) {
 	sessionID, err := strconv.ParseUint(c.Param("session_id"), 10, 32)
 	if err != nil {
@@ -133,10 +136,18 @@ func (h *ChatHandler) WebSocketChat(c *gin.Context) {
 	zap.L().Info("[炼丹炉] 仙缘已到，WebSocket 连接已建立",
 		zap.Uint64("session_id", sessionID))
 
-	// 获取会话关联的道人信息和已服用金丹
-	agentID, modelName, pillIDs, err := h.service.GetSessionAgentInfo(uint(sessionID))
+	// 获取会话关联的道人信息
+	agentID, modelName, err := h.service.GetSessionAgentInfo(uint(sessionID))
 	if err != nil {
 		h.sendWSMessage(ws, "error", "获取会话信息失败: "+err.Error())
+		return
+	}
+
+	// 加载/合成道人的语言模式（系统提示词）
+	pattern, err := h.patterns.GetOrBuildPattern(agentID)
+	if err != nil {
+		zap.L().Error("[炼丹炉] 语言模式合成失败", zap.Error(err))
+		h.sendWSMessage(ws, "error", "化丹为性失败: "+err.Error())
 		return
 	}
 
@@ -144,7 +155,7 @@ func (h *ChatHandler) WebSocketChat(c *gin.Context) {
 		zap.Uint64("session_id", sessionID),
 		zap.Uint("agent_id", agentID),
 		zap.String("model", modelName),
-		zap.Uint64s("pill_ids", uint64Slice(pillIDs)))
+		zap.String("fingerprint", pattern.SourceFingerprint))
 
 	// 持续监听客户端消息
 	for {
@@ -181,8 +192,10 @@ func (h *ChatHandler) WebSocketChat(c *gin.Context) {
 			continue
 		}
 
-		// 构建消息列表（OpenAI 格式）
-		var messages []map[string]string
+		// 构建消息列表（OpenAI 格式，首条为合成后的系统提示词）
+		messages := []map[string]string{
+			{"role": "system", "content": pattern.SystemPrompt},
+		}
 		for _, m := range recentMessages {
 			messages = append(messages, map[string]string{
 				"role":    m.Role,
@@ -190,10 +203,10 @@ func (h *ChatHandler) WebSocketChat(c *gin.Context) {
 			})
 		}
 
-		// 3. 调用 RAG 流式对话接口（SSE）
-		ragStream, err := h.service.CallRAGStream(messages, pillIDs, modelName)
+		// 3. 调用语言引擎流式对话接口（SSE）
+		ragStream, err := h.service.CallChatStream(messages, modelName)
 		if err != nil {
-			zap.L().Error("[炼丹炉] 调用 RAG 流式接口失败", zap.Error(err))
+			zap.L().Error("[炼丹炉] 调用语言引擎流式接口失败", zap.Error(err))
 			h.sendWSMessage(ws, "error", "炼丹服务暂时不可用: "+err.Error())
 			continue
 		}
@@ -216,29 +229,25 @@ func (h *ChatHandler) WebSocketChat(c *gin.Context) {
 				break
 			}
 
-			// 解析 SSE JSON
+			// 解析 SSE JSON（语言引擎直接输出 {"content": "..."} 格式）
 			var chunk struct {
-				Choices []struct {
-					Delta struct {
-						Content string `json:"content"`
-					} `json:"delta"`
-				} `json:"choices"`
+				Content string `json:"content"`
+				Error   string `json:"error"`
 			}
 
 			if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 				continue // 跳过无法解析的行
 			}
 
-			// 提取内容
-			var content string
-			for _, choice := range chunk.Choices {
-				content += choice.Delta.Content
+			if chunk.Error != "" {
+				h.sendWSMessage(ws, "error", chunk.Error)
+				break
 			}
 
-			if content != "" {
-				fullContent.WriteString(content)
+			if chunk.Content != "" {
+				fullContent.WriteString(chunk.Content)
 				// 实时转发到 WebSocket
-				h.sendWSMessage(ws, "chunk", content)
+				h.sendWSMessage(ws, "chunk", chunk.Content)
 			}
 		}
 		ragStream.Close()
@@ -285,13 +294,4 @@ func (h *ChatHandler) sendWSMessage(ws *websocket.Conn, msgType, content string)
 type WSMessage struct {
 	Type    string `json:"type"`    // chunk / done / error
 	Content string `json:"content"` // 消息内容
-}
-
-// uint64Slice 将 []uint 转换为 []uint64，用于 zap 日志
-func uint64Slice(ids []uint) []uint64 {
-	result := make([]uint64, len(ids))
-	for i, id := range ids {
-		result[i] = uint64(id)
-	}
-	return result
 }
