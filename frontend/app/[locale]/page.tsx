@@ -99,7 +99,7 @@ export default function HomePage() {
         {/* 鼎：更大更靠左,让标题尾部压在其上 */}
         {/* 鼎：参考 / 炉子动画 的 float-slow + 径向 mask;hover 点火冒烟 */}
         {/* 外层 absolute 负责定位;内层 group/ding + relative 是火/烟 absolute 子元素的包含块 */}
-        <div className="relative mx-auto my-6 w-[85%] opacity-90 md:absolute md:right-[10%] md:top-1/2 md:my-0 md:w-[72%] md:-translate-y-1/2 lg:w-[64%]">
+        <div className="relative mx-auto my-6 w-[85%] opacity-90 md:absolute md:right-[6%] md:top-1/2 md:my-0 md:w-[72%] md:-translate-y-1/2 lg:w-[64%]">
           <div className="group/ding relative w-full">
             {/* 鼎体：scale(1.15) 放大（hero 比例已通过 Image 高度约束协调） */}
             <div className="origin-center" style={{ transform: 'scale(1.15)' }}>
