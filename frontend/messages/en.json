@@ -120,5 +120,193 @@
     "title": "Demo Mode",
     "text": "In-memory mock data, resets on restart",
     "dismiss": "Dismiss"
+  },
+  "pills": {
+    "title": "Pill Vault",
+    "subtitle": "Forge language-mode pills, shape a daoist's nature",
+    "searchPlaceholder": "Search pill name or description...",
+    "filter": {
+      "all": "All pills",
+      "builtin": "Built-in",
+      "custom": "Self-forged"
+    },
+    "create": "Forge a new pill",
+    "loading": "Searching the vault...",
+    "emptyTitle": "No pills yet",
+    "emptySearchTitle": "No matches",
+    "emptySearchDesc": "Try other keywords or filters",
+    "emptyDesc": "Click the button above to forge your first pill",
+    "modal": {
+      "title": "Forge a new pill",
+      "nameLabel": "Pill name *",
+      "namePlaceholder": "e.g. Classical Chinese",
+      "descLabel": "Description (with triggers / anti-triggers)",
+      "descPlaceholder": "Describe the language mode or persona this pill grants...",
+      "descHint": "After creation, you'll enter the editor to refine expression DNA, mental models, and other structured content",
+      "cancel": "Cancel",
+      "submit": "Start forging"
+    },
+    "closeModal": "Close dialog"
+  },
+  "pill": {
+    "backToList": "Back to Pill Vault",
+    "loading": "Loading pill...",
+    "notFound": "Pill not found or has been removed",
+    "editCta": "Edit recipe",
+    "bindCta": "Bestow on daoist",
+    "deleteCta": "Delete pill",
+    "tab": {
+      "content": "Notes",
+      "schema": "Recipe",
+      "relations": "Bound by"
+    },
+    "meta": {
+      "builtin": "Built-in recipe",
+      "custom": "Self-forged",
+      "createdAt": "Forged on",
+      "updatedAt": "Updated on"
+    },
+    "content": {
+      "title": "Notes",
+      "empty": "No notes on this pill.",
+      "systemPrompt": "System prompt",
+      "userPrompt": "User prompt"
+    },
+    "schema": {
+      "title": "Recipe structure",
+      "empty": "This pill has no structured recipe."
+    },
+    "relations": {
+      "title": "Daoists bound to this pill",
+      "empty": "No daoist has bound this pill yet.",
+      "weight": "Weight {weight}"
+    },
+    "dialog": {
+      "deleteTitle": "Confirm deletion",
+      "deleteDesc": "This cannot be undone. Delete this pill?",
+      "cancel": "Cancel",
+      "confirm": "Delete",
+      "bindTitle": "Bestow on daoist",
+      "bindDesc": "Bind this pill to {agent} at weight {weight}"
+    }
+  },
+  "agents": {
+    "title": "Daoist Hall",
+    "subtitle": "Manage your AI daoists",
+    "searchPlaceholder": "Search daoists...",
+    "create": "Recruit daoist",
+    "loading": "Seeking daoists...",
+    "emptyTitle": "No daoists yet",
+    "emptySearchTitle": "No matches",
+    "emptySearchDesc": "Try other keywords",
+    "emptyDesc": "Click the button above to recruit your first daoist",
+    "modal": {
+      "title": "Recruit a daoist",
+      "nameLabel": "Daoist name *",
+      "namePlaceholder": "e.g. Taixu Zhenren",
+      "personaLabel": "Base persona / system prompt",
+      "personaPlaceholder": "Describe this daoist's character and speaking style...",
+      "personaHint": "Base persona is fused with bound pills' language modes to shape the daoist's expression",
+      "modelLabel": "Choose model",
+      "modelEmpty": "No models available. Configure providers in",
+      "modelLink": "Model Management",
+      "modelEmptySuffix": "first.",
+      "defaultBadge": "default",
+      "cancel": "Cancel",
+      "submit": "Recruit"
+    },
+    "closeModal": "Close dialog"
+  },
+  "agent": {
+    "backToList": "Back to Daoist Hall",
+    "loading": "Loading daoist...",
+    "notFound": "Daoist not found or has been removed",
+    "editCta": "Edit daoist",
+    "deleteCta": "Delete daoist",
+    "meta": {
+      "createdAt": "Registered on",
+      "updatedAt": "Updated on"
+    },
+    "persona": {
+      "title": "Base persona",
+      "empty": "No base persona set."
+    },
+    "pills": {
+      "title": "Bound pills",
+      "empty": "This daoist has not bound any pills yet.",
+      "addCta": "Bestow",
+      "weight": "Weight",
+      "unbindCta": "Unbind"
+    },
+    "emergence": {
+      "title": "Emergence status",
+      "ready": "Ready to emerge",
+      "conflict": "Pill conflict",
+      "noPills": "No pills bound"
+    },
+    "intensity": {
+      "label": "Intensity",
+      "subtle": "Subtle",
+      "medium": "Medium",
+      "strong": "Strong"
+    },
+    "dialog": {
+      "deleteTitle": "Confirm deletion",
+      "deleteDesc": "This cannot be undone. Delete this daoist?",
+      "cancel": "Cancel",
+      "confirm": "Delete"
+    }
+  },
+  "about": {
+    "pageTitle": "About",
+    "pageSubtitle": "Alchemy Furnace · Pill-Bound Persona System",
+    "sectionTitle": "About Alchemy Furnace",
+    "productName": "Alchemy Furnace",
+    "productBody1": "A pill-bound persona system inspired by Daoist alchemy.",
+    "productBody2": "Pills are language-mode skill packs; daoists are AI agents. Bind a pill to transform a daoist's nature.",
+    "githubRepo": "GitHub repository",
+    "techStack": "Tech stack",
+    "techList": [
+      "Next.js 16",
+      "React 19",
+      "TypeScript",
+      "Tailwind CSS 4",
+      "Go API",
+      "Python language engine",
+      "PostgreSQL"
+    ]
+  },
+  "pillCard": {
+    "builtInBadge": "Built-in",
+    "noDescription": "No notes",
+    "viewCta": "View its nature"
+  },
+  "agentCard": {
+    "boundPillsBadge": "{count} pills",
+    "unboundBadge": "Unbound",
+    "noPersona": "No persona",
+    "viewCta": "View details"
+  },
+  "chatMessage": {
+    "empty": "Send a message to start the discourse",
+    "emptyHint": "The daoist will reply in a persona shaped by bound pills",
+    "retry": "Retry",
+    "copy": "Copy",
+    "copied": "Copied",
+    "error": "Error: {message}",
+    "streaming": "Responding...",
+    "userLabel": "You",
+    "assistantLabel": "Daoist"
+  },
+  "firePanel": {},
+  "bindModal": {
+    "title": "Bind this pill",
+    "pillLabel": "Pill",
+    "agentLabel": "Daoist",
+    "weightLabel": "Weight (0-10)",
+    "weightHint": "Higher weight = stronger influence on the daoist's nature",
+    "cancel": "Cancel",
+    "submit": "Bind",
+    "alreadyBound": "This daoist has already bound this pill"
   }
 }

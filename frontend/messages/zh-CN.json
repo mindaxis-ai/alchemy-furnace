@@ -120,5 +120,193 @@
     "title": "演示模式",
     "text": "数据为内存 mock,重启后重置",
     "dismiss": "收起"
+  },
+  "pills": {
+    "title": "金丹阁",
+    "subtitle": "炼制语言模式金丹，塑造道人性情",
+    "searchPlaceholder": "搜索金丹名称或描述...",
+    "filter": {
+      "all": "全部金丹",
+      "builtin": "系统内置",
+      "custom": "自行炼制"
+    },
+    "create": "炼制新金丹",
+    "loading": "正在搜寻金丹...",
+    "emptyTitle": "暂无金丹",
+    "emptySearchTitle": "未找到匹配的金丹",
+    "emptySearchDesc": "尝试其他关键词或过滤条件",
+    "emptyDesc": "点击上方按钮开始炼制你的第一颗金丹",
+    "modal": {
+      "title": "炼制新金丹",
+      "nameLabel": "金丹名称 *",
+      "namePlaceholder": "如：文言文金丹",
+      "descLabel": "描述（含触发语、反触发语）",
+      "descPlaceholder": "描述这颗金丹赋予的语言模式或人格特质...",
+      "descHint": "创建后将进入炼丹房编辑器，完善表达 DNA、心智模型等结构化内容",
+      "cancel": "取消",
+      "submit": "开始炼制"
+    },
+    "closeModal": "关闭弹窗"
+  },
+  "pill": {
+    "backToList": "返回金丹阁",
+    "loading": "加载金丹...",
+    "notFound": "金丹不存在或已被删除",
+    "editCta": "编辑丹方",
+    "bindCta": "赠予道人",
+    "deleteCta": "删除金丹",
+    "tab": {
+      "content": "丹解",
+      "schema": "丹方结构",
+      "relations": "服用者"
+    },
+    "meta": {
+      "builtin": "内置丹方",
+      "custom": "自行炼制",
+      "createdAt": "炼制于",
+      "updatedAt": "更新于"
+    },
+    "content": {
+      "title": "丹解",
+      "empty": "此丹未留丹解。",
+      "systemPrompt": "系统提示",
+      "userPrompt": "用户提示"
+    },
+    "schema": {
+      "title": "丹方结构",
+      "empty": "此丹无结构化丹方。"
+    },
+    "relations": {
+      "title": "服用此丹的道人",
+      "empty": "尚无道人服用此丹。",
+      "weight": "权重 {weight}"
+    },
+    "dialog": {
+      "deleteTitle": "确认删除",
+      "deleteDesc": "此操作不可逆，确定要删除此丹吗？",
+      "cancel": "取消",
+      "confirm": "确认删除",
+      "bindTitle": "赠予道人",
+      "bindDesc": "为 {agent} 服用此丹，权重 {weight}"
+    }
+  },
+  "agents": {
+    "title": "道人府",
+    "subtitle": "管理你的 AI 道人",
+    "searchPlaceholder": "搜索道人...",
+    "create": "招募道人",
+    "loading": "正在寻访道人...",
+    "emptyTitle": "暂无道人",
+    "emptySearchTitle": "未找到匹配的道人",
+    "emptySearchDesc": "尝试其他关键词",
+    "emptyDesc": "点击上方按钮招募你的第一位道人",
+    "modal": {
+      "title": "招募道人",
+      "nameLabel": "道号 *",
+      "namePlaceholder": "如：太虚真人",
+      "personaLabel": "基础性格 / 系统提示词",
+      "personaPlaceholder": "描述这位道人的性格特点和语言风格...",
+      "personaHint": "基础性格将与已服用金丹的语言模式合成，决定道人的表达风格",
+      "modelLabel": "选择模型",
+      "modelEmpty": "暂无可用模型，请先在",
+      "modelLink": "模型管理",
+      "modelEmptySuffix": "中配置供应商",
+      "defaultBadge": "默认",
+      "cancel": "取消",
+      "submit": "招募"
+    },
+    "closeModal": "关闭弹窗"
+  },
+  "agent": {
+    "backToList": "返回道人府",
+    "loading": "加载道人...",
+    "notFound": "道人不存在或已被删除",
+    "editCta": "编辑道人",
+    "deleteCta": "删除道人",
+    "meta": {
+      "createdAt": "录入于",
+      "updatedAt": "更新于"
+    },
+    "persona": {
+      "title": "基础性格",
+      "empty": "未设置基础性格。"
+    },
+    "pills": {
+      "title": "已服用金丹",
+      "empty": "此道人尚未服用任何金丹。",
+      "addCta": "赐丹",
+      "weight": "权重",
+      "unbindCta": "停服"
+    },
+    "emergence": {
+      "title": "合成状态",
+      "ready": "可合成",
+      "conflict": "丹性相冲",
+      "noPills": "未服丹"
+    },
+    "intensity": {
+      "label": "强度",
+      "subtle": "轻微",
+      "medium": "中等",
+      "strong": "强烈"
+    },
+    "dialog": {
+      "deleteTitle": "确认删除",
+      "deleteDesc": "此操作不可逆，确定要删除此道人吗？",
+      "cancel": "取消",
+      "confirm": "确认删除"
+    }
+  },
+  "about": {
+    "pageTitle": "关于",
+    "pageSubtitle": "炼丹炉 · 金丹化性系统",
+    "sectionTitle": "关于炼丹炉",
+    "productName": "炼丹炉",
+    "productBody1": "以道教炼丹文化为设计灵感的金丹化性系统。",
+    "productBody2": "金丹即语言模式技能包，道人即 AI Agent，服丹化性，围炉论道。",
+    "githubRepo": "GitHub 仓库",
+    "techStack": "技术栈",
+    "techList": [
+      "Next.js 16",
+      "React 19",
+      "TypeScript",
+      "Tailwind CSS 4",
+      "Go API",
+      "Python 语言引擎",
+      "PostgreSQL"
+    ]
+  },
+  "pillCard": {
+    "builtInBadge": "内置",
+    "noDescription": "未留丹解",
+    "viewCta": "观其丹性"
+  },
+  "agentCard": {
+    "boundPillsBadge": "{count} 丹",
+    "unboundBadge": "未服丹",
+    "noPersona": "未设性格",
+    "viewCta": "观其详情"
+  },
+  "chatMessage": {
+    "empty": "发送消息开始论道",
+    "emptyHint": "道人将以金丹化性后的性情为你作答",
+    "retry": "重试",
+    "copy": "复制",
+    "copied": "已复制",
+    "error": "出错：{message}",
+    "streaming": "正在作答...",
+    "userLabel": "你",
+    "assistantLabel": "道人"
+  },
+  "firePanel": {},
+  "bindModal": {
+    "title": "服用此丹",
+    "pillLabel": "金丹",
+    "agentLabel": "道人",
+    "weightLabel": "权重 (0-10)",
+    "weightHint": "权重越高，金丹对道人性情的影响越强",
+    "cancel": "取消",
+    "submit": "服用",
+    "alreadyBound": "此道人已服用此丹"
   }
 }
