@@ -12,7 +12,7 @@
     "items": {
       "home": { "label": "Furnace" },
       "pills": {
-        "label": "Pill Vault",
+        "label": "Pills",
         "children": {
           "all": { "title": "All pills", "description": "Browse every pill forged so far — a thousand language modes" },
           "new": { "title": "Refine a new pill", "description": "Strike the flint, forge a fresh language-mode pill" },
@@ -20,7 +20,7 @@
         }
       },
       "agents": {
-        "label": "Daoist Hall",
+        "label": "Agents",
         "children": {
           "all": { "title": "All daoists", "description": "The roster — every agent in the hall" },
           "invite": { "title": "Recruit a daoist", "description": "Welcome a new agent into the hall and grant a pill" },
