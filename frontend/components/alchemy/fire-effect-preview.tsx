@@ -175,11 +175,11 @@ export function FireEffectPreview({
       effect.update(particlesRef.current, dt, time, params)
 
       // mini smoke
-      const target = 18 * smokeLevel * dt // 0..18 /s
+      const target = 40 * smokeLevel * dt // 0..40 /s（与主场景 30/s 同节奏略快）
       const count = Math.floor(target) + (Math.random() < target % 1 ? 1 : 0)
-      const maxWisps = Math.floor(50 * smokeLevel)
+      const maxWisps = Math.floor(50 * Math.sqrt(smokeLevel)) // sqrt 曲线与主场景一致
       for (let i = 0; i < count && smokeRef.current.length < maxWisps; i++) {
-        const life = 1.4 + Math.random() * 1.0
+        const life = 1.2 + Math.random() * 0.7
         smokeRef.current.push({
           x: arcCx + (Math.random() - 0.5) * arcR * 1.4,
           y: arcCy + (PREVIEW_H - arcCy) * 0.9 - Math.random() * 6,

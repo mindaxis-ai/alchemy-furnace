@@ -77,9 +77,8 @@ export function BaguaFurnaceSmoke({
         const ww = (win.width / 100) * w
         // 袅袅青烟: thin delicate wisps, not billowing clouds
         const size = ww * (0.25 + Math.random() * 0.35)
-        // Long-lived wisps: smoke leaves the vent and climbs ~half the
-        // furnace height before dissipating (buoyancy keeps it rising).
-        const life = 4 + Math.random() * 2.5
+        // 寿命缩短:浓度高时堆积更明显(同时间窗内更多粒子)
+        const life = 3.0 + Math.random() * 1.5
         wispsRef.current.push({
           x: wx + (Math.random() - 0.5) * ww * 0.9,
           y: wy + size * 0.35 - Math.random() * 14,
@@ -103,12 +102,14 @@ export function BaguaFurnaceSmoke({
 
       // Ignition clock shared with the fire; smoke only joins near full burn.
       const prog = (progRef.current = advanceIgnition(progRef.current, intensity, dt))
-      const spawnRate = 10 * smoothstep(0.75, 1.0, prog)
+      // 喷发率 10 → 30/秒:让 level 变化时密度差更明显
+      const spawnRate = 30 * level * smoothstep(0.75, 1.0, prog)
 
       // spawn
       const target = spawnRate * dt
       const count = Math.floor(target) + (Math.random() < target % 1 ? 1 : 0)
-      const effectiveBudget = Math.max(0, Math.floor(budget.wisps * level))
+      // sqrt 曲线:低端更敏感 (level=0.5 → ~78% 上限;线性只 50%)
+      const effectiveBudget = Math.max(0, Math.floor(budget.wisps * Math.sqrt(level)))
       if (count > 0 && wispsRef.current.length < effectiveBudget) {
         spawn(Math.min(count, effectiveBudget - wispsRef.current.length))
       }
