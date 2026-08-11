@@ -9,6 +9,15 @@ import {
   type WinRect,
   type StageGains,
 } from './fire-effects'
+import {
+  advanceIgnition,
+  archPath,
+  drawBedAndGlow,
+  drawCavity,
+  smoothstep,
+  stageGains,
+  windowRect as rectOf,
+} from './fire-runtime'
 
 export interface FurnaceWindow {
   id: string
@@ -42,17 +51,7 @@ export interface BaguaFurnaceFireProps {
 export const IGNITE_S = 0.6
 export const EXTINGUISH_S = 0.7
 
-export function advanceIgnition(prog: number, target: number, dt: number): number {
-  const dir = target > prog ? 1 : -1
-  const dur = dir > 0 ? IGNITE_S : EXTINGUISH_S
-  return Math.min(1, Math.max(0, prog + (dir * dt) / dur))
-}
-
-/** smoothstep between edge a and b */
-export function smoothstep(a: number, b: number, x: number): number {
-  const t = Math.min(1, Math.max(0, (x - a) / (b - a)))
-  return t * t * (3 - 2 * t)
-}
+export { advanceIgnition, smoothstep }
 
 /**
  * Fire 调度器（006-fire）
