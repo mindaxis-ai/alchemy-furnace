@@ -27,7 +27,8 @@ permissions:
 #   - fork 仓库拿不到父仓库 secrets
 env:
   REGISTRY: ccr.ccs.tencentyun.com
-  IMAGE_PREFIX: 100019364123/alchemy-furnace
+  # 用户名/账号 ID 走 Secrets，避免在公开仓库中暴露个人账号
+  IMAGE_PREFIX: ${{ secrets.TENCENT_CCR_USERNAME }}/alchemy-furnace
 
 jobs:
   # ───────────────────── 1. release 前置校验 ─────────────────────
