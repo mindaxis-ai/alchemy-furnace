@@ -42,10 +42,14 @@ export default function HomePage() {
 
   // 标题字号按语言分档：中文 3 字用 17rem 还原原始视觉，英文 15 字降到 8.5rem 防越界
   const locale = useLocale()
-  const titleSize =
-    locale === 'zh-CN'
-      ? 'text-[16vw] sm:text-[10rem] md:text-[14rem] lg:text-[17rem]'
-      : 'text-[16vw] sm:text-[8rem] md:text-[7rem] lg:text-[8.5rem]'
+  const isZh = locale === 'zh-CN'
+  const titleSize = isZh
+    ? 'text-[16vw] sm:text-[10rem] md:text-[14rem] lg:text-[17rem]'
+    : 'text-[16vw] sm:text-[8rem] md:text-[7rem] lg:text-[8.5rem]'
+  // max-w 也要按语言分：中文 2 字一行需要更宽容器，英文则继续约束防越界
+  const titleMaxW = isZh
+    ? 'md:max-w-[60%] lg:max-w-[55%]'
+    : 'md:max-w-[42%] lg:max-w-[38%]'
 
   const { state: pillState, fetchPills } = usePill()
   const { state: agentState, fetchAgents } = useAgent()
@@ -134,12 +138,12 @@ export default function HomePage() {
           </div>
         </div>
 
-        <div className="relative z-10 mx-auto max-w-3xl text-center md:mx-0 md:max-w-[42%] md:-mt-[14vh] md:text-left lg:max-w-[38%]">
+        <div className={`relative z-10 mx-auto max-w-3xl text-center md:mx-0 md:-mt-[14vh] md:text-left ${titleMaxW}`}>
           <h1 className="font-serif font-black leading-[1.06] tracking-tight text-foreground">
-            <span className={`block ${titleSize}`}>
+            <span className={`block whitespace-nowrap ${titleSize}`}>
               {tHero('titlePart1')}
             </span>
-            <span className={`block pl-[0.08em] text-primary ${titleSize}`}>
+            <span className={`block whitespace-nowrap pl-[0.08em] text-primary ${titleSize}`}>
               {tHero('titlePart2')}
             </span>
           </h1>
