@@ -22,13 +22,15 @@ permissions:
 
 # 镜像仓库：私有容器 registry (具体地址由 Secrets 决定,不在此文件出现)
 # 凭据走 GitHub Secrets，文件本身不出现任何个人信息：
-#   - TENCENT_CCR_REGISTRY = (registry 域名)
-#   - TENCENT_CCR_USERNAME = (个人账号 ID)
-#   - TENCENT_CCR_PASSWORD = (访问密码)
+#   - TENCENT_CCR_REGISTRY  = (registry 域名)
+#   - TENCENT_CCR_USERNAME  = (docker login 账号 ID)
+#   - TENCENT_CCR_NAMESPACE = (镜像路径中的命名空间段,跟 username 不同)
+#   - TENCENT_CCR_PASSWORD  = (访问密码)
+# 完整 image path: ${REGISTRY}/${NAMESPACE}/alchemy-furnace-{go-api,python-engine,frontend}
 # workflow 文件公开但所有值经 Secrets 引用,PR diff / log 自动 mask
 env:
   REGISTRY: ${{ secrets.TENCENT_CCR_REGISTRY }}
-  IMAGE_PREFIX: ${{ secrets.TENCENT_CCR_USERNAME }}/alchemy-furnace
+  IMAGE_PREFIX: ${{ secrets.TENCENT_CCR_NAMESPACE }}/alchemy-furnace
 
 jobs:
   # ───────────────────── 1. release 前置校验 ─────────────────────
