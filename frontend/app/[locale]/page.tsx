@@ -4,7 +4,7 @@ import { useEffect } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { ChevronRight, Flame, Plus } from 'lucide-react'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { usePill } from '@/contexts/PillContext'
 import { useAgent } from '@/contexts/AgentContext'
 import { useChat } from '@/contexts/ChatContext'
@@ -39,6 +39,13 @@ export default function HomePage() {
   const tSessions = useTranslations('home.sessions')
   const tCloser = useTranslations('home.closer')
   const tHero = useTranslations('home.hero')
+
+  // 标题字号按语言分档：中文 3 字用 17rem 还原原始视觉，英文 15 字降到 8.5rem 防越界
+  const locale = useLocale()
+  const titleSize =
+    locale === 'zh-CN'
+      ? 'text-[16vw] sm:text-[10rem] md:text-[14rem] lg:text-[17rem]'
+      : 'text-[16vw] sm:text-[8rem] md:text-[7rem] lg:text-[8.5rem]'
 
   const { state: pillState, fetchPills } = usePill()
   const { state: agentState, fetchAgents } = useAgent()
@@ -129,10 +136,10 @@ export default function HomePage() {
 
         <div className="relative z-10 mx-auto max-w-3xl text-center md:mx-0 md:max-w-[42%] md:-mt-[14vh] md:text-left lg:max-w-[38%]">
           <h1 className="font-serif font-black leading-[1.06] tracking-tight text-foreground">
-            <span className="block text-[16vw] sm:text-[8rem] md:text-[7rem] lg:text-[8.5rem]">
+            <span className={`block ${titleSize}`}>
               {tHero('titlePart1')}
             </span>
-            <span className="block pl-[0.08em] text-[16vw] text-primary sm:text-[8rem] md:text-[7rem] lg:text-[8.5rem]">
+            <span className={`block pl-[0.08em] text-primary ${titleSize}`}>
               {tHero('titlePart2')}
             </span>
           </h1>
