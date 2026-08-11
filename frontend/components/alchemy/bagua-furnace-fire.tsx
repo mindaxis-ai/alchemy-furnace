@@ -61,8 +61,8 @@ export function smoothstep(a: number, b: number, x: number): number {
  * succession: cavity warms → ember bed breathes → glow fills → sparks rise →
  * smoke last.
  */
-const IGNITE_S = 1.1
-const EXTINGUISH_S = 1.0
+const IGNITE_S = 0.6
+const EXTINGUISH_S = 0.7
 
 export function advanceIgnition(prog: number, target: number, dt: number): number {
   const dir = target > prog ? 1 : -1
@@ -142,12 +142,12 @@ export function BaguaFurnaceFire({
     // rise across the window in ~0.4-0.9s. `boost` > 1 marks burst particles.
     const spawnEmber = (win: FurnaceWindow, boost: number) => {
       const { wx, wy, ww, wh } = windowRect(win)
-      const life = 0.45 + Math.random() * 0.65
+      const life = 0.32 + Math.random() * 0.45
       embersRef.current.push({
         x: wx + (Math.random() - 0.5) * ww * 0.72,
         y: wy + wh * (0.82 + Math.random() * 0.16),
-        vx: (Math.random() - 0.5) * ww * 0.35,
-        vy: -wh * (1.3 + Math.random() * 1.4) * boost,
+        vx: (Math.random() - 0.5) * ww * 0.5,
+        vy: -wh * (2.2 + Math.random() * 2.0) * boost,
         life,
         maxLife: life,
         size: ww * (0.015 + Math.random() * 0.03),
