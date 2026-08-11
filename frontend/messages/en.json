@@ -38,6 +38,12 @@
       "settings": { "label": "Settings" }
     }
   },
+  "settings": {
+    "tabs": {
+      "models": "Model Management",
+      "about": "About"
+    }
+  },
   "footer": {
     "tagline": "Sun and moon endure in the furnace; heaven and earth fit in the cauldron"
   },

@@ -38,6 +38,12 @@
       "settings": { "label": "设置" }
     }
   },
+  "settings": {
+    "tabs": {
+      "models": "模型管理",
+      "about": "关于"
+    }
+  },
   "footer": {
     "tagline": "炉中日月长，鼎内乾坤大"
   },
