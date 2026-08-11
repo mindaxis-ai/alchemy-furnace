@@ -13,7 +13,7 @@
 
 import type { FurnaceWindow } from '../bagua-furnace-fire'
 
-export type FireEffectId = 'plume' | 'ember' | 'flicker' | 'veil' | 'classic'
+export type FireEffectId = 'plume' | 'ember' | 'flicker' | 'veil' | 'classic' | 'sanmei' | 'spark' | 'dragon'
 
 export const DEFAULT_EFFECT_ID: FireEffectId = 'plume'
 
@@ -81,12 +81,15 @@ export interface EffectCtx {
   budget: { particles: number; glow: boolean }
 }
 
-// registry：5 个内置 effect
+// registry：8 个内置 effect
 import { plume } from './plume'
 import { ember } from './ember'
 import { flicker } from './flicker'
 import { veil } from './veil'
 import { classic } from './classic'
+import { sanmei } from './sanmei'
+import { spark } from './spark'
+import { dragon } from './dragon'
 
 export const EFFECTS: Record<FireEffectId, FireEffect> = {
   plume,
@@ -94,6 +97,9 @@ export const EFFECTS: Record<FireEffectId, FireEffect> = {
   flicker,
   veil,
   classic,
+  sanmei,
+  spark,
+  dragon,
 }
 
-export { plume, ember, flicker, veil, classic }
+export { plume, ember, flicker, veil, classic, sanmei, spark, dragon }

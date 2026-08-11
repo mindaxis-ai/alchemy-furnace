@@ -55,7 +55,10 @@
         "ember": { "label": "余烬", "desc": "慢速橙红，安静低耗" },
         "flicker": { "label": "灵火", "desc": "短促爆闪，仪式感强" },
         "veil": { "label": "帐火", "desc": "多层薄纱，大焰御火" },
-        "classic": { "label": "经典", "desc": "原版水雾粒子，米白叠光，怀旧风格" }
+        "classic": { "label": "经典", "desc": "原版水雾粒子，米白叠光，怀旧风格" },
+        "sanmei": { "label": "三昧真火", "desc": "冰蓝内焰 + 朱砂外焰，炼丹奇幻" },
+        "spark": { "label": "火花", "desc": "金朱砂火星上窜，孔明灯升空感" },
+        "dragon": { "label": "龙形火", "desc": "长拖尾丝带火苗，御火优雅" }
       }
     }
   },

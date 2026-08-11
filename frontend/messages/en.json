@@ -55,7 +55,10 @@
         "ember": { "label": "Ember", "desc": "Slow orange, quiet and low-key" },
         "flicker": { "label": "Flicker", "desc": "Short bursts, ritual flair" },
         "veil": { "label": "Veil", "desc": "Multi-layered haze, grand ceremonial flame" },
-        "classic": { "label": "Classic", "desc": "Original water-mist particles, cream-white blend, retro" }
+        "classic": { "label": "Classic", "desc": "Original water-mist particles, cream-white blend, retro" },
+        "sanmei": { "label": "Sanmei", "desc": "Ice-blue core + cinnabar outer, alchemy fantasy" },
+        "spark": { "label": "Spark", "desc": "Gold/cinnabar embers shooting up, lantern-rise feel" },
+        "dragon": { "label": "Dragon", "desc": "Long ribbon flame, elegant commanding fire" }
       }
     }
   },
