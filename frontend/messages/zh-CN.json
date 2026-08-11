@@ -51,14 +51,6 @@
     "hero": {
       "titlePart1": "炼丹",
       "titlePart2": "炉",
-      "subtitle": "以火为引，以药为基。观灵气流转、察丹药自成——",
-      "subtitleEm": "一方静室，万物悬浮，唯心与炉同温。",
-      "statsLine": {
-        "pills": "藏丹 {count} 枚",
-        "agents": "道人 {count} 位",
-        "sessions": "论道 {count} 场",
-        "fire": "炉火正温"
-      },
       "banner": "炉中日月长 · 鼎内乾坤大"
     },
     "stats": {

@@ -51,14 +51,6 @@
     "hero": {
       "titlePart1": "Alchemy",
       "titlePart2": "Furnace",
-      "subtitle": "Fire as the spark, herbs as the base. Watch the spirit-flow turn, see the pill form itself —",
-      "subtitleEm": "A quiet chamber, all things afloat, the heart as warm as the furnace.",
-      "statsLine": {
-        "pills": "{count} pills in store",
-        "agents": "{count} daoists",
-        "sessions": "{count} discourses",
-        "fire": "Fire still warm"
-      },
       "banner": "Sun and moon endure in the furnace · heaven and earth fit in the cauldron"
     },
     "stats": {
