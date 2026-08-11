@@ -127,7 +127,7 @@ export default function HomePage() {
           </div>
         </div>
 
-        <div className="relative z-10 mx-auto max-w-3xl text-center md:mx-0 md:text-left">
+        <div className="relative z-10 mx-auto max-w-3xl text-center md:mx-0 md:-mt-[8vh] md:text-left">
           <h1 className="font-serif font-black leading-[1.06] tracking-tight text-foreground">
             <span className="block text-[20vw] sm:text-[14rem] md:text-[13rem] lg:text-[15rem]">
               {tHero('titlePart1')}
@@ -139,7 +139,7 @@ export default function HomePage() {
         </div>
 
         {/* 底部横排题字：桌面端钉在 hero 左下角,作画轴落款 */}
-        <p className="relative z-10 mt-14 flex items-center gap-4 font-serif text-sm font-bold tracking-[0.5em] text-sage/80 md:absolute md:bottom-10 md:left-8 md:mt-0 lg:left-14">
+        <p className="relative z-10 mt-14 flex items-center gap-4 font-serif text-lg font-bold tracking-[0.5em] text-sage/80 md:absolute md:bottom-10 md:left-8 md:mt-0 lg:left-14">
           <span className="h-px w-10 bg-gold/70" aria-hidden />
           {tHero('banner')}
         </p>
