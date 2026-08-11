@@ -34,7 +34,7 @@ export function SettingsTabs() {
 
   return (
     <>
-      <div>
+      <div className="mx-auto max-w-6xl px-4 pt-6 sm:px-6">
         <TopTabs
           tabs={[
             { key: 'models', label: t('models') },
@@ -49,10 +49,19 @@ export function SettingsTabs() {
   )
 }
 
-/** 关于区：从旧 settings/page.tsx 平移（关于炼丹炉 + 技术栈卡片） */
+/** 关于区：从旧 settings/page.tsx 平移（关于炼丹炉 + 技术栈卡片），补标准页头与 models tab 同宽 */
 function AboutPanel() {
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
+    <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+      {/* 页面头部（与道人府/ModelsPanel 同款版式） */}
+      <div className="flex items-center gap-3 mb-6">
+        <Info className="w-6 h-6 text-gold" />
+        <div>
+          <h1 className="page-title">关于</h1>
+          <p className="page-subtitle">炼丹炉 · 金丹化性系统</p>
+        </div>
+      </div>
+
       <div className="space-y-6">
         <section className="dao-card p-5">
           <div className="flex items-center gap-2 mb-4">
