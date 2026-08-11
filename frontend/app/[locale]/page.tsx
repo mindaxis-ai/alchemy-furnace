@@ -139,7 +139,7 @@ export default function HomePage() {
         </div>
 
         {/* 底部横排题字：桌面端钉在 hero 左下角,作画轴落款 */}
-        <p className="relative z-10 mt-14 flex items-center gap-4 font-serif text-lg font-bold tracking-[0.5em] text-sage/80 md:absolute md:bottom-10 md:left-8 md:mt-0 lg:left-14">
+        <p className="relative z-10 mt-14 flex items-center gap-4 font-serif text-xl font-bold tracking-[0.5em] text-sage/80 md:absolute md:bottom-10 md:left-8 md:mt-0 lg:left-14">
           <span className="h-px w-10 bg-gold/70" aria-hidden />
           {tHero('banner')}
         </p>
