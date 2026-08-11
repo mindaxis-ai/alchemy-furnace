@@ -68,11 +68,11 @@ export function FireEffectPanel() {
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
       {/* 标准页头（与 ModelsPanel/AboutPanel 同款版式） */}
-      <div className="flex items-center gap-3 mb-6">
-        <Flame className="w-6 h-6 text-gold" />
-        <div>
-          <h1 className="page-title">{t('title')}</h1>
-          <p className="page-subtitle">{t('subtitle')}</p>
+      <div className="flex items-center gap-3 mb-6 min-w-0">
+        <Flame className="w-6 h-6 text-gold shrink-0" />
+        <div className="min-w-0">
+          <h1 className="page-title truncate">{t('title')}</h1>
+          <p className="page-subtitle truncate">{t('subtitle')}</p>
         </div>
       </div>
 
@@ -100,7 +100,7 @@ export function FireEffectPanel() {
                   onClick={() => pickEffect(id)}
                   aria-pressed={isOn}
                   className={cn(
-                    'flex flex-col items-start gap-1.5 rounded-2xl border p-3.5 text-left transition-all duration-200',
+                    'flex flex-col items-start gap-1.5 rounded-2xl border p-3.5 text-left transition-all duration-200 min-w-0',
                     isOn
                       ? 'border-gold/60 bg-gold/5 ring-1 ring-gold/40 shadow-[0_15px_30px_-12px_rgba(201,169,110,0.35)]'
                       : 'border-border/70 bg-card/60 hover:border-gold/30 hover:bg-gold/5'
@@ -108,14 +108,14 @@ export function FireEffectPanel() {
                 >
                   <Flame
                     className={cn(
-                      'size-4',
+                      'size-4 shrink-0',
                       isOn ? 'text-primary' : 'text-sage'
                     )}
                   />
-                  <span className="font-serif text-sm font-bold text-foreground">
+                  <span className="font-serif text-sm font-bold text-foreground truncate w-full">
                     {t(`options.${id}.label`)}
                   </span>
-                  <span className="text-[11px] leading-snug text-sage">
+                  <span className="text-[11px] leading-snug text-sage line-clamp-2">
                     {t(`options.${id}.desc`)}
                   </span>
                 </button>
@@ -126,11 +126,11 @@ export function FireEffectPanel() {
 
         {/* 烟雾浓度滑块 */}
         <section className="dao-card p-5">
-          <div className="flex items-baseline justify-between mb-2">
-            <h2 className="text-base font-serif font-bold text-gold">
+          <div className="flex items-baseline justify-between mb-2 gap-2 min-w-0">
+            <h2 className="text-base font-serif font-bold text-gold truncate">
               {t('smokeLabel')}
             </h2>
-            <span className="text-sm font-mono text-sage">
+            <span className="text-sm font-mono text-sage shrink-0 whitespace-nowrap">
               {Math.round(level * 100)}%
             </span>
           </div>

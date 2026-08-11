@@ -422,7 +422,9 @@
     "error": "Error: {message}",
     "streaming": "Responding...",
     "userLabel": "You",
-    "assistantLabel": "Daoist"
+    "assistantLabel": "Daoist",
+    "incomplete": "Possibly incomplete",
+    "stopped": "Stopped"
   },
   "firePanel": {},
   "bindModal": {
@@ -433,6 +435,13 @@
     "weightHint": "Higher weight = stronger influence on the daoist's nature",
     "cancel": "Cancel",
     "submit": "Bind",
-    "alreadyBound": "This daoist has already bound this pill"
+    "alreadyBound": "This daoist has already bound this pill",
+    "closeModal": "Close dialog",
+    "prompt": "Bestow “{name}” on a daoist",
+    "noAgents": "No daoists yet. Recruit one in the Daoist Hall first.",
+    "sortOrder": "Sort order",
+    "success": "Bestowed",
+    "errorLoadAgents": "Failed to load daoist list",
+    "errorBind": "Binding failed"
   }
 }

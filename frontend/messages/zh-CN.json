@@ -422,7 +422,9 @@
     "error": "出错：{message}",
     "streaming": "正在作答...",
     "userLabel": "你",
-    "assistantLabel": "道人"
+    "assistantLabel": "道人",
+    "incomplete": "可能不完整",
+    "stopped": "已停止"
   },
   "firePanel": {},
   "bindModal": {
@@ -433,6 +435,13 @@
     "weightHint": "权重越高，金丹对道人性情的影响越强",
     "cancel": "取消",
     "submit": "服用",
-    "alreadyBound": "此道人已服用此丹"
+    "alreadyBound": "此道人已服用此丹",
+    "closeModal": "关闭弹窗",
+    "prompt": "将「{name}」赠予一位道人服用",
+    "noAgents": "暂无道人，请先在道人府招募一位",
+    "sortOrder": "服用顺序",
+    "success": "已赠予",
+    "errorLoadAgents": "获取道人列表失败",
+    "errorBind": "绑定失败"
   }
 }

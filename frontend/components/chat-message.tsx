@@ -6,6 +6,7 @@
  * AI 消息: 左侧，金色边框，卷轴风格
  * 支持 markdown 渲染（RAG 引用来源展示已移除）
  */
+import { useTranslations } from 'next-intl'
 import { User, Bot, TriangleAlert, CircleStop } from 'lucide-react'
 import type { ChatMessage as ChatMessageType } from '@/services/types'
 import { MarkdownRenderer } from '@/components/markdown-renderer'
@@ -17,17 +18,18 @@ interface ChatMessageProps {
 }
 
 export function ChatMessage({ message, streaming = false }: ChatMessageProps) {
+  const t = useTranslations('chatMessage')
   const isUser = message.role === 'user'
 
   return (
     <div className={`
-      flex gap-3 md:gap-4
+      flex gap-3 md:gap-4 min-w-0
       ${isUser ? 'flex-row-reverse' : 'flex-row'}
       animate-in fade-in duration-300
     `}>
       {/* 头像 */}
       <div className={`
-        flex-shrink-0 w-9 h-9 md:w-10 md:h-10 rounded-full flex items-center justify-center
+        shrink-0 w-9 h-9 md:w-10 md:h-10 rounded-full flex items-center justify-center
         ${isUser
           ? 'bg-primary/10 text-primary border border-primary/30'
           : 'bg-gold/15 text-gold border border-gold/30'
@@ -38,23 +40,23 @@ export function ChatMessage({ message, streaming = false }: ChatMessageProps) {
 
       {/* 消息内容 */}
       <div className={`
-        flex-1 max-w-[85%] md:max-w-[75%]
+        flex-1 max-w-[85%] md:max-w-[75%] min-w-0
         ${isUser ? 'text-right' : 'text-left'}
       `}>
         {/* 角色标签 */}
         <span className={`
-          inline-block text-[10px] mb-1.5 px-2 py-0.5 rounded-full
+          inline-block text-[10px] mb-1.5 px-2 py-0.5 rounded-full whitespace-nowrap
           ${isUser
             ? 'bg-primary/10 text-primary/70'
             : 'bg-gold/10 text-gold/80'
           }
         `}>
-          {isUser ? '道友' : '道人'}
+          {isUser ? t('userLabel') : t('assistantLabel')}
         </span>
 
         {/* 消息气泡 */}
         <div className={`
-          relative inline-block text-left
+          relative inline-block text-left max-w-full
           px-4 py-3 rounded-2xl
           ${isUser
             ? 'bg-primary/5 border border-primary/30 rounded-tr-sm'
@@ -70,7 +72,7 @@ export function ChatMessage({ message, streaming = false }: ChatMessageProps) {
           )}
 
           {/* 消息内容 - Markdown 渲染 */}
-          <div className={`${isUser ? '' : 'pl-2 pr-2'}`}>
+          <div className={`${isUser ? '' : 'pl-2 pr-2'} min-w-0 break-words`}>
             {isUser ? (
               <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
                 {message.content}
@@ -88,17 +90,17 @@ export function ChatMessage({ message, streaming = false }: ChatMessageProps) {
 
         {/* 状态标记（仅 AI 消息） */}
         {!isUser && (message.incomplete || message.stopped) && (
-          <div className="flex items-center gap-3 mt-1.5 pl-1">
+          <div className="flex items-center gap-3 mt-1.5 pl-1 flex-wrap">
             {message.incomplete && (
-              <span className="flex items-center gap-1 text-[10px] text-gold/80">
-                <TriangleAlert className="w-3 h-3" />
-                可能不完整
+              <span className="flex items-center gap-1 text-[10px] text-gold/80 whitespace-nowrap">
+                <TriangleAlert className="w-3 h-3 shrink-0" />
+                {t('incomplete')}
               </span>
             )}
             {message.stopped && (
-              <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                <CircleStop className="w-3 h-3" />
-                已停止
+              <span className="flex items-center gap-1 text-[10px] text-muted-foreground whitespace-nowrap">
+                <CircleStop className="w-3 h-3 shrink-0" />
+                {t('stopped')}
               </span>
             )}
           </div>
