@@ -106,7 +106,8 @@
     "en": "English"
   },
   "demoBanner": {
-    "text": "Demo Mode · In-memory mock data, resets on restart",
+    "title": "Demo Mode",
+    "text": "In-memory mock data, resets on restart",
     "dismiss": "Dismiss"
   }
 }
