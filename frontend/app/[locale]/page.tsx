@@ -99,7 +99,7 @@ export default function HomePage() {
         {/* 鼎：更大更靠左,让标题尾部压在其上 */}
         {/* 鼎：参考 / 炉子动画 的 float-slow + 径向 mask;hover 点火冒烟 */}
         {/* 外层 absolute 负责定位;内层 group/ding + relative 是火/烟 absolute 子元素的包含块 */}
-        <div className="relative mx-auto my-6 w-[85%] opacity-90 md:absolute md:right-[14%] md:top-1/2 md:my-0 md:w-[72%] md:-translate-y-1/2 lg:w-[64%]">
+        <div className="relative mx-auto my-6 w-[85%] opacity-90 md:absolute md:right-[10%] md:top-1/2 md:my-0 md:w-[72%] md:-translate-y-1/2 lg:w-[64%]">
           <div className="group/ding relative w-full">
             {/* 鼎体：scale(1.15) 放大（hero 比例已通过 Image 高度约束协调） */}
             <div className="origin-center" style={{ transform: 'scale(1.15)' }}>
@@ -129,10 +129,10 @@ export default function HomePage() {
 
         <div className="relative z-10 mx-auto max-w-3xl text-center md:mx-0 md:-mt-[8vh] md:text-left">
           <h1 className="font-serif font-black leading-[1.06] tracking-tight text-foreground">
-            <span className="block text-[20vw] sm:text-[14rem] md:text-[13rem] lg:text-[15rem]">
+            <span className="block text-[22vw] sm:text-[15rem] md:text-[14rem] lg:text-[17rem]">
               {tHero('titlePart1')}
             </span>
-            <span className="block pl-[0.08em] text-[20vw] text-primary sm:text-[14rem] md:text-[13rem] lg:text-[15rem]">
+            <span className="block pl-[0.08em] text-[22vw] text-primary sm:text-[15rem] md:text-[14rem] lg:text-[17rem]">
               {tHero('titlePart2')}
             </span>
           </h1>
