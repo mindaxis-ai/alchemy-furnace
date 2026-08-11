@@ -19,6 +19,7 @@ export const FIRE_EFFECT_OPTIONS: readonly FireEffectId[] = [
   'ember',
   'flicker',
   'veil',
+  'classic',
 ] as const
 
 export const DEFAULT_FIRE_EFFECT: FireEffectId = 'plume'

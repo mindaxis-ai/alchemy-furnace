@@ -54,7 +54,8 @@
         "plume": { "label": "Plume", "desc": "Tapered tongue, sharpens upward, like a real hearth" },
         "ember": { "label": "Ember", "desc": "Slow orange, quiet and low-key" },
         "flicker": { "label": "Flicker", "desc": "Short bursts, ritual flair" },
-        "veil": { "label": "Veil", "desc": "Multi-layered haze, grand ceremonial flame" }
+        "veil": { "label": "Veil", "desc": "Multi-layered haze, grand ceremonial flame" },
+        "classic": { "label": "Classic", "desc": "Original water-mist particles, cream-white blend, retro" }
       }
     }
   },
