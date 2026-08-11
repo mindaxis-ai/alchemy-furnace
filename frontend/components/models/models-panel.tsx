@@ -8,6 +8,7 @@
  * API Key 仅用于写入，编辑时以掩码占位，留空表示不修改
  */
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslations } from 'next-intl'
 import {
   Cpu,
   Plus,
@@ -35,15 +36,8 @@ import type {
   CreateModelRequest,
 } from '@/services/modelService'
 
-/** 模板分组中文标签 */
-const GROUP_LABELS: Record<string, string> = {
-  domestic: '国内',
-  international: '国际',
-  local: '本地',
-}
-
 /** 分组展示顺序 */
-const GROUP_ORDER = ['domestic', 'international', 'local']
+const GROUP_ORDER = ['domestic', 'international', 'local'] as const
 
 /** 协议徽标颜色 */
 const PROTOCOL_BADGE: Record<string, string> = {
@@ -105,6 +99,9 @@ interface TestState {
 }
 
 export function ModelsPanel() {
+  const t = useTranslations('modelsPanel')
+  const tGroup = useTranslations('modelsPanel.group')
+
   const [providers, setProviders] = useState<Provider[]>([])
   const [templates, setTemplates] = useState<ProviderTemplate[]>([])
   const [loading, setLoading] = useState(false)
@@ -149,11 +146,11 @@ export function ModelsPanel() {
       setProviders(data.list || [])
       setError(null)
     } catch (e) {
-      setError(e instanceof Error ? e.message : '获取供应商列表失败')
+      setError(e instanceof Error ? e.message : t('errorLoadProviders'))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [t])
 
   /** 加载模板列表（失败不阻塞主流程） */
   const fetchTemplates = useCallback(async () => {
@@ -177,11 +174,11 @@ export function ModelsPanel() {
       const data = await modelService.listModels(providerId)
       setModelsByProvider(prev => ({ ...prev, [providerId]: data || [] }))
     } catch (e) {
-      setError(e instanceof Error ? e.message : '获取模型列表失败')
+      setError(e instanceof Error ? e.message : t('errorLoadModels'))
     } finally {
       setModelsLoading(prev => ({ ...prev, [providerId]: false }))
     }
-  }, [])
+  }, [t])
 
   /** 展开/收起供应商的模型面板 */
   const toggleExpand = (provider: Provider) => {
@@ -197,8 +194,8 @@ export function ModelsPanel() {
   const findTemplate = useCallback(
     (provider: Provider): ProviderTemplate | null => {
       return (
-        templates.find(t => t.id === provider.name) ||
-        templates.find(t => t.default_base_url === provider.base_url) ||
+        templates.find(tpl => tpl.id === provider.name) ||
+        templates.find(tpl => tpl.default_base_url === provider.base_url) ||
         null
       )
     },
@@ -279,7 +276,7 @@ export function ModelsPanel() {
       setProviderModal(null)
       await fetchProviders()
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : '保存失败')
+      setFormError(err instanceof Error ? err.message : t('errorSave'))
     } finally {
       setSaving(false)
     }
@@ -291,7 +288,7 @@ export function ModelsPanel() {
       await modelService.updateProvider(provider.id, { is_enabled: !provider.is_enabled })
       await fetchProviders()
     } catch (err) {
-      setError(err instanceof Error ? err.message : '更新供应商状态失败')
+      setError(err instanceof Error ? err.message : t('errorToggleProvider'))
     }
   }
 
@@ -310,9 +307,9 @@ export function ModelsPanel() {
         const modelCount =
           (err.data?.data as { model_count?: number } | undefined)?.model_count ??
           deletingProvider.model_count
-        setError(err.message || `该供应商下仍有 ${modelCount} 个模型，无法删除`)
+        setError(err.message || t('deleteProviderBlocked', { count: modelCount }))
       } else {
-        setError(err instanceof Error ? err.message : '删除失败')
+        setError(err instanceof Error ? err.message : t('errorDelete'))
       }
       setDeletingProvider(null)
     } finally {
@@ -334,7 +331,7 @@ export function ModelsPanel() {
           result: {
             success: false,
             latency_ms: 0,
-            error: err instanceof Error ? err.message : '连接测试失败',
+            error: err instanceof Error ? err.message : t('errorTestConnection'),
           },
         },
       }))
@@ -395,7 +392,7 @@ export function ModelsPanel() {
       await fetchModels(modelModal.provider.id)
       await fetchProviders()
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : '保存失败')
+      setFormError(err instanceof Error ? err.message : t('errorSave'))
     } finally {
       setSaving(false)
     }
@@ -407,7 +404,7 @@ export function ModelsPanel() {
       await modelService.updateModel(model.id, { is_enabled: !model.is_enabled })
       await fetchModels(provider.id)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '更新模型状态失败')
+      setError(err instanceof Error ? err.message : t('errorToggleModel'))
     }
   }
 
@@ -426,9 +423,9 @@ export function ModelsPanel() {
         const referencedBy =
           (err.data?.data as { referenced_by?: number } | undefined)?.referenced_by ??
           deletingModel.referenced_by
-        setError(err.message || `该模型仍被 ${referencedBy} 个道人引用，无法删除`)
+        setError(err.message || t('deleteModelBlocked', { count: referencedBy }))
       } else {
-        setError(err instanceof Error ? err.message : '删除失败')
+        setError(err instanceof Error ? err.message : t('errorDelete'))
       }
       setDeletingModel(null)
     } finally {
@@ -440,8 +437,8 @@ export function ModelsPanel() {
   const groupedTemplates = GROUP_ORDER
     .map(group => ({
       group,
-      label: GROUP_LABELS[group] || group,
-      items: templates.filter(t => t.group === group),
+      label: tGroup(group as 'domestic' | 'international' | 'local'),
+      items: templates.filter(tpl => tpl.group === group),
     }))
     .filter(g => g.items.length > 0)
 
@@ -453,17 +450,17 @@ export function ModelsPanel() {
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
       {/* 页面头部 */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-        <div>
+        <div className="min-w-0">
           <div className="flex items-center gap-3">
             <Cpu className="w-6 h-6 text-gold" />
-            <h1 className="page-title">模型管理</h1>
+            <h1 className="page-title truncate">{t('title')}</h1>
           </div>
-          <p className="page-subtitle">配置模型供应商及其下的语言模型，凭证一次配置全模型复用</p>
+          <p className="page-subtitle">{t('subtitle')}</p>
         </div>
 
-        <button onClick={openCreateProvider} className="dao-btn-primary self-start">
+        <button onClick={openCreateProvider} className="dao-btn-primary self-start whitespace-nowrap">
           <Plus className="w-4 h-4" />
-          新增供应商
+          {t('createProvider')}
         </button>
       </div>
 
@@ -471,7 +468,7 @@ export function ModelsPanel() {
       {loading && providers.length === 0 && (
         <div className="flex flex-col items-center justify-center py-16">
           <Loader2 className="w-8 h-8 text-gold animate-spin mb-3" />
-          <p className="text-sm text-muted-foreground">正在加载供应商...</p>
+          <p className="text-sm text-muted-foreground">{t('loading')}</p>
         </div>
       )}
 
@@ -479,11 +476,11 @@ export function ModelsPanel() {
       {!loading && providers.length === 0 && (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <Server className="w-12 h-12 text-sage/60 mb-3" />
-          <h3 className="text-base font-medium text-muted-foreground mb-1">暂无供应商</h3>
-          <p className="text-sm text-sage/70 mb-4">点击上方按钮，从预置模板添加第一个模型供应商</p>
-          <button onClick={openCreateProvider} className="dao-btn-primary">
+          <h3 className="text-base font-medium text-muted-foreground mb-1">{t('emptyTitle')}</h3>
+          <p className="text-sm text-sage/70 mb-4">{t('emptyDesc')}</p>
+          <button onClick={openCreateProvider} className="dao-btn-primary whitespace-nowrap">
             <Plus className="w-4 h-4" />
-            新增供应商
+            {t('createProvider')}
           </button>
         </div>
       )}
@@ -503,8 +500,8 @@ export function ModelsPanel() {
                   <div className="flex items-center gap-2 flex-1 min-w-0">
                     <button
                       onClick={() => toggleExpand(provider)}
-                      className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-gold/80 transition-colors flex-shrink-0"
-                      title={expanded ? '收起模型列表' : '展开模型列表'}
+                      className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-gold/80 transition-colors shrink-0"
+                      title={expanded ? t('collapseModels') : t('expandModels')}
                     >
                       {expanded ? (
                         <ChevronDown className="w-4 h-4" />
@@ -512,20 +509,20 @@ export function ModelsPanel() {
                         <ChevronRight className="w-4 h-4" />
                       )}
                     </button>
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-medium text-foreground">
+                        <span className="text-sm font-medium text-foreground truncate">
                           {provider.display_name || provider.name}
                         </span>
                         <span className={`
-                          text-[10px] px-2 py-0.5 rounded-full border whitespace-nowrap
+                          text-[10px] px-2 py-0.5 rounded-full border whitespace-nowrap shrink-0
                           ${PROTOCOL_BADGE[provider.protocol] || DEFAULT_PROTOCOL_BADGE}
                         `}>
                           {provider.protocol}
                         </span>
                         {!provider.is_enabled && (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full border bg-muted text-muted-foreground border-border/70">
-                            已停用
+                          <span className="text-[10px] px-2 py-0.5 rounded-full border bg-muted text-muted-foreground border-border/70 whitespace-nowrap shrink-0">
+                            {t('disabledBadge')}
                           </span>
                         )}
                       </div>
@@ -536,21 +533,21 @@ export function ModelsPanel() {
                   </div>
 
                   {/* 密钥 / 模型数 */}
-                  <div className="flex items-center gap-4 text-xs text-muted-foreground flex-shrink-0">
-                    <span className="font-mono">
-                      {provider.has_api_key ? provider.api_key_masked || '已配置' : '免密钥'}
+                  <div className="flex items-center gap-4 text-xs text-muted-foreground shrink-0">
+                    <span className="font-mono whitespace-nowrap">
+                      {provider.has_api_key ? provider.api_key_masked || t('keyConfigured') : t('keyFree')}
                     </span>
-                    <span className="whitespace-nowrap">{provider.model_count} 个模型</span>
+                    <span className="whitespace-nowrap">{t('modelCount', { count: provider.model_count })}</span>
                   </div>
 
                   {/* 启停开关 */}
                   <button
                     onClick={() => toggleProviderEnabled(provider)}
                     className={`
-                      relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors
+                      relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors
                       ${provider.is_enabled ? 'bg-sage/60' : 'bg-muted'}
                     `}
-                    title={provider.is_enabled ? '点击停用' : '点击启用'}
+                    title={provider.is_enabled ? t('clickToDisable') : t('clickToEnable')}
                   >
                     <span className={`
                       inline-block h-4 w-4 mt-0.5 rounded-full bg-foreground transition-transform
@@ -559,12 +556,12 @@ export function ModelsPanel() {
                   </button>
 
                   {/* 操作 */}
-                  <div className="flex items-center gap-1 flex-shrink-0">
+                  <div className="flex items-center gap-1 shrink-0">
                     <button
                       onClick={() => handleTest(provider)}
                       disabled={test?.loading}
                       className="p-1.5 rounded hover:bg-sage/15 text-muted-foreground hover:text-sage transition-colors disabled:opacity-40"
-                      title="测试连接"
+                      title={t('testConnection')}
                     >
                       {test?.loading ? (
                         <Loader2 className="w-4 h-4 animate-spin" />
@@ -575,14 +572,14 @@ export function ModelsPanel() {
                     <button
                       onClick={() => openEditProvider(provider)}
                       className="p-1.5 rounded hover:bg-gold/10 text-muted-foreground hover:text-gold/80 transition-colors"
-                      title="编辑"
+                      title={t('edit')}
                     >
                       <Pencil className="w-4 h-4" />
                     </button>
                     <button
                       onClick={() => setDeletingProvider(provider)}
                       className="p-1.5 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors"
-                      title="删除"
+                      title={t('delete')}
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -592,18 +589,18 @@ export function ModelsPanel() {
                 {/* 连接测试结果 */}
                 {test?.result && (
                   <div className={`
-                    px-4 pb-3 text-[11px] flex items-center gap-1
+                    px-4 pb-3 text-[11px] flex items-center gap-1 flex-wrap min-w-0
                     ${test.result.success ? 'text-sage' : 'text-primary'}
                   `}>
                     {test.result.success ? (
                       <>
-                        <Check className="w-3 h-3" />
-                        连接成功 · {test.result.latency_ms}ms
+                        <Check className="w-3 h-3 shrink-0" />
+                        <span className="whitespace-nowrap">{t('connectSuccess', { ms: test.result.latency_ms })}</span>
                       </>
                     ) : (
                       <>
-                        <AlertCircle className="w-3 h-3" />
-                        {test.result.error || '连接失败'}
+                        <AlertCircle className="w-3 h-3 shrink-0" />
+                        <span className="break-words min-w-0">{test.result.error || t('connectFailed')}</span>
                       </>
                     )}
                   </div>
@@ -612,14 +609,14 @@ export function ModelsPanel() {
                 {/* 展开的模型面板 */}
                 {expanded && (
                   <div className="border-t border-border/70 bg-card p-4 animate-in fade-in duration-300">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-sm font-medium text-gold">模型列表</h3>
+                    <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+                      <h3 className="text-sm font-medium text-gold">{t('modelList')}</h3>
                       <button
                         onClick={() => openCreateModel(provider)}
-                        className="dao-btn-gold text-xs px-3 py-1.5"
+                        className="dao-btn-gold text-xs px-3 py-1.5 whitespace-nowrap"
                       >
                         <Plus className="w-3.5 h-3.5" />
-                        新增模型
+                        {t('addModel')}
                       </button>
                     </div>
 
@@ -629,21 +626,21 @@ export function ModelsPanel() {
                       </div>
                     ) : models.length === 0 ? (
                       <p className="text-xs text-sage/70 text-center py-6">
-                        该供应商下暂无模型，点击「新增模型」添加
+                        {t('emptyModels')}
                       </p>
                     ) : (
                       <div className="overflow-x-auto">
                         <table className="w-full text-sm min-w-[760px]">
                           <thead>
                             <tr className="border-b border-border/70 text-left">
-                              <th className="px-3 py-2 text-xs font-medium text-muted-foreground">名称</th>
-                              <th className="px-3 py-2 text-xs font-medium text-muted-foreground">显示名</th>
-                              <th className="px-3 py-2 text-xs font-medium text-muted-foreground">温度</th>
-                              <th className="px-3 py-2 text-xs font-medium text-muted-foreground text-center">默认</th>
-                              <th className="px-3 py-2 text-xs font-medium text-muted-foreground text-center">合成</th>
-                              <th className="px-3 py-2 text-xs font-medium text-muted-foreground text-center">启用</th>
-                              <th className="px-3 py-2 text-xs font-medium text-muted-foreground text-center">引用数</th>
-                              <th className="px-3 py-2 text-xs font-medium text-muted-foreground text-right">操作</th>
+                              <th className="px-3 py-2 text-xs font-medium text-muted-foreground whitespace-nowrap">{t('th.name')}</th>
+                              <th className="px-3 py-2 text-xs font-medium text-muted-foreground whitespace-nowrap">{t('th.displayName')}</th>
+                              <th className="px-3 py-2 text-xs font-medium text-muted-foreground whitespace-nowrap">{t('th.temperature')}</th>
+                              <th className="px-3 py-2 text-xs font-medium text-muted-foreground text-center whitespace-nowrap">{t('th.default')}</th>
+                              <th className="px-3 py-2 text-xs font-medium text-muted-foreground text-center whitespace-nowrap">{t('th.synthesis')}</th>
+                              <th className="px-3 py-2 text-xs font-medium text-muted-foreground text-center whitespace-nowrap">{t('th.enabled')}</th>
+                              <th className="px-3 py-2 text-xs font-medium text-muted-foreground text-center whitespace-nowrap">{t('th.refCount')}</th>
+                              <th className="px-3 py-2 text-xs font-medium text-muted-foreground text-right whitespace-nowrap">{t('th.actions')}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -658,7 +655,7 @@ export function ModelsPanel() {
                                 <td className="px-3 py-2.5 text-foreground whitespace-nowrap">
                                   {model.display_name || '-'}
                                 </td>
-                                <td className="px-3 py-2.5 text-foreground">{model.temperature}</td>
+                                <td className="px-3 py-2.5 text-foreground whitespace-nowrap">{model.temperature}</td>
                                 <td className="px-3 py-2.5 text-center">
                                   {model.is_default && <Star className="w-4 h-4 text-gold inline" />}
                                 </td>
@@ -672,7 +669,7 @@ export function ModelsPanel() {
                                       inline-block w-2 h-2 rounded-full
                                       ${model.is_enabled ? 'bg-sage' : 'bg-sage/40'}
                                     `}
-                                    title={model.is_enabled ? '点击停用' : '点击启用'}
+                                    title={model.is_enabled ? t('clickToDisable') : t('clickToEnable')}
                                   />
                                 </td>
                                 <td className="px-3 py-2.5 text-center text-foreground">
@@ -683,14 +680,14 @@ export function ModelsPanel() {
                                     <button
                                       onClick={() => openEditModel(provider, model)}
                                       className="p-1.5 rounded hover:bg-gold/10 text-muted-foreground hover:text-gold/80 transition-colors"
-                                      title="编辑"
+                                      title={t('edit')}
                                     >
                                       <Pencil className="w-4 h-4" />
                                     </button>
                                     <button
                                       onClick={() => setDeletingModel(model)}
                                       className="p-1.5 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors"
-                                      title="删除"
+                                      title={t('delete')}
                                     >
                                       <Trash2 className="w-4 h-4" />
                                     </button>
@@ -714,20 +711,20 @@ export function ModelsPanel() {
       {providerModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-foreground/40 backdrop-blur-sm">
           <div className="dao-card w-full max-w-lg p-6 animate-in fade-in duration-300 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-5">
-              <div className="flex items-center gap-2">
-                <Server className="w-5 h-5 text-sage" />
-                <h2 className="text-lg font-serif font-bold text-gold">
+            <div className="flex items-center justify-between gap-2 mb-5">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <Server className="w-5 h-5 text-sage shrink-0" />
+                <h2 className="text-lg font-serif font-bold text-gold truncate">
                   {providerModal.mode === 'edit'
-                    ? '编辑供应商'
+                    ? t('providerModal.edit')
                     : providerModal.step === 1
-                      ? '选择供应商模板'
-                      : '配置供应商'}
+                      ? t('providerModal.selectTemplate')
+                      : t('providerModal.configure')}
                 </h2>
               </div>
               <button
                 onClick={() => setProviderModal(null)}
-                className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors shrink-0"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -740,27 +737,27 @@ export function ModelsPanel() {
                   <div key={g.group}>
                     <p className="text-xs text-muted-foreground mb-2">{g.label}</p>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {g.items.map(t => (
+                      {g.items.map(tpl => (
                         <button
-                          key={t.id}
-                          onClick={() => pickTemplate(t)}
-                          className="p-3 rounded-lg bg-muted border border-border/70 hover:border-gold/40 hover:bg-gold/5 transition-all text-left"
+                          key={tpl.id}
+                          onClick={() => pickTemplate(tpl)}
+                          className="p-3 rounded-lg bg-muted border border-border/70 hover:border-gold/40 hover:bg-gold/5 transition-all text-left min-w-0"
                         >
-                          <p className="text-sm text-foreground truncate">{t.display_name}</p>
-                          <p className="text-[10px] text-sage/70 truncate mt-0.5">{t.id}</p>
+                          <p className="text-sm text-foreground truncate">{tpl.display_name}</p>
+                          <p className="text-[10px] text-sage/70 truncate mt-0.5">{tpl.id}</p>
                         </button>
                       ))}
                     </div>
                   </div>
                 ))}
                 <div>
-                  <p className="text-xs text-muted-foreground mb-2">其他</p>
+                  <p className="text-xs text-muted-foreground mb-2">{t('groupOther')}</p>
                   <button
                     onClick={() => pickTemplate(null)}
-                    className="w-full p-3 rounded-lg bg-muted border border-dashed border-border/70 hover:border-gold/40 hover:bg-gold/5 transition-all text-left"
+                    className="w-full p-3 rounded-lg bg-muted border border-dashed border-border/70 hover:border-gold/40 hover:bg-gold/5 transition-all text-left min-w-0"
                   >
-                    <p className="text-sm text-foreground">自定义</p>
-                    <p className="text-[10px] text-sage/70 mt-0.5">手动填写供应商标识与接口地址</p>
+                    <p className="text-sm text-foreground">{t('custom')}</p>
+                    <p className="text-[10px] text-sage/70 mt-0.5">{t('customDesc')}</p>
                   </button>
                 </div>
               </div>
@@ -773,56 +770,56 @@ export function ModelsPanel() {
                   <button
                     type="button"
                     onClick={() => setProviderModal(prev => prev ? { ...prev, step: 1 } : prev)}
-                    className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-gold/80 transition-colors"
+                    className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-gold/80 transition-colors whitespace-nowrap"
                   >
                     <ArrowLeft className="w-3.5 h-3.5" />
-                    重新选择模板
+                    {t('providerModal.reselectTemplate')}
                   </button>
                 )}
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="dao-label">供应商标识 *</label>
+                  <div className="min-w-0">
+                    <label className="dao-label">{t('providerNameLabel')}</label>
                     <input
                       type="text"
                       value={providerForm.name}
                       onChange={e => setProviderForm({ ...providerForm, name: e.target.value })}
-                      placeholder="如：deepseek"
+                      placeholder={t('providerNamePlaceholder')}
                       className="dao-input"
                       required
                     />
                   </div>
-                  <div>
-                    <label className="dao-label">显示名</label>
+                  <div className="min-w-0">
+                    <label className="dao-label">{t('displayNameLabel')}</label>
                     <input
                       type="text"
                       value={providerForm.display_name}
                       onChange={e => setProviderForm({ ...providerForm, display_name: e.target.value })}
-                      placeholder="如：DeepSeek"
+                      placeholder={t('displayNamePlaceholder')}
                       className="dao-input"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="dao-label">协议类型</label>
+                  <label className="dao-label">{t('protocolLabel')}</label>
                   <input
                     type="text"
                     value={providerForm.protocol}
                     onChange={e => setProviderForm({ ...providerForm, protocol: e.target.value })}
-                    placeholder="openai-compatible"
+                    placeholder={t('protocolPlaceholder')}
                     className="dao-input"
                   />
-                  <p className="text-[10px] text-sage/70 mt-1">当前仅支持 openai-compatible</p>
+                  <p className="text-[10px] text-sage/70 mt-1">{t('protocolHint')}</p>
                 </div>
 
                 <div>
-                  <label className="dao-label">Base URL *</label>
+                  <label className="dao-label">{t('baseUrlLabel')}</label>
                   <input
                     type="text"
                     value={providerForm.base_url}
                     onChange={e => setProviderForm({ ...providerForm, base_url: e.target.value })}
-                    placeholder="https://api.deepseek.com/v1"
+                    placeholder={t('baseUrlPlaceholder')}
                     className="dao-input"
                     required
                   />
@@ -830,7 +827,7 @@ export function ModelsPanel() {
 
                 {showApiKeyInput && (
                   <div>
-                    <label className="dao-label">API Key</label>
+                    <label className="dao-label">{t('apiKeyLabel')}</label>
                     <input
                       type="password"
                       value={providerForm.api_key}
@@ -838,24 +835,24 @@ export function ModelsPanel() {
                       placeholder={
                         providerModal.mode === 'edit' && providerModal.editing
                           ? providerModal.editing.has_api_key
-                            ? providerModal.editing.api_key_masked || '已配置密钥（留空不修改）'
-                            : '未配置密钥'
-                          : 'sk-xxxxxxxxxxxxxxxxxxxxxxxx'
+                            ? providerModal.editing.api_key_masked || t('apiKeyConfiguredPlaceholder')
+                            : t('apiKeyNotConfiguredPlaceholder')
+                          : t('apiKeyPlaceholder')
                       }
                       className="dao-input"
                       autoComplete="new-password"
                     />
                     {providerModal.mode === 'edit' && (
                       <p className="text-[10px] text-sage/70 mt-1">
-                        留空表示不修改密钥；填写新密钥将替换原密钥
+                        {t('apiKeyEditHint')}
                       </p>
                     )}
                   </div>
                 )}
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="dao-label">排序</label>
+                  <div className="min-w-0">
+                    <label className="dao-label">{t('sortOrderLabel')}</label>
                     <input
                       type="number"
                       min={0}
@@ -865,54 +862,54 @@ export function ModelsPanel() {
                       className="dao-input"
                     />
                   </div>
-                  <div>
-                    <label className="dao-label">备注</label>
+                  <div className="min-w-0">
+                    <label className="dao-label">{t('remarkLabel')}</label>
                     <input
                       type="text"
                       value={providerForm.remark}
                       onChange={e => setProviderForm({ ...providerForm, remark: e.target.value })}
-                      placeholder="可选"
+                      placeholder={t('optionalPlaceholder')}
                       className="dao-input"
                     />
                   </div>
                 </div>
 
-                <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+                <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer whitespace-nowrap">
                   <input
                     type="checkbox"
                     checked={providerForm.is_enabled}
                     onChange={e => setProviderForm({ ...providerForm, is_enabled: e.target.checked })}
                     className="accent-sage w-4 h-4"
                   />
-                  启用
+                  {t('enableLabel')}
                 </label>
 
                 {formError && (
                   <div className="flex items-center gap-2 text-sm text-primary bg-primary/10 border border-primary/20 rounded-lg px-3 py-2">
-                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                    <span>{formError}</span>
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span className="break-words min-w-0">{formError}</span>
                   </div>
                 )}
 
-                <div className="flex items-center gap-3 pt-2">
+                <div className="flex items-center gap-3 pt-2 flex-wrap">
                   <button
                     type="button"
                     onClick={() => setProviderModal(null)}
-                    className="dao-btn-ghost flex-1"
+                    className="dao-btn-ghost flex-1 whitespace-nowrap"
                   >
-                    取消
+                    {t('cancel')}
                   </button>
                   <button
                     type="submit"
                     disabled={!providerForm.name.trim() || !providerForm.base_url.trim() || saving}
-                    className="dao-btn-primary flex-1 disabled:opacity-50"
+                    className="dao-btn-primary flex-1 disabled:opacity-50 whitespace-nowrap"
                   >
                     {saving ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
                     ) : (
                       <Check className="w-4 h-4" />
                     )}
-                    {providerModal.mode === 'edit' ? '保存' : '创建'}
+                    {providerModal.mode === 'edit' ? t('saveCta') : t('createCta')}
                   </button>
                 </div>
               </form>
@@ -925,16 +922,18 @@ export function ModelsPanel() {
       {modelModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-foreground/40 backdrop-blur-sm">
           <div className="dao-card w-full max-w-lg p-6 animate-in fade-in duration-300 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-5">
-              <div className="flex items-center gap-2">
-                <Cpu className="w-5 h-5 text-sage" />
-                <h2 className="text-lg font-serif font-bold text-gold">
-                  {modelModal.editing ? '编辑模型' : `新增模型 · ${modelModal.provider.display_name || modelModal.provider.name}`}
+            <div className="flex items-center justify-between gap-2 mb-5">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <Cpu className="w-5 h-5 text-sage shrink-0" />
+                <h2 className="text-lg font-serif font-bold text-gold truncate">
+                  {modelModal.editing
+                    ? t('modelModal.edit')
+                    : t('modelModal.createForProvider', { name: modelModal.provider.display_name || modelModal.provider.name })}
                 </h2>
               </div>
               <button
                 onClick={() => setModelModal(null)}
-                className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors shrink-0"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -942,13 +941,13 @@ export function ModelsPanel() {
 
             <form onSubmit={handleModelSubmit} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="dao-label">模型名称 *</label>
+                <div className="min-w-0">
+                  <label className="dao-label">{t('modelNameLabel')}</label>
                   <input
                     type="text"
                     value={modelForm.name}
                     onChange={e => setModelForm({ ...modelForm, name: e.target.value })}
-                    placeholder="如：deepseek-chat"
+                    placeholder={t('modelNamePlaceholder')}
                     className="dao-input"
                     required
                   />
@@ -968,7 +967,7 @@ export function ModelsPanel() {
                               display_name: prev.display_name || name,
                             }))}
                             className={`
-                              text-[10px] px-2 py-1 rounded-full border transition-colors
+                              text-[10px] px-2 py-1 rounded-full border transition-colors whitespace-nowrap
                               ${modelForm.name === name
                                 ? 'bg-gold/20 text-gold border-gold/40'
                                 : 'bg-muted text-muted-foreground border-border/70 hover:border-gold/40 hover:text-gold/80'
@@ -982,21 +981,21 @@ export function ModelsPanel() {
                     )
                   })()}
                 </div>
-                <div>
-                  <label className="dao-label">显示名</label>
+                <div className="min-w-0">
+                  <label className="dao-label">{t('displayNameLabel')}</label>
                   <input
                     type="text"
                     value={modelForm.display_name}
                     onChange={e => setModelForm({ ...modelForm, display_name: e.target.value })}
-                    placeholder="如：DeepSeek-V3"
+                    placeholder={t('displayNamePlaceholder')}
                     className="dao-input"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="dao-label">温度（0-2）</label>
+                <div className="min-w-0">
+                  <label className="dao-label">{t('temperatureLabel')}</label>
                   <input
                     type="number"
                     min={0}
@@ -1007,8 +1006,8 @@ export function ModelsPanel() {
                     className="dao-input"
                   />
                 </div>
-                <div>
-                  <label className="dao-label">最大 Token</label>
+                <div className="min-w-0">
+                  <label className="dao-label">{t('maxTokensLabel')}</label>
                   <input
                     type="number"
                     min={1}
@@ -1018,8 +1017,8 @@ export function ModelsPanel() {
                     className="dao-input"
                   />
                 </div>
-                <div>
-                  <label className="dao-label">排序</label>
+                <div className="min-w-0">
+                  <label className="dao-label">{t('sortOrderLabel')}</label>
                   <input
                     type="number"
                     min={0}
@@ -1032,61 +1031,61 @@ export function ModelsPanel() {
               </div>
 
               <div className="flex flex-wrap gap-x-6 gap-y-2">
-                <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+                <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer whitespace-nowrap">
                   <input
                     type="checkbox"
                     checked={modelForm.is_enabled}
                     onChange={e => setModelForm({ ...modelForm, is_enabled: e.target.checked })}
                     className="accent-sage w-4 h-4"
                   />
-                  启用
+                  {t('enableLabel')}
                 </label>
-                <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+                <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer whitespace-nowrap">
                   <input
                     type="checkbox"
                     checked={modelForm.is_default}
                     onChange={e => setModelForm({ ...modelForm, is_default: e.target.checked })}
                     className="accent-gold w-4 h-4"
                   />
-                  设为默认模型
+                  {t('setDefaultLabel')}
                 </label>
-                <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
+                <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer whitespace-nowrap">
                   <input
                     type="checkbox"
                     checked={modelForm.is_synthesis}
                     onChange={e => setModelForm({ ...modelForm, is_synthesis: e.target.checked })}
                     className="accent-sage w-4 h-4"
                   />
-                  用于丹性合成
+                  {t('useForSynthesisLabel')}
                 </label>
               </div>
 
               {formError && (
                 <div className="flex items-center gap-2 text-sm text-primary bg-primary/10 border border-primary/20 rounded-lg px-3 py-2">
-                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                  <span>{formError}</span>
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span className="break-words min-w-0">{formError}</span>
                 </div>
               )}
 
-              <div className="flex items-center gap-3 pt-2">
+              <div className="flex items-center gap-3 pt-2 flex-wrap">
                 <button
                   type="button"
                   onClick={() => setModelModal(null)}
-                  className="dao-btn-ghost flex-1"
+                  className="dao-btn-ghost flex-1 whitespace-nowrap"
                 >
-                  取消
+                  {t('cancel')}
                 </button>
                 <button
                   type="submit"
                   disabled={!modelForm.name.trim() || saving}
-                  className="dao-btn-primary flex-1 disabled:opacity-50"
+                  className="dao-btn-primary flex-1 disabled:opacity-50 whitespace-nowrap"
                 >
                   {saving ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
                     <Check className="w-4 h-4" />
                   )}
-                  {modelModal.editing ? '保存' : '创建'}
+                  {modelModal.editing ? t('saveCta') : t('createCta')}
                 </button>
               </div>
             </form>
@@ -1100,34 +1099,34 @@ export function ModelsPanel() {
           <div className="dao-card w-full max-w-sm p-6 animate-in fade-in duration-300">
             <div className="flex items-center gap-2 mb-4">
               <AlertCircle className="w-5 h-5 text-primary" />
-              <h2 className="text-lg font-serif font-bold text-gold">删除供应商</h2>
+              <h2 className="text-lg font-serif font-bold text-gold">{t('deleteProviderTitle')}</h2>
             </div>
             <p className="text-sm text-foreground mb-2">
-              确定要删除供应商「{deletingProvider.display_name || deletingProvider.name}」吗？此操作不可撤销。
+              {t('deleteProviderDesc', { name: deletingProvider.display_name || deletingProvider.name })}
             </p>
             {deletingProvider.model_count > 0 && (
               <p className="text-xs text-gold/90 bg-gold/10 border border-gold/20 rounded-lg px-3 py-2 mb-2">
-                该供应商下仍有 {deletingProvider.model_count} 个模型，删除将被拒绝
+                {t('deleteProviderBlocked', { count: deletingProvider.model_count })}
               </p>
             )}
-            <div className="flex items-center gap-3 mt-5">
+            <div className="flex items-center gap-3 mt-5 flex-wrap">
               <button
                 onClick={() => setDeletingProvider(null)}
-                className="dao-btn-ghost flex-1"
+                className="dao-btn-ghost flex-1 whitespace-nowrap"
               >
-                取消
+                {t('cancel')}
               </button>
               <button
                 onClick={handleDeleteProvider}
                 disabled={deleteLoading}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 transition-colors text-sm font-medium disabled:opacity-50"
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 transition-colors text-sm font-medium disabled:opacity-50 whitespace-nowrap"
               >
                 {deleteLoading ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
                   <Trash2 className="w-4 h-4" />
                 )}
-                删除
+                {t('deleteCta')}
               </button>
             </div>
           </div>
@@ -1140,34 +1139,34 @@ export function ModelsPanel() {
           <div className="dao-card w-full max-w-sm p-6 animate-in fade-in duration-300">
             <div className="flex items-center gap-2 mb-4">
               <AlertCircle className="w-5 h-5 text-primary" />
-              <h2 className="text-lg font-serif font-bold text-gold">删除模型</h2>
+              <h2 className="text-lg font-serif font-bold text-gold">{t('deleteModelTitle')}</h2>
             </div>
             <p className="text-sm text-foreground mb-2">
-              确定要删除模型「{deletingModel.display_name || deletingModel.name}」吗？此操作不可撤销。
+              {t('deleteModelDesc', { name: deletingModel.display_name || deletingModel.name })}
             </p>
             {deletingModel.referenced_by > 0 && (
               <p className="text-xs text-gold/90 bg-gold/10 border border-gold/20 rounded-lg px-3 py-2 mb-2">
-                该模型正被 {deletingModel.referenced_by} 个道人引用，删除将被拒绝
+                {t('deleteModelBlocked', { count: deletingModel.referenced_by })}
               </p>
             )}
-            <div className="flex items-center gap-3 mt-5">
+            <div className="flex items-center gap-3 mt-5 flex-wrap">
               <button
                 onClick={() => setDeletingModel(null)}
-                className="dao-btn-ghost flex-1"
+                className="dao-btn-ghost flex-1 whitespace-nowrap"
               >
-                取消
+                {t('cancel')}
               </button>
               <button
                 onClick={handleDeleteModel}
                 disabled={deleteLoading}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 transition-colors text-sm font-medium disabled:opacity-50"
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20 transition-colors text-sm font-medium disabled:opacity-50 whitespace-nowrap"
               >
                 {deleteLoading ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
                   <Trash2 className="w-4 h-4" />
                 )}
-                删除
+                {t('deleteCta')}
               </button>
             </div>
           </div>
@@ -1177,11 +1176,11 @@ export function ModelsPanel() {
       {/* 错误提示 */}
       {error && (
         <div className="fixed bottom-20 md:bottom-6 right-4 dao-card p-3 flex items-center gap-2 text-sm text-primary animate-in fade-in duration-300 z-50">
-          <AlertCircle className="w-4 h-4 flex-shrink-0" />
-          <span>{error}</span>
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span className="break-words min-w-0">{error}</span>
           <button
             onClick={() => setError(null)}
-            className="p-1 rounded hover:bg-muted text-muted-foreground"
+            className="p-1 rounded hover:bg-muted text-muted-foreground shrink-0"
           >
             <X className="w-3.5 h-3.5" />
           </button>

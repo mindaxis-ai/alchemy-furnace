@@ -127,21 +127,21 @@ export default function HomePage() {
           </div>
         </div>
 
-        <div className="relative z-10 mx-auto max-w-3xl text-center md:mx-0 md:-mt-[14vh] md:text-left">
+        <div className="relative z-10 mx-auto max-w-3xl text-center md:mx-0 md:max-w-[42%] md:-mt-[14vh] md:text-left lg:max-w-[38%]">
           <h1 className="font-serif font-black leading-[1.06] tracking-tight text-foreground">
-            <span className="block text-[16vw] sm:text-[15rem] md:text-[14rem] lg:text-[17rem]">
+            <span className="block text-[16vw] sm:text-[8rem] md:text-[7rem] lg:text-[8.5rem]">
               {tHero('titlePart1')}
             </span>
-            <span className="block pl-[0.08em] text-[16vw] text-primary sm:text-[15rem] md:text-[14rem] lg:text-[17rem]">
+            <span className="block pl-[0.08em] text-[16vw] text-primary sm:text-[8rem] md:text-[7rem] lg:text-[8.5rem]">
               {tHero('titlePart2')}
             </span>
           </h1>
         </div>
 
         {/* 底部横排题字：桌面端钉在 hero 左下角,作画轴落款 */}
-        <p className="relative z-10 mt-14 flex items-center gap-4 font-serif text-xl font-bold tracking-[0.2em] md:tracking-[0.5em] text-sage/80 md:absolute md:bottom-10 md:left-8 md:mt-0 lg:left-14">
-          <span className="h-px w-10 bg-gold/70" aria-hidden />
-          {tHero('banner')}
+        <p className="relative z-10 mt-14 flex max-w-full items-center gap-4 truncate font-serif text-xl font-bold tracking-[0.2em] md:absolute md:bottom-10 md:left-8 md:mt-0 md:max-w-[calc(100%-4rem)] md:tracking-[0.5em] lg:left-14 lg:max-w-[40%]">
+          <span className="h-px w-10 shrink-0 bg-gold/70" aria-hidden />
+          <span className="truncate">{tHero('banner')}</span>
         </p>
       </header>
 

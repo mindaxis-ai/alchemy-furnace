@@ -63,14 +63,15 @@
     }
   },
   "footer": {
-    "tagline": "Sun and moon endure in the furnace; heaven and earth fit in the cauldron"
+    "tagline": "Sun and moon endure in the furnace; heaven and earth fit in the cauldron",
+    "brand": "Alchemy Furnace"
   },
   "home": {
     "dingAlt": "Bronze cauldron",
     "hero": {
       "titlePart1": "Alchemy",
       "titlePart2": "Furnace",
-      "banner": "Sun and moon endure in the furnace · heaven and earth fit in the cauldron"
+      "banner": "Sun and moon · heaven and earth"
     },
     "stats": {
       "ariaLabel": "Furnace overview",
@@ -427,6 +428,99 @@
     "stopped": "Stopped"
   },
   "firePanel": {},
+  "modelsPanel": {
+    "title": "Model Management",
+    "subtitle": "Configure model providers and their language models; one credential works for all",
+    "createProvider": "Add provider",
+    "loading": "Loading providers...",
+    "emptyTitle": "No providers yet",
+    "emptyDesc": "Click the button above to add your first provider from a preset template",
+    "collapseModels": "Collapse model list",
+    "expandModels": "Expand model list",
+    "disabledBadge": "Disabled",
+    "keyConfigured": "Configured",
+    "keyFree": "No key",
+    "modelCount": "{count} models",
+    "clickToDisable": "Click to disable",
+    "clickToEnable": "Click to enable",
+    "testConnection": "Test connection",
+    "edit": "Edit",
+    "delete": "Delete",
+    "connectSuccess": "Connected · {ms}ms",
+    "connectFailed": "Connection failed",
+    "modelList": "Models",
+    "addModel": "Add model",
+    "emptyModels": "No models under this provider. Click \"Add model\" to create one.",
+    "th": {
+      "name": "Name",
+      "displayName": "Display name",
+      "temperature": "Temperature",
+      "default": "Default",
+      "synthesis": "Synthesis",
+      "enabled": "Enabled",
+      "refCount": "Refs",
+      "actions": "Actions"
+    },
+    "providerModal": {
+      "edit": "Edit provider",
+      "selectTemplate": "Choose a provider template",
+      "configure": "Configure provider",
+      "reselectTemplate": "Choose a different template"
+    },
+    "group": {
+      "domestic": "Domestic",
+      "international": "International",
+      "local": "Local"
+    },
+    "groupOther": "Other",
+    "custom": "Custom",
+    "customDesc": "Fill in the provider ID and endpoint URL manually",
+    "providerNameLabel": "Provider ID *",
+    "providerNamePlaceholder": "e.g. deepseek",
+    "displayNameLabel": "Display name",
+    "displayNamePlaceholder": "e.g. DeepSeek",
+    "protocolLabel": "Protocol",
+    "protocolPlaceholder": "openai-compatible",
+    "protocolHint": "Only openai-compatible is supported for now",
+    "baseUrlLabel": "Base URL *",
+    "baseUrlPlaceholder": "e.g. https://api.deepseek.com/v1",
+    "apiKeyLabel": "API Key",
+    "apiKeyConfiguredPlaceholder": "Key configured (leave empty to keep)",
+    "apiKeyNotConfiguredPlaceholder": "No key configured",
+    "apiKeyPlaceholder": "sk-xxxxxxxxxxxxxxxxxxxxxxxx",
+    "apiKeyEditHint": "Leave empty to keep the existing key; filling a new value will replace it",
+    "sortOrderLabel": "Sort order",
+    "remarkLabel": "Remark",
+    "optionalPlaceholder": "Optional",
+    "enableLabel": "Enabled",
+    "cancel": "Cancel",
+    "createCta": "Create",
+    "saveCta": "Save",
+    "modelModal": {
+      "edit": "Edit model",
+      "createForProvider": "Add model · {name}"
+    },
+    "modelNameLabel": "Model name *",
+    "modelNamePlaceholder": "e.g. deepseek-chat",
+    "temperatureLabel": "Temperature (0-2)",
+    "maxTokensLabel": "Max tokens",
+    "setDefaultLabel": "Set as default model",
+    "useForSynthesisLabel": "Use for pill synthesis",
+    "deleteProviderTitle": "Delete provider",
+    "deleteProviderDesc": "Delete provider \"{name}\"? This cannot be undone.",
+    "deleteProviderBlocked": "This provider still has {count} models; deletion will be rejected",
+    "deleteModelTitle": "Delete model",
+    "deleteModelDesc": "Delete model \"{name}\"? This cannot be undone.",
+    "deleteModelBlocked": "This model is still referenced by {count} daoist(s); deletion will be rejected",
+    "deleteCta": "Delete",
+    "errorLoadProviders": "Failed to load providers",
+    "errorLoadModels": "Failed to load models",
+    "errorSave": "Save failed",
+    "errorDelete": "Delete failed",
+    "errorToggleProvider": "Failed to update provider status",
+    "errorToggleModel": "Failed to update model status",
+    "errorTestConnection": "Connection test failed"
+  },
   "bindModal": {
     "title": "Bind this pill",
     "pillLabel": "Pill",
