@@ -34,15 +34,18 @@ import {
 } from './smoke-runtime'
 import type { FurnaceWindow } from './bagua-furnace-fire'
 
-const PREVIEW_W = 240
-const PREVIEW_H = 80
+// 画布比例 5:4（200x160），让单 arch 窗口有上下边距。
+// PREVIEW_WIN 用 width:30% / height:60%，r=15% wh=60%，wh=4r → 直边清晰可见，
+// 不再像横躺扁弧把整个画布塞满。
+const PREVIEW_W = 200
+const PREVIEW_H = 160
 
 /** 1 个虚拟 arch 窗口（用 FurnaceWindow 协议），居中于 canvas */
 const PREVIEW_WIN: FurnaceWindow = {
   id: 'preview',
   x: 50,
-  width: 84,
-  top: 36,
+  width: 30,
+  top: 20,
   height: 60,
   phase: 0,
 }
