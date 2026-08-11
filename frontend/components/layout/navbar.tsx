@@ -164,7 +164,6 @@ export function Navbar() {
 
         {/* 移动端：语言切换器 + 汉堡按钮 */}
         <div className="flex items-center gap-2 md:hidden">
-          <LanguageSwitcher />
           <button
             type="button"
             className="grid size-10 place-items-center text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
@@ -174,6 +173,7 @@ export function Navbar() {
           >
             {mobileOpen ? <X className="size-5" /> : <Menu className="size-5" />}
           </button>
+          <LanguageSwitcher />
         </div>
       </div>
 

@@ -99,7 +99,7 @@ export default function HomePage() {
         {/* 鼎：更大更靠左,让标题尾部压在其上 */}
         {/* 鼎：参考 / 炉子动画 的 float-slow + 径向 mask;hover 点火冒烟 */}
         {/* 外层 absolute 负责定位;内层 group/ding + relative 是火/烟 absolute 子元素的包含块 */}
-        <div className="relative mx-auto my-6 w-[85%] opacity-90 md:absolute md:right-[6%] md:top-1/2 md:my-0 md:w-[72%] md:-translate-y-1/2 lg:w-[64%]">
+        <div className="relative mx-auto my-6 w-[60%] opacity-90 md:absolute md:right-[6%] md:top-1/2 md:my-0 md:w-[72%] md:-translate-y-1/2 lg:w-[64%]">
           <div className="group/ding relative w-full">
             {/* 鼎体：scale(1.15) 放大（hero 比例已通过 Image 高度约束协调） */}
             <div className="origin-center" style={{ transform: 'scale(1.15)' }}>
@@ -129,17 +129,17 @@ export default function HomePage() {
 
         <div className="relative z-10 mx-auto max-w-3xl text-center md:mx-0 md:-mt-[14vh] md:text-left">
           <h1 className="font-serif font-black leading-[1.06] tracking-tight text-foreground">
-            <span className="block text-[22vw] sm:text-[15rem] md:text-[14rem] lg:text-[17rem]">
+            <span className="block text-[16vw] sm:text-[15rem] md:text-[14rem] lg:text-[17rem]">
               {tHero('titlePart1')}
             </span>
-            <span className="block pl-[0.08em] text-[22vw] text-primary sm:text-[15rem] md:text-[14rem] lg:text-[17rem]">
+            <span className="block pl-[0.08em] text-[16vw] text-primary sm:text-[15rem] md:text-[14rem] lg:text-[17rem]">
               {tHero('titlePart2')}
             </span>
           </h1>
         </div>
 
         {/* 底部横排题字：桌面端钉在 hero 左下角,作画轴落款 */}
-        <p className="relative z-10 mt-14 flex items-center gap-4 font-serif text-xl font-bold tracking-[0.5em] text-sage/80 md:absolute md:bottom-10 md:left-8 md:mt-0 lg:left-14">
+        <p className="relative z-10 mt-14 flex items-center gap-4 font-serif text-xl font-bold tracking-[0.2em] md:tracking-[0.5em] text-sage/80 md:absolute md:bottom-10 md:left-8 md:mt-0 lg:left-14">
           <span className="h-px w-10 bg-gold/70" aria-hidden />
           {tHero('banner')}
         </p>
