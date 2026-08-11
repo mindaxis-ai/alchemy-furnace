@@ -4,6 +4,16 @@ import { useEffect, useRef, useState, useMemo } from 'react'
 import Image from 'next/image'
 import { BaguaFurnaceFire, FurnaceWindow } from './bagua-furnace-fire'
 import { BaguaFurnaceSmoke } from './bagua-furnace-smoke'
+import {
+  DEFAULT_FIRE_EFFECT,
+  DEFAULT_SMOKE_LEVEL,
+  FIRE_EFFECT_CHANGE_EVENT,
+  SMOKE_LEVEL_CHANGE_EVENT,
+  FIRE_EFFECT_STORAGE_KEY,
+  SMOKE_LEVEL_STORAGE_KEY,
+  getFireEffect,
+  getSmokeLevel,
+} from '@/lib/fire-effect-pref'
 
 interface BaguaFurnaceProps {
   alt: string
@@ -60,9 +70,36 @@ export function BaguaFurnace({ alt, windows }: BaguaFurnaceProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const [isHovering, setIsHovering] = useState(false)
   const [isVisible, setIsVisible] = useState(true)
+  const [fireEffect, setFireEffectState] = useState<typeof DEFAULT_FIRE_EFFECT>(DEFAULT_FIRE_EFFECT)
+  const [smokeLevel, setSmokeLevelState] = useState<number>(DEFAULT_SMOKE_LEVEL)
   const isTouch = useMediaQuery('(hover: none), (pointer: coarse)')
   const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
   const [pixelRatio, setPixelRatio] = useState(1)
+
+  // 挂载读 pref（client only），并订阅：同标签页 CustomEvent + 跨标签页 storage
+  useEffect(() => {
+    setFireEffectState(getFireEffect())
+    setSmokeLevelState(getSmokeLevel())
+    const onFire = (e: Event) => {
+      const next = (e as CustomEvent).detail as typeof DEFAULT_FIRE_EFFECT
+      setFireEffectState(next)
+    }
+    const onSmoke = (e: Event) => {
+      setSmokeLevelState((e as CustomEvent).detail as number)
+    }
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === FIRE_EFFECT_STORAGE_KEY) setFireEffectState(getFireEffect())
+      if (e.key === SMOKE_LEVEL_STORAGE_KEY) setSmokeLevelState(getSmokeLevel())
+    }
+    window.addEventListener(FIRE_EFFECT_CHANGE_EVENT, onFire)
+    window.addEventListener(SMOKE_LEVEL_CHANGE_EVENT, onSmoke)
+    window.addEventListener('storage', onStorage)
+    return () => {
+      window.removeEventListener(FIRE_EFFECT_CHANGE_EVENT, onFire)
+      window.removeEventListener(SMOKE_LEVEL_CHANGE_EVENT, onSmoke)
+      window.removeEventListener('storage', onStorage)
+    }
+  }, [])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -125,6 +162,7 @@ export function BaguaFurnace({ alt, windows }: BaguaFurnaceProps) {
         budget={{ particles: budget.fireParticles, glow: budget.fireGlow }}
         pixelRatio={pixelRatio}
         paused={paused}
+        effectId={fireEffect}
       />
 
       {/* Cauldron image with window cut-outs */}
@@ -196,6 +234,7 @@ export function BaguaFurnace({ alt, windows }: BaguaFurnaceProps) {
         budget={{ wisps: budget.smokeWisps }}
         pixelRatio={pixelRatio}
         paused={paused}
+        level={smokeLevel}
       />
     </div>
   )

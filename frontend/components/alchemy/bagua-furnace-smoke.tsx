@@ -24,6 +24,8 @@ export interface BaguaFurnaceSmokeProps {
   budget: SmokeBudget
   pixelRatio: number
   paused: boolean
+  /** 用户烟雾浓度 0..1，默认 1。level=0 时不再 spawn 新烟，存量自然消散。 */
+  level?: number
 }
 
 export function BaguaFurnaceSmoke({
@@ -32,6 +34,7 @@ export function BaguaFurnaceSmoke({
   budget,
   pixelRatio,
   paused,
+  level = 1,
 }: BaguaFurnaceSmokeProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -105,8 +108,9 @@ export function BaguaFurnaceSmoke({
       // spawn
       const target = spawnRate * dt
       const count = Math.floor(target) + (Math.random() < target % 1 ? 1 : 0)
-      if (count > 0 && wispsRef.current.length < budget.wisps) {
-        spawn(Math.min(count, budget.wisps - wispsRef.current.length))
+      const effectiveBudget = Math.max(0, Math.floor(budget.wisps * level))
+      if (count > 0 && wispsRef.current.length < effectiveBudget) {
+        spawn(Math.min(count, effectiveBudget - wispsRef.current.length))
       }
 
       // update — the climb accelerates slightly with altitude (buoyant plume

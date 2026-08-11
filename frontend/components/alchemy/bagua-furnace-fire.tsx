@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react'
 import {
   DEFAULT_EFFECT_ID,
   EFFECTS,
+  type FireEffectId,
   type Particle,
   type WinRect,
   type StageGains,
@@ -29,6 +30,7 @@ export interface BaguaFurnaceFireProps {
   budget: FireBudget
   pixelRatio: number
   paused: boolean
+  effectId?: FireEffectId
 }
 
 /**
@@ -66,6 +68,7 @@ export function BaguaFurnaceFire({
   budget,
   pixelRatio,
   paused,
+  effectId,
 }: BaguaFurnaceFireProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -76,7 +79,7 @@ export function BaguaFurnaceFire({
   const sizeRef = useRef({ w: 0, h: 0 })
 
   // 当前 effect：硬编码默认 plume，dev 改 EFFECT_ID 验证调度器
-  const effect = EFFECTS[DEFAULT_EFFECT_ID]
+  const effect = EFFECTS[effectId ?? DEFAULT_EFFECT_ID]
 
   useEffect(() => {
     const canvas = canvasRef.current

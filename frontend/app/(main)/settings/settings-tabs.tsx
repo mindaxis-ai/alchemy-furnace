@@ -10,12 +10,13 @@ import { useTranslations } from 'next-intl'
 import { Info, Flame, ExternalLink, Heart } from 'lucide-react'
 import { TopTabs } from '@/components/interaction/top-tabs'
 import { ModelsPanel } from '@/components/models/models-panel'
+import { FireEffectPanel } from '@/components/settings/fire-effect-panel'
 
-const TAB_KEYS = ['models', 'about'] as const
+const TAB_KEYS = ['models', 'fire', 'about'] as const
 type TabKey = (typeof TAB_KEYS)[number]
 
 function isTabKey(v: string | null): v is TabKey {
-  return v === 'models' || v === 'about'
+  return v === 'models' || v === 'fire' || v === 'about'
 }
 
 export function SettingsTabs() {
@@ -38,13 +39,20 @@ export function SettingsTabs() {
         <TopTabs
           tabs={[
             { key: 'models', label: t('models') },
+            { key: 'fire', label: t('fire') },
             { key: 'about', label: t('about') },
           ]}
           activeKey={active}
           onChange={switchTab}
         />
       </div>
-      {active === 'models' ? <ModelsPanel /> : <AboutPanel />}
+      {active === 'models' ? (
+        <ModelsPanel />
+      ) : active === 'fire' ? (
+        <FireEffectPanel />
+      ) : (
+        <AboutPanel />
+      )}
     </>
   )
 }
