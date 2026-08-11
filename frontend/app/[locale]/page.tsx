@@ -101,8 +101,8 @@ export default function HomePage() {
         {/* 外层 absolute 负责定位;内层 group/ding + relative 是火/烟 absolute 子元素的包含块 */}
         <div className="relative mx-auto my-6 w-[85%] opacity-90 md:absolute md:right-[14%] md:top-1/2 md:my-0 md:w-[72%] md:-translate-y-1/2 lg:w-[64%]">
           <div className="group/ding relative w-full">
-            {/* 鼎体：scale(1.25) 放大（hero 比例已通过 Image 高度约束协调） */}
-            <div className="origin-center" style={{ transform: 'scale(1.25)' }}>
+            {/* 鼎体：scale(1.15) 放大（hero 比例已通过 Image 高度约束协调） */}
+            <div className="origin-center" style={{ transform: 'scale(1.15)' }}>
               <div
                 className="float-slow relative"
                 style={{
