@@ -127,7 +127,7 @@ export default function HomePage() {
           </div>
         </div>
 
-        <div className="relative z-10 mx-auto max-w-3xl text-center md:mx-0 md:-mt-[8vh] md:text-left">
+        <div className="relative z-10 mx-auto max-w-3xl text-center md:mx-0 md:-mt-[14vh] md:text-left">
           <h1 className="font-serif font-black leading-[1.06] tracking-tight text-foreground">
             <span className="block text-[22vw] sm:text-[15rem] md:text-[14rem] lg:text-[17rem]">
               {tHero('titlePart1')}
