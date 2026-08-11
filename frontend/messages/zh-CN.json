@@ -188,6 +188,89 @@
       "confirm": "确认删除",
       "bindTitle": "赠予道人",
       "bindDesc": "为 {agent} 服用此丹，权重 {weight}"
+    },
+    "editor": {
+      "saveCta": "保存金丹",
+      "savedFeedback": "已存入金丹阁",
+      "destroyCta": "销毁",
+      "deleteConfirm": "确定要销毁这颗金丹吗？此操作不可恢复。",
+      "builtInBadge": "内置",
+      "pillNamePlaceholder": "金丹名称",
+      "descPlaceholder": "金丹简介（含触发语、反触发语）...",
+      "authorLabel": "作者",
+      "authorPlaceholder": "作者",
+      "versionLabel": "版本",
+      "tagsLabel": "标签（逗号分隔）",
+      "tagsPlaceholder": "文言文，古雅",
+      "deleteItemAria": "删除该项",
+      "section": {
+        "identity": "身份卡（第一人称）",
+        "dna": "表达 DNA",
+        "mentalModels": "心智模型",
+        "heuristics": "决策启发式",
+        "values": "价值观",
+        "antiPatterns": "反模式（绝不做的事）",
+        "honestLimits": "诚实边界",
+        "dialogues": "示例对话"
+      },
+      "identityPlaceholder": "如：我是一名从 2077 年穿越而来的流浪黑客...",
+      "dna": {
+        "sentenceLength": "句式长度",
+        "formality": "正式程度（{value}）",
+        "casual": "随意",
+        "formal": "正式",
+        "vocabulary": "高频词（逗号分隔）",
+        "vocabularyPlaceholder": "芯片，霓虹，义体",
+        "tabooWords": "禁用词（逗号分隔）",
+        "tabooWordsPlaceholder": "绝不说出口的词汇",
+        "rhythm": "节奏",
+        "rhythmPlaceholder": "如：短促有力，善用停顿",
+        "humor": "幽默类型",
+        "humorPlaceholder": "如：冷幽默、自嘲",
+        "certainty": "确定性表达风格",
+        "certaintyPlaceholder": "如：直言不讳 / 留有余地",
+        "citation": "引用习惯",
+        "citationPlaceholder": "如：喜引《道德经》",
+        "lengthOption": {
+          "short": "短句（short）",
+          "medium": "中等（medium）",
+          "long": "长句（long）",
+          "mixed": "混合（mixed）"
+        }
+      },
+      "mentalModel": {
+        "namePlaceholder": "模型名称，如：第一性原理",
+        "oneLinerPlaceholder": "一句话概括",
+        "applicationPlaceholder": "如何应用此模型分析问题",
+        "limitationsPlaceholder": "局限性（逗号分隔）",
+        "addLabel": "添加心智模型",
+        "deleteAria": "删除心智模型"
+      },
+      "heuristic": {
+        "conditionPlaceholder": "当...（条件）",
+        "actionPlaceholder": "就...（行动）",
+        "casePlaceholder": "案例（可选）",
+        "addLabel": "添加决策启发式",
+        "deleteAria": "删除决策启发式"
+      },
+      "values": {
+        "placeholder": "如：诚实优于圆滑",
+        "addLabel": "添加价值观"
+      },
+      "antiPatterns": {
+        "placeholder": "如：不堆砌空洞的形容词",
+        "addLabel": "添加反模式"
+      },
+      "honestLimits": {
+        "placeholder": "如：对不熟悉的领域坦言不知",
+        "addLabel": "添加诚实边界"
+      },
+      "dialogue": {
+        "userPlaceholder": "道友问：...",
+        "assistantPlaceholder": "道人答：...",
+        "addLabel": "添加示例对话",
+        "deleteAria": "删除示例对话"
+      }
     }
   },
   "agents": {
@@ -279,7 +362,9 @@
   "pillCard": {
     "builtInBadge": "内置",
     "noDescription": "未留丹解",
-    "viewCta": "观其丹性"
+    "viewCta": "观其丹性",
+    "bestowCta": "赠予道人",
+    "bestowTitle": "将此金丹赠予一位道人服用"
   },
   "agentCard": {
     "boundPillsBadge": "{count} 丹",

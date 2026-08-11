@@ -9,6 +9,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { useTranslations } from 'next-intl'
 import {
   ArrowLeft,
   CircleDot,
@@ -175,9 +176,9 @@ function buildSchema(form: FormState): SkillSchema {
 function Section({ icon: Icon, title, children }: { icon: React.ElementType; title: string; children: React.ReactNode }) {
   return (
     <section className="dao-card p-5">
-      <div className="flex items-center gap-2 mb-4">
-        <Icon className="w-4 h-4 text-gold" />
-        <h2 className="text-base font-serif font-bold text-gold">{title}</h2>
+      <div className="flex items-center gap-2 mb-4 min-w-0">
+        <Icon className="w-4 h-4 text-gold shrink-0" />
+        <h2 className="text-base font-serif font-bold text-gold truncate">{title}</h2>
       </div>
       {children}
     </section>
@@ -190,11 +191,13 @@ function StringListEditor({
   onChange,
   placeholder,
   addLabel,
+  deleteAria,
 }: {
   items: string[]
   onChange: (items: string[]) => void
   placeholder: string
   addLabel: string
+  deleteAria: string
 }) {
   return (
     <div className="space-y-2">
@@ -209,13 +212,13 @@ function StringListEditor({
               onChange(next)
             }}
             placeholder={placeholder}
-            className="dao-input flex-1 py-1.5 text-sm"
+            className="dao-input flex-1 py-1.5 text-sm min-w-0"
           />
           <button
             type="button"
-            aria-label="删除该项"
+            aria-label={deleteAria}
             onClick={() => onChange(items.filter((_, i) => i !== index))}
-            className="p-1.5 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors flex-shrink-0"
+            className="p-1.5 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors shrink-0"
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>
@@ -224,7 +227,7 @@ function StringListEditor({
       <button
         type="button"
         onClick={() => onChange([...items, ''])}
-        className="flex items-center gap-1 text-xs text-gold/70 hover:text-gold transition-colors"
+        className="flex items-center gap-1 text-xs text-gold/70 hover:text-gold transition-colors whitespace-nowrap"
       >
         <Plus className="w-3.5 h-3.5" />
         {addLabel}
@@ -236,6 +239,8 @@ function StringListEditor({
 // ========== 页面组件 ==========
 
 export default function PillDetailPage() {
+  const t = useTranslations('pill.editor')
+  const tPill = useTranslations('pill')
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
   const pillId = id
@@ -291,7 +296,7 @@ export default function PillDetailPage() {
 
   /** 删除金丹 */
   const handleDelete = async () => {
-    if (!window.confirm('确定要销毁这颗金丹吗？此操作不可恢复。')) return
+    if (!window.confirm(t('deleteConfirm'))) return
     const ok = await removePill(pillId)
     if (ok) router.push('/pills')
   }
@@ -301,7 +306,7 @@ export default function PillDetailPage() {
       <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
         <div className="flex flex-col items-center justify-center py-16">
           <Loader2 className="w-8 h-8 text-gold animate-spin mb-3" />
-          <p className="text-sm text-muted-foreground">加载中...</p>
+          <p className="text-sm text-muted-foreground">{tPill('loading')}</p>
         </div>
       </div>
     )
@@ -312,10 +317,10 @@ export default function PillDetailPage() {
       <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
         <div className="flex flex-col items-center justify-center py-16">
           <AlertCircle className="w-12 h-12 text-primary mb-3" />
-          <p className="text-sm text-muted-foreground">金丹不存在</p>
-          <Link href="/pills" className="dao-btn-primary mt-4">
+          <p className="text-sm text-muted-foreground">{tPill('notFound')}</p>
+          <Link href="/pills" className="dao-btn-primary mt-4 whitespace-nowrap">
             <ArrowLeft className="w-4 h-4" />
-            返回金丹阁
+            {tPill('backToList')}
           </Link>
         </div>
       </div>
@@ -327,17 +332,17 @@ export default function PillDetailPage() {
       {/* 返回按钮 */}
       <Link
         href="/pills"
-        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-gold transition-colors mb-4"
+        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-gold transition-colors mb-4 whitespace-nowrap"
       >
         <ArrowLeft className="w-4 h-4" />
-        返回金丹阁
+        {tPill('backToList')}
       </Link>
 
       {/* 金丹信息头部 */}
       <div className="dao-card p-5 md:p-6 mb-6">
         <div className="flex flex-col md:flex-row md:items-start gap-4">
           {/* 图标 */}
-          <div className="flex-shrink-0 w-16 h-16 rounded-2xl flex items-center justify-center bg-gold/15 text-gold shadow-[0_0_18px_rgba(201,169,110,0.35)]">
+          <div className="shrink-0 w-16 h-16 rounded-2xl flex items-center justify-center bg-gold/15 text-gold shadow-[0_0_18px_rgba(201,169,110,0.35)]">
             <FlaskConical className="w-8 h-8" />
           </div>
 
@@ -348,11 +353,11 @@ export default function PillDetailPage() {
                 value={form.name}
                 onChange={e => patch({ name: e.target.value })}
                 className="dao-input text-lg font-serif font-bold flex-1 min-w-[200px]"
-                placeholder="金丹名称"
+                placeholder={t('pillNamePlaceholder')}
               />
               {pill.is_builtin && (
-                <span className="text-[10px] px-2 py-0.5 rounded-full border bg-sage/15 text-sage border-sage/30">
-                  内置
+                <span className="text-[10px] px-2 py-0.5 rounded-full border bg-sage/15 text-sage border-sage/30 whitespace-nowrap shrink-0">
+                  {t('builtInBadge')}
                 </span>
               )}
             </div>
@@ -362,24 +367,24 @@ export default function PillDetailPage() {
               onChange={e => patch({ description: e.target.value })}
               className="dao-textarea"
               rows={2}
-              placeholder="金丹简介（含触发语、反触发语）..."
+              placeholder={t('descPlaceholder')}
             />
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div>
+              <div className="min-w-0">
                 <label className="dao-label flex items-center gap-1">
                   <User className="w-3 h-3" />
-                  作者
+                  {t('authorLabel')}
                 </label>
                 <input
                   value={form.author}
                   onChange={e => patch({ author: e.target.value })}
                   className="dao-input py-1.5 text-sm"
-                  placeholder="作者"
+                  placeholder={t('authorPlaceholder')}
                 />
               </div>
-              <div>
-                <label className="dao-label">版本</label>
+              <div className="min-w-0">
+                <label className="dao-label">{t('versionLabel')}</label>
                 <input
                   value={form.version}
                   onChange={e => patch({ version: e.target.value })}
@@ -387,40 +392,40 @@ export default function PillDetailPage() {
                   placeholder="1.0.0"
                 />
               </div>
-              <div>
+              <div className="min-w-0">
                 <label className="dao-label flex items-center gap-1">
                   <Tag className="w-3 h-3" />
-                  标签（逗号分隔）
+                  {t('tagsLabel')}
                 </label>
                 <input
                   value={form.tagsText}
                   onChange={e => patch({ tagsText: e.target.value })}
                   className="dao-input py-1.5 text-sm"
-                  placeholder="文言文，古雅"
+                  placeholder={t('tagsPlaceholder')}
                 />
               </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1">
-                <Clock className="w-3.5 h-3.5" />
-                {formatDateTime(pill.created_at)}
+              <span className="flex items-center gap-1 min-w-0">
+                <Clock className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">{formatDateTime(pill.created_at)}</span>
               </span>
             </div>
           </div>
 
           {/* 操作按钮 */}
-          <div className="flex md:flex-col items-center gap-2">
-            <button onClick={() => setShowBind(true)} className="dao-btn-gold text-sm">
+          <div className="flex md:flex-col items-center gap-2 shrink-0">
+            <button onClick={() => setShowBind(true)} className="dao-btn-gold text-sm whitespace-nowrap">
               <Gift className="w-4 h-4" />
-              赠予道人
+              {tPill('bindCta')}
             </button>
             <button
               onClick={handleDelete}
-              className="dao-btn-ghost text-sm text-primary hover:text-primary/80"
+              className="dao-btn-ghost text-sm text-primary hover:text-primary/80 whitespace-nowrap"
             >
               <Trash2 className="w-4 h-4" />
-              销毁
+              {t('destroyCta')}
             </button>
           </div>
         </div>
@@ -428,34 +433,34 @@ export default function PillDetailPage() {
 
       <div className="space-y-5">
         {/* 身份卡 */}
-        <Section icon={IdCard} title="身份卡（第一人称）">
+        <Section icon={IdCard} title={t('section.identity')}>
           <textarea
             value={form.identityCard}
             onChange={e => patch({ identityCard: e.target.value })}
             className="dao-textarea"
             rows={3}
-            placeholder="如：我是一名从 2077 年穿越而来的流浪黑客..."
+            placeholder={t('identityPlaceholder')}
           />
         </Section>
 
         {/* 表达 DNA */}
-        <Section icon={Dna} title="表达 DNA">
+        <Section icon={Dna} title={t('section.dna')}>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="dao-label">句式长度</label>
+            <div className="min-w-0">
+              <label className="dao-label">{t('dna.sentenceLength')}</label>
               <select
                 value={form.dna.sentence_length}
                 onChange={e => patchDna({ sentence_length: e.target.value as SentenceLength })}
                 className="dao-input"
               >
-                <option value="short">短句（short）</option>
-                <option value="medium">中等（medium）</option>
-                <option value="long">长句（long）</option>
-                <option value="mixed">混合（mixed）</option>
+                <option value="short">{t('dna.lengthOption.short')}</option>
+                <option value="medium">{t('dna.lengthOption.medium')}</option>
+                <option value="long">{t('dna.lengthOption.long')}</option>
+                <option value="mixed">{t('dna.lengthOption.mixed')}</option>
               </select>
             </div>
-            <div>
-              <label className="dao-label">正式程度（{form.dna.formality.toFixed(2)}）</label>
+            <div className="min-w-0">
+              <label className="dao-label">{t('dna.formality', { value: form.dna.formality.toFixed(2) })}</label>
               <input
                 type="range"
                 min={0}
@@ -466,69 +471,69 @@ export default function PillDetailPage() {
                 className="w-full accent-gold mt-2.5"
               />
               <div className="flex justify-between text-[10px] text-sage">
-                <span>随意</span>
-                <span>正式</span>
+                <span>{t('dna.casual')}</span>
+                <span>{t('dna.formal')}</span>
               </div>
             </div>
-            <div>
-              <label className="dao-label">高频词（逗号分隔）</label>
+            <div className="min-w-0">
+              <label className="dao-label">{t('dna.vocabulary')}</label>
               <input
                 value={form.dna.vocabularyText}
                 onChange={e => patchDna({ vocabularyText: e.target.value })}
                 className="dao-input py-1.5 text-sm"
-                placeholder="芯片，霓虹，义体"
+                placeholder={t('dna.vocabularyPlaceholder')}
               />
             </div>
-            <div>
-              <label className="dao-label">禁用词（逗号分隔）</label>
+            <div className="min-w-0">
+              <label className="dao-label">{t('dna.tabooWords')}</label>
               <input
                 value={form.dna.tabooWordsText}
                 onChange={e => patchDna({ tabooWordsText: e.target.value })}
                 className="dao-input py-1.5 text-sm"
-                placeholder="绝不说出口的词汇"
+                placeholder={t('dna.tabooWordsPlaceholder')}
               />
             </div>
-            <div>
-              <label className="dao-label">节奏</label>
+            <div className="min-w-0">
+              <label className="dao-label">{t('dna.rhythm')}</label>
               <input
                 value={form.dna.rhythm}
                 onChange={e => patchDna({ rhythm: e.target.value })}
                 className="dao-input py-1.5 text-sm"
-                placeholder="如：短促有力，善用停顿"
+                placeholder={t('dna.rhythmPlaceholder')}
               />
             </div>
-            <div>
-              <label className="dao-label">幽默类型</label>
+            <div className="min-w-0">
+              <label className="dao-label">{t('dna.humor')}</label>
               <input
                 value={form.dna.humor_type}
                 onChange={e => patchDna({ humor_type: e.target.value })}
                 className="dao-input py-1.5 text-sm"
-                placeholder="如：冷幽默、自嘲"
+                placeholder={t('dna.humorPlaceholder')}
               />
             </div>
-            <div>
-              <label className="dao-label">确定性表达风格</label>
+            <div className="min-w-0">
+              <label className="dao-label">{t('dna.certainty')}</label>
               <input
                 value={form.dna.certainty_style}
                 onChange={e => patchDna({ certainty_style: e.target.value })}
                 className="dao-input py-1.5 text-sm"
-                placeholder="如：直言不讳 / 留有余地"
+                placeholder={t('dna.certaintyPlaceholder')}
               />
             </div>
-            <div>
-              <label className="dao-label">引用习惯</label>
+            <div className="min-w-0">
+              <label className="dao-label">{t('dna.citation')}</label>
               <input
                 value={form.dna.citation_habit}
                 onChange={e => patchDna({ citation_habit: e.target.value })}
                 className="dao-input py-1.5 text-sm"
-                placeholder="如：喜引《道德经》"
+                placeholder={t('dna.citationPlaceholder')}
               />
             </div>
           </div>
         </Section>
 
         {/* 心智模型 */}
-        <Section icon={BrainCircuit} title="心智模型">
+        <Section icon={BrainCircuit} title={t('section.mentalModels')}>
           <div className="space-y-4">
             {form.mentalModels.map((model, index) => (
               <div key={index} className="p-3 rounded-lg bg-muted border border-border/70 space-y-2">
@@ -540,14 +545,14 @@ export default function PillDetailPage() {
                       next[index] = { ...model, name: e.target.value }
                       patch({ mentalModels: next })
                     }}
-                    className="dao-input flex-1 py-1.5 text-sm"
-                    placeholder="模型名称，如：第一性原理"
+                    className="dao-input flex-1 py-1.5 text-sm min-w-0"
+                    placeholder={t('mentalModel.namePlaceholder')}
                   />
                   <button
                     type="button"
-                    aria-label="删除心智模型"
+                    aria-label={t('mentalModel.deleteAria')}
                     onClick={() => patch({ mentalModels: form.mentalModels.filter((_, i) => i !== index) })}
-                    className="p-1.5 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors flex-shrink-0"
+                    className="p-1.5 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors shrink-0"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -560,7 +565,7 @@ export default function PillDetailPage() {
                     patch({ mentalModels: next })
                   }}
                   className="dao-input py-1.5 text-sm"
-                  placeholder="一句话概括"
+                  placeholder={t('mentalModel.oneLinerPlaceholder')}
                 />
                 <textarea
                   value={model.application}
@@ -571,7 +576,7 @@ export default function PillDetailPage() {
                   }}
                   className="dao-textarea text-sm"
                   rows={2}
-                  placeholder="如何应用此模型分析问题"
+                  placeholder={t('mentalModel.applicationPlaceholder')}
                 />
                 <input
                   value={model.limitationsText}
@@ -581,23 +586,23 @@ export default function PillDetailPage() {
                     patch({ mentalModels: next })
                   }}
                   className="dao-input py-1.5 text-sm"
-                  placeholder="局限性（逗号分隔）"
+                  placeholder={t('mentalModel.limitationsPlaceholder')}
                 />
               </div>
             ))}
             <button
               type="button"
               onClick={() => patch({ mentalModels: [...form.mentalModels, { name: '', one_liner: '', application: '', limitationsText: '' }] })}
-              className="flex items-center gap-1 text-xs text-gold/70 hover:text-gold transition-colors"
+              className="flex items-center gap-1 text-xs text-gold/70 hover:text-gold transition-colors whitespace-nowrap"
             >
               <Plus className="w-3.5 h-3.5" />
-              添加心智模型
+              {t('mentalModel.addLabel')}
             </button>
           </div>
         </Section>
 
         {/* 决策启发式 */}
-        <Section icon={Split} title="决策启发式">
+        <Section icon={Split} title={t('section.heuristics')}>
           <div className="space-y-4">
             {form.heuristics.map((heuristic, index) => (
               <div key={index} className="p-3 rounded-lg bg-muted border border-border/70 space-y-2">
@@ -609,14 +614,14 @@ export default function PillDetailPage() {
                       next[index] = { ...heuristic, condition: e.target.value }
                       patch({ heuristics: next })
                     }}
-                    className="dao-input flex-1 py-1.5 text-sm"
-                    placeholder="当...（条件）"
+                    className="dao-input flex-1 py-1.5 text-sm min-w-0"
+                    placeholder={t('heuristic.conditionPlaceholder')}
                   />
                   <button
                     type="button"
-                    aria-label="删除决策启发式"
+                    aria-label={t('heuristic.deleteAria')}
                     onClick={() => patch({ heuristics: form.heuristics.filter((_, i) => i !== index) })}
-                    className="p-1.5 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors flex-shrink-0"
+                    className="p-1.5 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors shrink-0"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -629,7 +634,7 @@ export default function PillDetailPage() {
                     patch({ heuristics: next })
                   }}
                   className="dao-input py-1.5 text-sm"
-                  placeholder="就...（行动）"
+                  placeholder={t('heuristic.actionPlaceholder')}
                 />
                 <input
                   value={heuristic.case || ''}
@@ -639,58 +644,61 @@ export default function PillDetailPage() {
                     patch({ heuristics: next })
                   }}
                   className="dao-input py-1.5 text-sm"
-                  placeholder="案例（可选）"
+                  placeholder={t('heuristic.casePlaceholder')}
                 />
               </div>
             ))}
             <button
               type="button"
               onClick={() => patch({ heuristics: [...form.heuristics, { condition: '', action: '', case: '' }] })}
-              className="flex items-center gap-1 text-xs text-gold/70 hover:text-gold transition-colors"
+              className="flex items-center gap-1 text-xs text-gold/70 hover:text-gold transition-colors whitespace-nowrap"
             >
               <Plus className="w-3.5 h-3.5" />
-              添加决策启发式
+              {t('heuristic.addLabel')}
             </button>
           </div>
         </Section>
 
         {/* 价值观 */}
-        <Section icon={Heart} title="价值观">
+        <Section icon={Heart} title={t('section.values')}>
           <StringListEditor
             items={form.values}
             onChange={values => patch({ values })}
-            placeholder="如：诚实优于圆滑"
-            addLabel="添加价值观"
+            placeholder={t('values.placeholder')}
+            addLabel={t('values.addLabel')}
+            deleteAria={t('deleteItemAria')}
           />
         </Section>
 
         {/* 反模式 */}
-        <Section icon={ShieldAlert} title="反模式（绝不做的事）">
+        <Section icon={ShieldAlert} title={t('section.antiPatterns')}>
           <StringListEditor
             items={form.antiPatterns}
             onChange={antiPatterns => patch({ antiPatterns })}
-            placeholder="如：不堆砌空洞的形容词"
-            addLabel="添加反模式"
+            placeholder={t('antiPatterns.placeholder')}
+            addLabel={t('antiPatterns.addLabel')}
+            deleteAria={t('deleteItemAria')}
           />
         </Section>
 
         {/* 诚实边界 */}
-        <Section icon={Handshake} title="诚实边界">
+        <Section icon={Handshake} title={t('section.honestLimits')}>
           <StringListEditor
             items={form.honestLimits}
             onChange={honestLimits => patch({ honestLimits })}
-            placeholder="如：对不熟悉的领域坦言不知"
-            addLabel="添加诚实边界"
+            placeholder={t('honestLimits.placeholder')}
+            addLabel={t('honestLimits.addLabel')}
+            deleteAria={t('deleteItemAria')}
           />
         </Section>
 
         {/* 示例对话 */}
-        <Section icon={MessagesSquare} title="示例对话">
+        <Section icon={MessagesSquare} title={t('section.dialogues')}>
           <div className="space-y-4">
             {form.dialogues.map((dialogue, index) => (
               <div key={index} className="p-3 rounded-lg bg-muted border border-border/70 space-y-2">
                 <div className="flex items-start gap-2">
-                  <div className="flex-1 space-y-2">
+                  <div className="flex-1 space-y-2 min-w-0">
                     <textarea
                       value={dialogue.user}
                       onChange={e => {
@@ -700,7 +708,7 @@ export default function PillDetailPage() {
                       }}
                       className="dao-textarea text-sm"
                       rows={2}
-                      placeholder="道友问：..."
+                      placeholder={t('dialogue.userPlaceholder')}
                     />
                     <textarea
                       value={dialogue.assistant}
@@ -711,14 +719,14 @@ export default function PillDetailPage() {
                       }}
                       className="dao-textarea text-sm"
                       rows={3}
-                      placeholder="道人答：..."
+                      placeholder={t('dialogue.assistantPlaceholder')}
                     />
                   </div>
                   <button
                     type="button"
-                    aria-label="删除示例对话"
+                    aria-label={t('dialogue.deleteAria')}
                     onClick={() => patch({ dialogues: form.dialogues.filter((_, i) => i !== index) })}
-                    className="p-1.5 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors flex-shrink-0"
+                    className="p-1.5 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors shrink-0"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -728,30 +736,30 @@ export default function PillDetailPage() {
             <button
               type="button"
               onClick={() => patch({ dialogues: [...form.dialogues, { user: '', assistant: '' }] })}
-              className="flex items-center gap-1 text-xs text-gold/70 hover:text-gold transition-colors"
+              className="flex items-center gap-1 text-xs text-gold/70 hover:text-gold transition-colors whitespace-nowrap"
             >
               <Plus className="w-3.5 h-3.5" />
-              添加示例对话
+              {t('dialogue.addLabel')}
             </button>
           </div>
         </Section>
       </div>
 
       {/* 底部保存栏 */}
-      <div className="sticky bottom-4 mt-6 flex items-center justify-end gap-3">
+      <div className="sticky bottom-4 mt-6 flex items-center justify-end gap-3 flex-wrap">
         {saved && (
-          <span className="flex items-center gap-1 text-sm text-sage animate-in fade-in duration-300">
+          <span className="flex items-center gap-1 text-sm text-sage animate-in fade-in duration-300 whitespace-nowrap">
             <CircleDot className="w-4 h-4" />
-            已存入金丹阁
+            {t('savedFeedback')}
           </span>
         )}
         <button
           onClick={handleSave}
           disabled={!form.name.trim() || saving}
-          className="dao-btn-primary shadow-lg disabled:opacity-50"
+          className="dao-btn-primary shadow-lg disabled:opacity-50 whitespace-nowrap"
         >
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-          保存金丹
+          {t('saveCta')}
         </button>
       </div>
 

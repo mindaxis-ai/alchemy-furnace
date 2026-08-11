@@ -188,6 +188,89 @@
       "confirm": "Delete",
       "bindTitle": "Bestow on daoist",
       "bindDesc": "Bind this pill to {agent} at weight {weight}"
+    },
+    "editor": {
+      "saveCta": "Save pill",
+      "savedFeedback": "Saved to vault",
+      "destroyCta": "Destroy",
+      "deleteConfirm": "Destroy this pill? This cannot be undone.",
+      "builtInBadge": "Built-in",
+      "pillNamePlaceholder": "Pill name",
+      "descPlaceholder": "Pill summary (with triggers / anti-triggers)...",
+      "authorLabel": "Author",
+      "authorPlaceholder": "Author",
+      "versionLabel": "Version",
+      "tagsLabel": "Tags (comma separated)",
+      "tagsPlaceholder": "classical, archaic",
+      "deleteItemAria": "Delete item",
+      "section": {
+        "identity": "Identity card (first person)",
+        "dna": "Expression DNA",
+        "mentalModels": "Mental models",
+        "heuristics": "Decision heuristics",
+        "values": "Values",
+        "antiPatterns": "Anti-patterns (never do)",
+        "honestLimits": "Honest limits",
+        "dialogues": "Example dialogues"
+      },
+      "identityPlaceholder": "e.g. I am a nomadic hacker who time-traveled from 2077...",
+      "dna": {
+        "sentenceLength": "Sentence length",
+        "formality": "Formality ({value})",
+        "casual": "Casual",
+        "formal": "Formal",
+        "vocabulary": "Vocabulary (comma separated)",
+        "vocabularyPlaceholder": "chip, neon, prosthetic",
+        "tabooWords": "Taboo words (comma separated)",
+        "tabooWordsPlaceholder": "Words never to speak",
+        "rhythm": "Rhythm",
+        "rhythmPlaceholder": "e.g. short and punchy, with pauses",
+        "humor": "Humor type",
+        "humorPlaceholder": "e.g. dry humor, self-deprecation",
+        "certainty": "Certainty style",
+        "certaintyPlaceholder": "e.g. speaks plainly / leaves room",
+        "citation": "Citation habit",
+        "citationPlaceholder": "e.g. quotes the Tao Te Ching",
+        "lengthOption": {
+          "short": "Short",
+          "medium": "Medium",
+          "long": "Long",
+          "mixed": "Mixed"
+        }
+      },
+      "mentalModel": {
+        "namePlaceholder": "Model name, e.g. First principles",
+        "oneLinerPlaceholder": "One-sentence summary",
+        "applicationPlaceholder": "How to apply this model",
+        "limitationsPlaceholder": "Limitations (comma separated)",
+        "addLabel": "Add mental model",
+        "deleteAria": "Delete mental model"
+      },
+      "heuristic": {
+        "conditionPlaceholder": "When... (condition)",
+        "actionPlaceholder": "Then... (action)",
+        "casePlaceholder": "Case study (optional)",
+        "addLabel": "Add decision heuristic",
+        "deleteAria": "Delete decision heuristic"
+      },
+      "values": {
+        "placeholder": "e.g. honesty over tact",
+        "addLabel": "Add value"
+      },
+      "antiPatterns": {
+        "placeholder": "e.g. no empty adjectives",
+        "addLabel": "Add anti-pattern"
+      },
+      "honestLimits": {
+        "placeholder": "e.g. admit ignorance in unfamiliar fields",
+        "addLabel": "Add honest limit"
+      },
+      "dialogue": {
+        "userPlaceholder": "Daoist asks: ...",
+        "assistantPlaceholder": "Daoist answers: ...",
+        "addLabel": "Add example dialogue",
+        "deleteAria": "Delete example dialogue"
+      }
     }
   },
   "agents": {
@@ -279,7 +362,9 @@
   "pillCard": {
     "builtInBadge": "Built-in",
     "noDescription": "No notes",
-    "viewCta": "View its nature"
+    "viewCta": "View its nature",
+    "bestowCta": "Bestow",
+    "bestowTitle": "Bestow this pill on a daoist"
   },
   "agentCard": {
     "boundPillsBadge": "{count} pills",

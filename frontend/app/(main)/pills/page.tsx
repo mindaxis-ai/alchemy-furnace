@@ -8,6 +8,7 @@
  */
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import {
   Plus,
   Search,
@@ -27,6 +28,7 @@ import type { Pill } from '@/services/types'
 type BuiltinFilter = 'all' | 'builtin' | 'custom'
 
 export default function PillsPage() {
+  const t = useTranslations('pills')
   const router = useRouter()
   const { state, fetchPills, addPill } = usePill()
   const [showCreate, setShowCreate] = useState(false)
@@ -84,17 +86,17 @@ export default function PillsPage() {
         <div>
           <div className="flex items-center gap-3">
             <CircleDot className="w-6 h-6 text-gold" />
-            <h1 className="page-title">金丹阁</h1>
+            <h1 className="page-title">{t('title')}</h1>
           </div>
-          <p className="page-subtitle">炼制语言模式金丹，塑造道人性情</p>
+          <p className="page-subtitle">{t('subtitle')}</p>
         </div>
 
         <button
           onClick={() => setShowCreate(true)}
-          className="dao-btn-primary self-start"
+          className="dao-btn-primary self-start whitespace-nowrap"
         >
           <Plus className="w-4 h-4" />
-          炼制新金丹
+          {t('create')}
         </button>
       </div>
 
@@ -104,7 +106,7 @@ export default function PillsPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-sage" />
           <input
             type="text"
-            placeholder="搜索金丹名称或描述..."
+            placeholder={t('searchPlaceholder')}
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             className="dao-input pl-10"
@@ -112,9 +114,9 @@ export default function PillsPage() {
         </div>
         <TopTabs
           tabs={[
-            { key: 'all', label: '全部金丹' },
-            { key: 'builtin', label: '系统内置' },
-            { key: 'custom', label: '自行炼制' },
+            { key: 'all', label: t('filter.all') },
+            { key: 'builtin', label: t('filter.builtin') },
+            { key: 'custom', label: t('filter.custom') },
           ]}
           activeKey={builtinFilter}
           onChange={key => setBuiltinFilter(key as BuiltinFilter)}
@@ -125,16 +127,18 @@ export default function PillsPage() {
       {/* 创建金丹弹窗 */}
       {showCreate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="dao-card w-full max-w-md p-6 animate-in fade-in duration-300">
-            <div className="flex items-center justify-between mb-5">
-              <div className="flex items-center gap-2">
-                <FlaskConical className="w-5 h-5 text-primary" />
-                <h2 className="text-lg font-serif font-bold text-gold">炼制新金丹</h2>
+          <div className="dao-card w-full max-w-md p-6 animate-in fade-in duration-300 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between gap-2 mb-5">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <FlaskConical className="w-5 h-5 text-primary shrink-0" />
+                <h2 className="text-lg font-serif font-bold text-gold truncate">
+                  {t('modal.title')}
+                </h2>
               </div>
               <button
-                aria-label="关闭弹窗"
+                aria-label={t('closeModal')}
                 onClick={() => setShowCreate(false)}
-                className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors shrink-0"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -142,12 +146,12 @@ export default function PillsPage() {
 
             <form onSubmit={handleCreate} className="space-y-4">
               <div>
-                <label className="dao-label">金丹名称 *</label>
+                <label className="dao-label">{t('modal.nameLabel')}</label>
                 <input
                   type="text"
                   value={name}
                   onChange={e => setName(e.target.value)}
-                  placeholder="如：文言文金丹"
+                  placeholder={t('modal.namePlaceholder')}
                   className="dao-input"
                   autoFocus
                   required
@@ -155,38 +159,38 @@ export default function PillsPage() {
               </div>
 
               <div>
-                <label className="dao-label">描述（含触发语、反触发语）</label>
+                <label className="dao-label">{t('modal.descLabel')}</label>
                 <textarea
                   value={description}
                   onChange={e => setDescription(e.target.value)}
-                  placeholder="描述这颗金丹赋予的语言模式或人格特质..."
+                  placeholder={t('modal.descPlaceholder')}
                   className="dao-textarea"
                   rows={3}
                 />
                 <p className="text-[10px] text-sage mt-1">
-                  创建后将进入炼丹房编辑器，完善表达 DNA、心智模型等结构化内容
+                  {t('modal.descHint')}
                 </p>
               </div>
 
-              <div className="flex items-center gap-3 pt-2">
+              <div className="flex items-center gap-3 pt-2 flex-wrap">
                 <button
                   type="button"
                   onClick={() => setShowCreate(false)}
-                  className="dao-btn-ghost flex-1"
+                  className="dao-btn-ghost flex-1 whitespace-nowrap"
                 >
-                  取消
+                  {t('modal.cancel')}
                 </button>
                 <button
                   type="submit"
                   disabled={!name.trim() || creating}
-                  className="dao-btn-primary flex-1 disabled:opacity-50"
+                  className="dao-btn-primary flex-1 disabled:opacity-50 whitespace-nowrap"
                 >
                   {creating ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
                     <FlaskConical className="w-4 h-4" />
                   )}
-                  开始炼制
+                  {t('modal.submit')}
                 </button>
               </div>
             </form>
@@ -198,7 +202,7 @@ export default function PillsPage() {
       {state.loading && state.pills.length === 0 && (
         <div className="flex flex-col items-center justify-center py-16">
           <Loader2 className="w-8 h-8 text-gold animate-spin mb-3" />
-          <p className="text-sm text-muted-foreground">正在搜寻金丹...</p>
+          <p className="text-sm text-muted-foreground">{t('loading')}</p>
         </div>
       )}
 
@@ -207,15 +211,15 @@ export default function PillsPage() {
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <CircleDot className="w-12 h-12 text-sage/50 mb-3" />
           <h3 className="text-base font-medium text-muted-foreground mb-1">
-            {searchQuery || builtinFilter !== 'all' ? '未找到匹配的金丹' : '暂无金丹'}
+            {searchQuery || builtinFilter !== 'all' ? t('emptySearchTitle') : t('emptyTitle')}
           </h3>
           <p className="text-sm text-sage mb-4">
-            {searchQuery || builtinFilter !== 'all' ? '尝试其他关键词或过滤条件' : '点击上方按钮开始炼制你的第一颗金丹'}
+            {searchQuery || builtinFilter !== 'all' ? t('emptySearchDesc') : t('emptyDesc')}
           </p>
           {!searchQuery && builtinFilter === 'all' && (
-            <button onClick={() => setShowCreate(true)} className="dao-btn-primary">
+            <button onClick={() => setShowCreate(true)} className="dao-btn-primary whitespace-nowrap">
               <Plus className="w-4 h-4" />
-              炼制新金丹
+              {t('create')}
             </button>
           )}
         </div>
