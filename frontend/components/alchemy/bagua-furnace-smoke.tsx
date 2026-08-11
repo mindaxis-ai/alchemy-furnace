@@ -76,9 +76,8 @@ export function BaguaFurnaceSmoke({
         const wy = (win.top / 100) * h
         const ww = (win.width / 100) * w
         // 袅袅青烟: thin delicate wisps, not billowing clouds
-        const size = ww * (0.25 + Math.random() * 0.35)
-        // 寿命缩短:浓度高时堆积更明显(同时间窗内更多粒子)
-        const life = 3.0 + Math.random() * 1.5
+        const size = ww * (0.30 + Math.random() * 0.45) // 加大粒径让堆积可见
+        const life = 3.5 + Math.random() * 1.5
         wispsRef.current.push({
           x: wx + (Math.random() - 0.5) * ww * 0.9,
           y: wy + size * 0.35 - Math.random() * 14,
@@ -102,14 +101,14 @@ export function BaguaFurnaceSmoke({
 
       // Ignition clock shared with the fire; smoke only joins near full burn.
       const prog = (progRef.current = advanceIgnition(progRef.current, intensity, dt))
-      // 喷发率 10 → 30/秒:让 level 变化时密度差更明显
-      const spawnRate = 30 * level * smoothstep(0.75, 1.0, prog)
+      // 喷发率 30 → 60/秒:level 满时 60 粒/s,堆积感更明显
+      const spawnRate = 60 * level * smoothstep(0.75, 1.0, prog)
 
       // spawn
       const target = spawnRate * dt
       const count = Math.floor(target) + (Math.random() < target % 1 ? 1 : 0)
-      // sqrt 曲线:低端更敏感 (level=0.5 → ~78% 上限;线性只 50%)
-      const effectiveBudget = Math.max(0, Math.floor(budget.wisps * Math.sqrt(level)))
+      // budget 上限提到 100 (level 满):超过原 wisps=55 限制,允许堆积
+      const effectiveBudget = Math.max(0, Math.floor(100 * Math.sqrt(level)))
       if (count > 0 && wispsRef.current.length < effectiveBudget) {
         spawn(Math.min(count, effectiveBudget - wispsRef.current.length))
       }
@@ -142,7 +141,8 @@ export function BaguaFurnaceSmoke({
         // Fade in quickly off the vent, stay visible through the climb, and
         // only dissipate near the end of the rise (previous 1-age² envelope
         // faded mid-body, which made smoke look parked at the vents).
-        const alpha = 0.2 * smoothstep(0, 0.12, age) * (1 - smoothstep(0.55, 1, age))
+        // alpha 0.2 → 0.45:单粒可见度大幅提升,堆积时烟雾明显
+        const alpha = 0.45 * smoothstep(0, 0.12, age) * (1 - smoothstep(0.55, 1, age))
         const px = w.x
         const py = w.y
         const r = w.size

@@ -175,11 +175,11 @@ export function FireEffectPreview({
       effect.update(particlesRef.current, dt, time, params)
 
       // mini smoke
-      const target = 40 * smokeLevel * dt // 0..40 /s（与主场景 30/s 同节奏略快）
+      const target = 80 * smokeLevel * dt // 0..80 /s（与主场景 60/s 同节奏略快）
       const count = Math.floor(target) + (Math.random() < target % 1 ? 1 : 0)
-      const maxWisps = Math.floor(50 * Math.sqrt(smokeLevel)) // sqrt 曲线与主场景一致
+      const maxWisps = Math.floor(100 * Math.sqrt(smokeLevel)) // 与主场景同 sqrt 曲线 + 100 上限
       for (let i = 0; i < count && smokeRef.current.length < maxWisps; i++) {
-        const life = 1.2 + Math.random() * 0.7
+        const life = 1.4 + Math.random() * 0.6
         smokeRef.current.push({
           x: arcCx + (Math.random() - 0.5) * arcR * 1.4,
           y: arcCy + (PREVIEW_H - arcCy) * 0.9 - Math.random() * 6,
@@ -187,7 +187,7 @@ export function FireEffectPreview({
           vy: -12 - Math.random() * 8,
           life,
           maxLife: life,
-          size: 6 + Math.random() * 5,
+          size: 8 + Math.random() * 8, // 加大粒径与主场景一致
           seed: Math.random() * Math.PI * 2,
         })
       }
