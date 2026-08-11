@@ -34,7 +34,6 @@
           "history": { "title": "论道旧录", "description": "翻检历史会话，续当日未完之缘" }
         }
       },
-      "models": { "label": "模型管理" },
       "settings": { "label": "设置" }
     }
   },

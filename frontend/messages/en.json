@@ -34,7 +34,6 @@
           "history": { "title": "Past discourses", "description": "Review past sessions, pick up an unfinished thread" }
         }
       },
-      "models": { "label": "Models" },
       "settings": { "label": "Settings" }
     }
   },

@@ -159,7 +159,7 @@ export default function AgentsPage() {
                 {modelOptions.length === 0 ? (
                   <p className="text-xs text-muted-foreground bg-muted border border-border/70 rounded-lg px-3 py-2.5">
                     暂无可用模型，请先在
-                    <Link href="/models" className="text-gold hover:text-gold/80 mx-1">模型管理</Link>
+                    <Link href="/settings" className="text-gold hover:text-gold/80 mx-1">模型管理</Link>
                     中配置供应商
                   </p>
                 ) : (

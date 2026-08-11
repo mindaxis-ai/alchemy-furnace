@@ -3,7 +3,6 @@ import {
   CircleDot,
   Users,
   MessageSquare,
-  Cpu,
   Settings,
   Flame,
   ScrollText,
@@ -110,6 +109,5 @@ export const navItems: NavItem[] = [
       },
     ],
   },
-  { labelKey: 'items.models.label', path: '/models', icon: Cpu },
   { labelKey: 'items.settings.label', path: '/settings', icon: Settings },
 ]
