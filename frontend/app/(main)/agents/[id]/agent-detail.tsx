@@ -9,6 +9,7 @@
 import { useState, useEffect, useRef, type DragEvent } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { useTranslations } from 'next-intl'
 import {
   ArrowLeft,
   Cpu,
@@ -51,22 +52,6 @@ function getAvatarColor(name: string): string {
   return colors[Math.abs(hash) % colors.length]
 }
 
-/** 丹性相冲严重程度徽标样式与文案 */
-const SEVERITY_BADGE: Record<TensionSeverity, { label: string; className: string }> = {
-  low: {
-    label: '轻微',
-    className: 'bg-sage/15 text-sage border-sage/30',
-  },
-  medium: {
-    label: '中等',
-    className: 'bg-gold/15 text-gold border-gold/30',
-  },
-  high: {
-    label: '剧烈',
-    className: 'bg-primary/10 text-primary border-primary/30',
-  },
-}
-
 /** 已服用金丹条目（权重可编辑，可拖拽调整服用顺序） */
 function AgentPillRow({
   agentPill,
@@ -91,6 +76,7 @@ function AgentPillRow({
   onDropRow: (index: number) => void
   onDragEndRow: () => void
 }) {
+  const t = useTranslations('agent')
   const [weight, setWeight] = useState(agentPill.weight)
   const [sortOrder, setSortOrder] = useState(agentPill.sort_order)
   const [saving, setSaving] = useState(false)
@@ -127,24 +113,24 @@ function AgentPillRow({
         ${reordering ? 'opacity-60 pointer-events-none' : ''}
       `}
     >
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 min-w-0">
         {/* 拖拽手柄（调整服用顺序） */}
         <span
           draggable
           onDragStart={e => onDragStartRow(index, e, rowRef.current)}
           onDragEnd={onDragEndRow}
-          className="cursor-grab active:cursor-grabbing p-1 -ml-1 rounded text-muted-foreground/60 hover:text-gold hover:bg-gold/10 transition-colors flex-shrink-0"
-          title="拖拽调整服用顺序"
+          className="cursor-grab active:cursor-grabbing p-1 -ml-1 rounded text-muted-foreground/60 hover:text-gold hover:bg-gold/10 transition-colors shrink-0"
+          title={t('pills.reorderTitle')}
         >
           <GripVertical className="w-4 h-4" />
         </span>
-        <div className="w-10 h-10 rounded-xl bg-gold/15 flex items-center justify-center flex-shrink-0">
+        <div className="w-10 h-10 rounded-xl bg-gold/15 flex items-center justify-center shrink-0">
           <FlaskConical className="w-5 h-5 text-gold" />
         </div>
         <div className="flex-1 min-w-0">
           <Link
             href={`/pills/${agentPill.pill_id}`}
-            className="text-sm font-medium text-foreground hover:text-gold transition-colors"
+            className="text-sm font-medium text-foreground hover:text-gold transition-colors truncate block"
           >
             {pill?.name || `金丹 #${agentPill.pill_id}`}
           </Link>
@@ -154,8 +140,8 @@ function AgentPillRow({
         </div>
         <button
           onClick={() => onUnbind(agentPill.pill_id)}
-          className="p-1.5 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors"
-          title="解除绑定"
+          className="p-1.5 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors shrink-0"
+          title={t('pills.unbindTitle')}
         >
           <Trash2 className="w-4 h-4" />
         </button>
@@ -166,7 +152,7 @@ function AgentPillRow({
         <div className="flex-1 min-w-[120px]">
           <label className="dao-label flex items-center gap-1">
             <Scale className="w-3 h-3" />
-            权重（0-10）
+            {t('pills.weight')}（0-10）
           </label>
           <input
             type="number"
@@ -181,7 +167,7 @@ function AgentPillRow({
         <div className="flex-1 min-w-[120px]">
           <label className="dao-label flex items-center gap-1">
             <ListOrdered className="w-3 h-3" />
-            服用顺序
+            {t('pills.sortOrder')}
           </label>
           <input
             type="number"
@@ -195,10 +181,10 @@ function AgentPillRow({
         <button
           onClick={handleSave}
           disabled={!dirty || saving}
-          className="dao-btn-gold text-xs px-3 py-2 disabled:opacity-40"
+          className="dao-btn-gold text-xs px-3 py-2 disabled:opacity-40 whitespace-nowrap"
         >
           {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-          保存
+          {t('saveCta')}
         </button>
       </div>
     </div>
@@ -206,6 +192,9 @@ function AgentPillRow({
 }
 
 export default function AgentDetailPage() {
+  const t = useTranslations('agent')
+  const tStatus = useTranslations('agentCard.status')
+  const tSev = useTranslations('agent.severity')
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
   const agentId = id
@@ -324,7 +313,7 @@ export default function AgentDetailPage() {
   /** 开始对话 */
   const handleStartChat = async () => {
     setIsCreatingSession(true)
-    const session = await createSession(agentId, `与${agent?.name}的论道`)
+    const session = await createSession(agentId, t('chatSessionTitle', { name: agent?.name || '' }))
     setIsCreatingSession(false)
     if (session) router.push(`/chat/${session.id}`)
   }
@@ -334,12 +323,19 @@ export default function AgentDetailPage() {
     p => !agentPills.some(ap => ap.pill_id === p.id)
   )
 
+  // 严重程度徽标样式（label 通过 tSev 渲染）
+  const SEVERITY_CLASS: Record<TensionSeverity, string> = {
+    low: 'bg-sage/15 text-sage border-sage/30',
+    medium: 'bg-gold/15 text-gold border-gold/30',
+    high: 'bg-primary/10 text-primary border-primary/30',
+  }
+
   if (!agent && agentState.loading) {
     return (
       <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
         <div className="flex flex-col items-center justify-center py-16">
           <Loader2 className="w-8 h-8 text-gold animate-spin mb-3" />
-          <p className="text-sm text-muted-foreground">加载中...</p>
+          <p className="text-sm text-muted-foreground">{t('loading')}</p>
         </div>
       </div>
     )
@@ -350,10 +346,10 @@ export default function AgentDetailPage() {
       <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
         <div className="flex flex-col items-center justify-center py-16">
           <AlertCircle className="w-12 h-12 text-primary mb-3" />
-          <p className="text-sm text-muted-foreground">道人不存在</p>
-          <Link href="/agents" className="dao-btn-primary mt-4">
+          <p className="text-sm text-muted-foreground">{t('notFound')}</p>
+          <Link href="/agents" className="dao-btn-primary mt-4 whitespace-nowrap">
             <ArrowLeft className="w-4 h-4" />
-            返回道人府
+            {t('backToList')}
           </Link>
         </div>
       </div>
@@ -365,10 +361,10 @@ export default function AgentDetailPage() {
       {/* 返回按钮 */}
       <Link
         href="/agents"
-        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-gold transition-colors mb-4"
+        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-gold transition-colors mb-4 whitespace-nowrap"
       >
         <ArrowLeft className="w-4 h-4" />
-        返回道人府
+        {t('backToList')}
       </Link>
 
       {/* 道人信息头部 */}
@@ -376,7 +372,7 @@ export default function AgentDetailPage() {
         <div className="flex flex-col md:flex-row gap-5">
           {/* 头像 */}
           <div className={`
-            flex-shrink-0 w-20 h-20 md:w-24 md:h-24 rounded-2xl
+            shrink-0 w-20 h-20 md:w-24 md:h-24 rounded-2xl
             bg-gradient-to-br ${getAvatarColor(agent.name)}
             flex items-center justify-center text-white font-serif font-bold text-3xl md:text-4xl
             shadow-lg
@@ -389,7 +385,7 @@ export default function AgentDetailPage() {
             {isEditing ? (
               <div className="space-y-3">
                 <div>
-                  <label className="dao-label">道号</label>
+                  <label className="dao-label">{t('editor.nameLabel')}</label>
                   <input
                     value={editName}
                     onChange={e => setEditName(e.target.value)}
@@ -397,25 +393,27 @@ export default function AgentDetailPage() {
                   />
                 </div>
                 <div>
-                  <label className="dao-label">基础性格 / 系统提示词</label>
+                  <label className="dao-label">{t('editor.personaLabel')}</label>
                   <textarea
                     value={editPersonality}
                     onChange={e => setEditPersonality(e.target.value)}
                     className="dao-textarea"
                     rows={4}
-                    placeholder="描述这位道人的性格特点和语言风格..."
+                    placeholder={t('editor.personaPlaceholder')}
                   />
                 </div>
                 <div>
                   <label className="dao-label flex items-center gap-1.5">
                     <Cpu className="w-3.5 h-3.5" />
-                    选择模型
+                    {t('editor.modelLabel')}
                   </label>
                   {modelOptions.length === 0 ? (
                     <p className="text-xs text-muted-foreground bg-muted border border-border/70 rounded-lg px-3 py-2.5">
-                      暂无可用模型，请先在
-                      <Link href="/settings" className="text-gold hover:text-gold/80 mx-1">模型管理</Link>
-                      中配置供应商
+                      {t('editor.modelEmpty')}
+                      <Link href="/settings" className="text-gold hover:text-gold/80 mx-1 whitespace-nowrap">
+                        {t('editor.modelLink')}
+                      </Link>
+                      {t('editor.modelEmptySuffix')}
                     </p>
                   ) : (
                     <select
@@ -425,39 +423,39 @@ export default function AgentDetailPage() {
                     >
                       {/* 当前使用的模型可能已停用/删除，保留为可选项以便回显 */}
                       {editModel && !modelOptions.some(o => o.name === editModel) && (
-                        <option value={editModel}>{editModel}（当前使用）</option>
+                        <option value={editModel}>{editModel}{t('editor.modelCurrent')}</option>
                       )}
                       {modelOptions.map(m => (
                         <option key={`${m.provider_name}/${m.name}`} value={m.name}>
-                          {m.display_name || m.name}（{m.provider_display_name || m.provider_name}）{m.is_default ? ' · 默认' : ''}
+                          {m.display_name || m.name}（{m.provider_display_name || m.provider_name}）{m.is_default ? ` · ${t('editor.defaultBadge')}` : ''}
                         </option>
                       ))}
                     </select>
                   )}
                 </div>
-                <div className="flex items-center gap-2">
-                  <button onClick={handleSaveEdit} className="dao-btn-primary text-sm">
-                    <Check className="w-4 h-4" /> 保存
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button onClick={handleSaveEdit} className="dao-btn-primary text-sm whitespace-nowrap">
+                    <Check className="w-4 h-4" /> {t('saveCta')}
                   </button>
-                  <button onClick={() => setIsEditing(false)} className="dao-btn-ghost text-sm">
-                    <X className="w-4 h-4" /> 取消
+                  <button onClick={() => setIsEditing(false)} className="dao-btn-ghost text-sm whitespace-nowrap">
+                    <X className="w-4 h-4" /> {t('cancelCta')}
                   </button>
                 </div>
               </div>
             ) : (
               <>
-                <div className="flex items-center gap-3 mb-2">
-                  <h1 className="text-xl md:text-2xl font-serif font-bold text-foreground">
+                <div className="flex items-center gap-3 mb-2 flex-wrap">
+                  <h1 className="text-xl md:text-2xl font-serif font-bold text-foreground truncate min-w-0">
                     {agent.name}
                   </h1>
                   <span className={`
-                    text-[10px] px-2 py-0.5 rounded-full border
+                    text-[10px] px-2 py-0.5 rounded-full border whitespace-nowrap shrink-0
                     ${agent.status === 'active'
                       ? 'bg-sage/15 text-sage border-sage/30'
                       : 'bg-muted text-muted-foreground border-border'
                     }
                   `}>
-                    {agent.status === 'active' ? '活跃' : '沉睡'}
+                    {agent.status === 'active' ? tStatus('active') : tStatus('inactive')}
                   </span>
                 </div>
 
@@ -468,28 +466,28 @@ export default function AgentDetailPage() {
                 )}
 
                 <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <Cpu className="w-3.5 h-3.5" />
-                    {agent.model_name}
+                  <span className="flex items-center gap-1 min-w-0">
+                    <Cpu className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">{agent.model_name}</span>
                   </span>
                   <span className="flex items-center gap-1">
                     <Pill className="w-3.5 h-3.5" />
-                    {agentPills.length} 金丹
+                    {t('pillsCount', { count: agentPills.length })}
                   </span>
                 </div>
 
-                <div className="flex items-center gap-2 mt-4">
-                  <button onClick={handleStartChat} className="dao-btn-primary text-sm">
+                <div className="flex items-center gap-2 mt-4 flex-wrap">
+                  <button onClick={handleStartChat} className="dao-btn-primary text-sm whitespace-nowrap">
                     {isCreatingSession ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
                     ) : (
                       <MessageSquare className="w-4 h-4" />
                     )}
-                    开始论道
+                    {t('startChatCta')}
                   </button>
-                  <button onClick={() => setIsEditing(true)} className="dao-btn-ghost text-sm">
+                  <button onClick={() => setIsEditing(true)} className="dao-btn-ghost text-sm whitespace-nowrap">
                     <Edit3 className="w-4 h-4" />
-                    编辑
+                    {t('editCta')}
                   </button>
                 </div>
               </>
@@ -501,37 +499,37 @@ export default function AgentDetailPage() {
       {/* 语言模式合成状态 */}
       {languagePattern && (
         <div className="dao-card p-4 mb-6">
-          <div className="flex items-center gap-2 mb-3">
-            <Wand2 className="w-4 h-4 text-sage" />
-            <h2 className="text-sm font-serif font-bold text-gold">语言模式（丹性）</h2>
+          <div className="flex items-center gap-2 mb-3 flex-wrap min-w-0">
+            <Wand2 className="w-4 h-4 text-sage shrink-0" />
+            <h2 className="text-sm font-serif font-bold text-gold truncate">
+              {t('languagePattern.title')}
+            </h2>
             <span className={`
-              text-[10px] px-2 py-0.5 rounded-full border
+              text-[10px] px-2 py-0.5 rounded-full border whitespace-nowrap shrink-0
               ${languagePattern.is_valid
                 ? 'bg-sage/15 text-sage border-sage/30'
                 : 'bg-gold/15 text-gold border-gold/30'
               }
             `}>
-              {languagePattern.is_valid ? '已合成' : '待重新合成'}
+              {languagePattern.is_valid ? t('languagePattern.synthesized') : t('languagePattern.stale')}
             </span>
           </div>
 
           {!languagePattern.is_valid ? (
             /* 缓存已失效：以下内容为旧丹方合成结果，将在下次论道时重新合成 */
             <div className="flex items-start gap-2 text-xs text-gold bg-gold/10 border border-gold/20 rounded-lg px-3 py-2">
-              <RefreshCw className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
-              <span>
-                丹方已变更，当前语言模式为旧方所炼，仅供参考；下次论道时将按新丹方重新合成（含涌现规则与丹性相冲检测）。
-              </span>
+              <RefreshCw className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+              <span>{t('languagePattern.staleDesc')}</span>
             </div>
           ) : (
             <>
               {languagePattern.emergence_rules && languagePattern.emergence_rules.length > 0 && (
                 <div className="mb-3">
-                  <p className="text-xs text-muted-foreground mb-1.5">涌现规则</p>
+                  <p className="text-xs text-muted-foreground mb-1.5">{t('languagePattern.emergenceRules')}</p>
                   <ul className="space-y-1">
                     {languagePattern.emergence_rules.map((rule, i) => (
                       <li key={i} className="flex items-start gap-1.5 text-xs text-foreground/90">
-                        <Sparkles className="w-3 h-3 text-gold mt-0.5 flex-shrink-0" />
+                        <Sparkles className="w-3 h-3 text-gold mt-0.5 shrink-0" />
                         <span>{rule}</span>
                       </li>
                     ))}
@@ -543,21 +541,22 @@ export default function AgentDetailPage() {
                 <div>
                   <p className="text-xs text-muted-foreground mb-1.5 flex items-center gap-1">
                     <TriangleAlert className="w-3 h-3 text-primary" />
-                    丹性相冲（{languagePattern.inner_tensions.length}）
+                    {t('languagePattern.tensions', { count: languagePattern.inner_tensions.length })}
                   </p>
                   <ul className="space-y-2">
                     {languagePattern.inner_tensions.map((tension, i) => {
-                      const badge = SEVERITY_BADGE[tension.severity] ?? SEVERITY_BADGE.medium
+                      const sevClass = SEVERITY_CLASS[tension.severity] ?? SEVERITY_CLASS.medium
+                      const sevLabel = tSev(tension.severity)
                       return (
                         <li
                           key={i}
                           className="flex items-start gap-2 text-xs bg-primary/5 border border-primary/20 rounded-lg px-3 py-2"
                         >
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-0.5">
+                            <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                               <span className="font-medium text-foreground/90">{tension.dimension}</span>
-                              <span className={`text-[10px] px-1.5 py-px rounded-full border ${badge.className}`}>
-                                {badge.label}
+                              <span className={`text-[10px] px-1.5 py-px rounded-full border whitespace-nowrap shrink-0 ${sevClass}`}>
+                                {sevLabel}
                               </span>
                             </div>
                             <p className="text-muted-foreground leading-relaxed">{tension.description}</p>
@@ -575,27 +574,27 @@ export default function AgentDetailPage() {
 
       {/* 已服用金丹 */}
       <div className="mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-serif font-bold text-gold flex items-center gap-2">
-            <FlaskConical className="w-5 h-5" />
-            已服用金丹
+        <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
+          <h2 className="text-lg font-serif font-bold text-gold flex items-center gap-2 min-w-0">
+            <FlaskConical className="w-5 h-5 shrink-0" />
+            <span className="truncate">{t('pills.title')}</span>
           </h2>
           <button
             onClick={() => setShowBindPill(!showBindPill)}
-            className="dao-btn-gold text-sm"
+            className="dao-btn-gold text-sm whitespace-nowrap"
           >
             <Plus className="w-4 h-4" />
-            服用金丹
+            {t('pills.addCta')}
           </button>
         </div>
 
         {/* 服用金丹选择面板 */}
         {showBindPill && (
           <div className="dao-card p-4 mb-4 animate-in fade-in duration-300">
-            <h3 className="text-sm font-medium text-gold mb-3">从金丹阁选择</h3>
+            <h3 className="text-sm font-medium text-gold mb-3">{t('pills.selectFromVault')}</h3>
             {availablePills.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-4">
-                暂无可服用的金丹（所有金丹均已绑定）
+                {t('pills.allBound')}
               </p>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -603,18 +602,18 @@ export default function AgentDetailPage() {
                   <button
                     key={pill.id}
                     onClick={() => handleBindPill(pill.id)}
-                    className="flex items-center gap-3 p-3 rounded-lg bg-muted border border-border/70 hover:border-gold/40 hover:bg-gold/5 transition-all text-left"
+                    className="flex items-center gap-3 p-3 rounded-lg bg-muted border border-border/70 hover:border-gold/40 hover:bg-gold/5 transition-all text-left min-w-0"
                   >
-                    <div className="w-8 h-8 rounded-lg bg-gold/15 flex items-center justify-center flex-shrink-0">
+                    <div className="w-8 h-8 rounded-lg bg-gold/15 flex items-center justify-center shrink-0">
                       <FlaskConical className="w-4 h-4 text-gold" />
                     </div>
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <p className="text-sm text-foreground truncate">{pill.name}</p>
                       {pill.tags && pill.tags.length > 0 && (
                         <p className="text-[10px] text-muted-foreground truncate">{pill.tags.join(' · ')}</p>
                       )}
                     </div>
-                    <Plus className="w-4 h-4 text-gold ml-auto flex-shrink-0" />
+                    <Plus className="w-4 h-4 text-gold ml-auto shrink-0" />
                   </button>
                 ))}
               </div>
@@ -626,21 +625,21 @@ export default function AgentDetailPage() {
         {agentPills.length === 0 ? (
           <div className="dao-card flex flex-col items-center py-8 text-center">
             <Pill className="w-10 h-10 text-muted-foreground/50 mb-2" />
-            <p className="text-sm text-muted-foreground">尚未服用任何金丹</p>
-            <p className="text-xs text-sage mt-1">服用金丹后，道人将习得对应的语言模式与人格特质</p>
+            <p className="text-sm text-muted-foreground">{t('pills.empty')}</p>
+            <p className="text-xs text-sage mt-1">{t('pills.emptyHint')}</p>
           </div>
         ) : (
           <>
             <p className="text-[11px] text-sage mb-2 flex items-center gap-1.5">
               {reordering ? (
                 <>
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                  正在保存新的服用顺序...
+                  <Loader2 className="w-3 h-3 animate-spin shrink-0" />
+                  <span>{t('pills.reordering')}</span>
                 </>
               ) : (
                 <>
-                  <GripVertical className="w-3 h-3" />
-                  拖拽左侧手柄可调整服用顺序，权重与顺序变化后丹性将于下次论道时重新合成
+                  <GripVertical className="w-3 h-3 shrink-0" />
+                  <span>{t('pills.dragHint')}</span>
                 </>
               )}
             </p>
@@ -668,7 +667,7 @@ export default function AgentDetailPage() {
       {/* 错误提示 */}
       {agentState.error && (
         <div className="fixed bottom-20 md:bottom-6 right-4 dao-card p-3 flex items-center gap-2 text-sm text-primary animate-in fade-in duration-300">
-          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          <AlertCircle className="w-4 h-4 shrink-0" />
           <span>{agentState.error}</span>
         </div>
       )}

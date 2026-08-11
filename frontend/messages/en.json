@@ -306,6 +306,11 @@
     "notFound": "Daoist not found or has been removed",
     "editCta": "Edit daoist",
     "deleteCta": "Delete daoist",
+    "saveCta": "Save",
+    "cancelCta": "Cancel",
+    "startChatCta": "Start discourse",
+    "chatSessionTitle": "Discourse with {name}",
+    "pillsCount": "{count} pills",
     "meta": {
       "createdAt": "Registered on",
       "updatedAt": "Updated on"
@@ -319,7 +324,39 @@
       "empty": "This daoist has not bound any pills yet.",
       "addCta": "Bestow",
       "weight": "Weight",
-      "unbindCta": "Unbind"
+      "unbindCta": "Unbind",
+      "selectFromVault": "Choose from Pill Vault",
+      "allBound": "No pills available (all are already bound)",
+      "emptyHint": "After binding pills, the daoist will learn the corresponding language modes and persona traits",
+      "reordering": "Saving new order...",
+      "dragHint": "Drag the left handle to reorder; weight and order changes will re-synthesize on next discourse",
+      "sortOrder": "Sort order",
+      "unbindTitle": "Unbind",
+      "reorderTitle": "Drag to reorder"
+    },
+    "editor": {
+      "nameLabel": "Daoist name",
+      "personaLabel": "Base persona / system prompt",
+      "personaPlaceholder": "Describe this daoist's character and speaking style...",
+      "modelLabel": "Choose model",
+      "modelEmpty": "No models available. Configure providers in",
+      "modelLink": "Model Management",
+      "modelEmptySuffix": "first.",
+      "modelCurrent": "(currently used)",
+      "defaultBadge": "default"
+    },
+    "languagePattern": {
+      "title": "Language pattern (pill nature)",
+      "synthesized": "Synthesized",
+      "stale": "Stale, re-synthesize",
+      "staleDesc": "The recipes have changed; the current language pattern was forged from old recipes and is for reference only. It will be re-synthesized on the next discourse (with emergence rules and tension detection).",
+      "emergenceRules": "Emergence rules",
+      "tensions": "Pill tensions ({count})"
+    },
+    "severity": {
+      "low": "Subtle",
+      "medium": "Medium",
+      "high": "Severe"
     },
     "emergence": {
       "title": "Emergence status",
@@ -370,7 +407,11 @@
     "boundPillsBadge": "{count} pills",
     "unboundBadge": "Unbound",
     "noPersona": "No persona",
-    "viewCta": "View details"
+    "viewCta": "View details",
+    "status": {
+      "active": "Active",
+      "inactive": "Dormant"
+    }
   },
   "chatMessage": {
     "empty": "Send a message to start the discourse",

@@ -306,6 +306,11 @@
     "notFound": "道人不存在或已被删除",
     "editCta": "编辑道人",
     "deleteCta": "删除道人",
+    "saveCta": "保存",
+    "cancelCta": "取消",
+    "startChatCta": "开始论道",
+    "chatSessionTitle": "与{name}的论道",
+    "pillsCount": "{count} 金丹",
     "meta": {
       "createdAt": "录入于",
       "updatedAt": "更新于"
@@ -319,7 +324,39 @@
       "empty": "此道人尚未服用任何金丹。",
       "addCta": "赐丹",
       "weight": "权重",
-      "unbindCta": "停服"
+      "unbindCta": "停服",
+      "selectFromVault": "从金丹阁选择",
+      "allBound": "暂无可服用的金丹（所有金丹均已绑定）",
+      "emptyHint": "服用金丹后，道人将习得对应的语言模式与人格特质",
+      "reordering": "正在保存新的服用顺序...",
+      "dragHint": "拖拽左侧手柄可调整服用顺序，权重与顺序变化后丹性将于下次论道时重新合成",
+      "sortOrder": "服用顺序",
+      "unbindTitle": "解除绑定",
+      "reorderTitle": "拖拽调整服用顺序"
+    },
+    "editor": {
+      "nameLabel": "道号",
+      "personaLabel": "基础性格 / 系统提示词",
+      "personaPlaceholder": "描述这位道人的性格特点和语言风格...",
+      "modelLabel": "选择模型",
+      "modelEmpty": "暂无可用模型，请先在",
+      "modelLink": "模型管理",
+      "modelEmptySuffix": "中配置供应商",
+      "modelCurrent": "（当前使用）",
+      "defaultBadge": "默认"
+    },
+    "languagePattern": {
+      "title": "语言模式（丹性）",
+      "synthesized": "已合成",
+      "stale": "待重新合成",
+      "staleDesc": "丹方已变更，当前语言模式为旧方所炼，仅供参考；下次论道时将按新丹方重新合成（含涌现规则与丹性相冲检测）。",
+      "emergenceRules": "涌现规则",
+      "tensions": "丹性相冲（{count}）"
+    },
+    "severity": {
+      "low": "轻微",
+      "medium": "中等",
+      "high": "剧烈"
     },
     "emergence": {
       "title": "合成状态",
@@ -370,7 +407,11 @@
     "boundPillsBadge": "{count} 丹",
     "unboundBadge": "未服丹",
     "noPersona": "未设性格",
-    "viewCta": "观其详情"
+    "viewCta": "观其详情",
+    "status": {
+      "active": "活跃",
+      "inactive": "沉睡"
+    }
   },
   "chatMessage": {
     "empty": "发送消息开始论道",
