@@ -18,6 +18,9 @@ import {
 interface BaguaFurnaceProps {
   alt: string
   windows: FurnaceWindow[]
+  /** Override intensity (0-1). When set, hover/touch/prefers-reduced-motion is ignored —
+   *  the caller owns fire behavior (e.g. 融合页常驻大火). */
+  forceIntensity?: number
 }
 
 /**
@@ -66,7 +69,7 @@ function useMediaQuery(query: string) {
   return matches
 }
 
-export function BaguaFurnace({ alt, windows }: BaguaFurnaceProps) {
+export function BaguaFurnace({ alt, windows, forceIntensity }: BaguaFurnaceProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const [isHovering, setIsHovering] = useState(false)
   const [isVisible, setIsVisible] = useState(true)
@@ -130,10 +133,11 @@ export function BaguaFurnace({ alt, windows }: BaguaFurnaceProps) {
   }, [isTouch, prefersReducedMotion])
 
   const intensity = useMemo(() => {
+    if (forceIntensity !== undefined) return forceIntensity
     if (prefersReducedMotion) return 0
     if (isTouch) return 1
     return isHovering ? 1 : 0
-  }, [isHovering, isTouch, prefersReducedMotion])
+  }, [forceIntensity, isHovering, isTouch, prefersReducedMotion])
 
   const glowOpacity = useMemo(() => {
     if (isTouch || prefersReducedMotion) return 0

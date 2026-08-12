@@ -65,7 +65,16 @@ export interface SkillSchema {
   /** 诚实边界 */
   honest_limits?: string[]
   example_dialogues?: ExampleDialogue[]
+  /** 融合血统：仅融合产生的金丹持有（006-pill-fusion） */
+  fusion_lineage?: FusionLineage
   [key: string]: unknown
+}
+
+/** 融合血统：父代金丹 + 算子 + 时间 */
+export interface FusionLineage {
+  parents: Array<{ uuid: string; name: string }>
+  operator: { id: string; name: string }
+  fused_at: string
 }
 
 // ========== 金丹 ==========
