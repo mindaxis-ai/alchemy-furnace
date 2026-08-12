@@ -72,6 +72,24 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
     await streamMessage(currentSession.id, content)
   }
 
+  // 发送去重锁: 某些 IME/浏览器组合下,Enter 可能触发 onKeyDown 与 blur 双事件,
+  // 或 React 严格模式双重触发。150ms 内只发一次。
+  const sendingLockRef = useRef(false)
+  const handleSendOnce = async () => {
+    if (sendingLockRef.current) {
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('[ChatView] 发送被去重锁拦截')
+      }
+      return
+    }
+    sendingLockRef.current = true
+    try {
+      await handleSend()
+    } finally {
+      setTimeout(() => { sendingLockRef.current = false }, 150)
+    }
+  }
+
   /** 创建会话并跳转 */
   const handleCreateSession = async (agentId: string) => {
     const agent = agents.find(a => a.id === agentId)
@@ -388,7 +406,7 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
               onKeyDown={e => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault()
-                  handleSend()
+                  handleSendOnce()
                 }
               }}
               placeholder="向道人请教..."
@@ -397,7 +415,7 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
             />
             <button
               aria-label={chatState.streaming ? '停止输出' : '发送'}
-              onClick={chatState.streaming ? stopStream : handleSend}
+              onClick={chatState.streaming ? stopStream : handleSendOnce}
               disabled={!chatState.streaming && !input.trim()}
               className="dao-btn-primary px-3 py-2.5 flex-shrink-0 disabled:opacity-40"
               title={chatState.streaming ? '停止输出' : '发送'}

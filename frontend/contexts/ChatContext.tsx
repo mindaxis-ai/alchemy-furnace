@@ -33,7 +33,8 @@ type ChatAction =
   | { type: 'SET_MESSAGES'; payload: ChatMessage[] }
   | { type: 'ADD_MESSAGE'; payload: ChatMessage }
   | { type: 'ADD_STREAM_CHUNK'; payload: string } // 追加流式输出内容
-  | { type: 'FINISH_STREAM' } // 完成流式输出
+  | { type: 'FINISH_STREAM' } // 完成流式输出(仅标记,不 finalize,等 queue 排空)
+  | { type: 'FINALIZE_STREAM' } // typing queue 已清空,正式 finalize 临时消息
   | { type: 'STOP_STREAM' } // 流式输出被停止(保留部分内容)
   | { type: 'MARK_LAST_INCOMPLETE' } // 标记最后一条助手回复「可能不完整」
   | { type: 'ADD_ERROR_MESSAGE'; payload: string } // 内联错误气泡
@@ -61,6 +62,15 @@ function finalizeStreamMessage(messages: ChatMessage[], patch?: Partial<ChatMess
     result[result.length - 1] = { ...lastMsg, id: String(Date.now()), ...patch }
   }
   return result
+}
+
+/**
+ * typing 队列已清空,流式消息可以 finalize(把 id='-1' 改为真实 id)
+ * 这是关键修复: 不能 FINISH_STREAM 立即 finalize,否则 typing queue 里残余 chunk
+ * 继续派发时会找不到 id='-1' 的消息,创建一条新的 '-1' 临时消息,UI 出现两条回复。
+ */
+function finalizeStreamMessageWhenQueueEmpty(messages: ChatMessage[], patch?: Partial<ChatMessage>): ChatMessage[] {
+  return finalizeStreamMessage(messages, patch)
 }
 
 /** Reducer */
@@ -92,7 +102,11 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return { ...state, messages }
     }
     case 'FINISH_STREAM':
-      return { ...state, messages: finalizeStreamMessage(state.messages), streaming: false }
+      // 仅停止流式标记,不 finalize — typing queue 可能仍有未派发 chunk
+      return { ...state, streaming: false }
+    case 'FINALIZE_STREAM':
+      // typing queue 已清空,正式 finalize 临时消息(把 id='-1' 改为真实 id)
+      return { ...state, messages: finalizeStreamMessageWhenQueueEmpty(state.messages) }
     case 'STOP_STREAM':
       // 停止生成:保留部分内容并标记「已停止」
       return { ...state, messages: finalizeStreamMessage(state.messages, { stopped: true }), streaming: false }
@@ -162,10 +176,16 @@ const ChatContext = createContext<ChatContextType | null>(null)
  */
 const TYPING_INTERVAL_MS = 30
 
-function createChunkDispatcher(dispatch: React.Dispatch<ChatAction>) {
+function createChunkDispatcher(
+  dispatch: React.Dispatch<ChatAction>,
+  /** typing queue 清空时回调(用于 finalize 临时消息) */
+  onQueueEmpty?: () => void,
+) {
   /** 队列:每个元素是 LLM 给的一个 chunk(原样保留,1-3 汉字或 1 词) */
   const queue: string[] = []
   let timer: ReturnType<typeof setTimeout> | null = null
+  /** 是否已收到服务端 done 信号(收到后 queue 排空则 finalize) */
+  let serverDone = false
 
   /**
    * tick 派发一片并调度下一片
@@ -176,6 +196,10 @@ function createChunkDispatcher(dispatch: React.Dispatch<ChatAction>) {
   const tick = () => {
     if (queue.length === 0) {
       timer = null
+      // serverDone 后 queue 清空,可以正式 finalize
+      if (serverDone) {
+        onQueueEmpty?.()
+      }
       return
     }
     const next = queue.shift()!
@@ -192,6 +216,17 @@ function createChunkDispatcher(dispatch: React.Dispatch<ChatAction>) {
       }
     },
     /**
+     * 标记服务端已发送 done,但 queue 可能仍有残余 chunk
+     * 让 typing 节奏继续,排完才 finalize
+     */
+    markDone() {
+      serverDone = true
+      // queue 已空(timer=null)则立即触发 finalize
+      if (timer === null && queue.length === 0) {
+        onQueueEmpty?.()
+      }
+    },
+    /**
      * 立即冲刷剩余 queue(流结束/出错时调用)
      * 注意:仍逐片派发(保持 React 单一 ADD_STREAM_CHUNK action 流),但不再等节拍
      */
@@ -203,6 +238,8 @@ function createChunkDispatcher(dispatch: React.Dispatch<ChatAction>) {
       while (queue.length > 0) {
         dispatch({ type: 'ADD_STREAM_CHUNK', payload: queue.shift()! })
       }
+      // flush 完后立即 finalize
+      onQueueEmpty?.()
     },
   }
 }
@@ -282,7 +319,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'SET_STREAMING', payload: true })
 
     // 重建 chunk 调度器(确保上一轮缓冲不残留)
-    const chunker = createChunkDispatcher(dispatch)
+    // onQueueEmpty: typing queue 清空时 finalize 临时消息(把 id='-1' 改为真实 id)
+    const chunker = createChunkDispatcher(dispatch, () => {
+      dispatch({ type: 'FINALIZE_STREAM' })
+    })
     chunkerRef.current = chunker
 
     await chatService.streamChatMessage(sessionId, content, {
@@ -291,9 +331,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         chunker.push(chunk)
       },
       onDone: () => {
-        // 服务端已发送 [DONE]: 不 flush 残余 queue,让 typing dispatcher 按节奏自然排空
-        // (flush 会破坏"逐字"体感 — 末尾也会一次性出现)
+        // 服务端已发送 [DONE]: 标记 done,让 typing dispatcher 按节奏自然排空
+        // queue 清空时由 onQueueEmpty 回调触发 FINALIZE_STREAM(不 flush,保持"逐字"体感)
         partialReceivedRef.current = false
+        chunker.markDone()
         dispatch({ type: 'FINISH_STREAM' })
       },
       onStopped: () => {
