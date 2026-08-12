@@ -166,3 +166,30 @@ class ErrorResponse(BaseModel):
     code: int = Field(..., description="错误码")
     message: str = Field(..., description="错误消息")
     detail: Optional[str] = Field(default=None, description="详细错误信息")
+
+
+# ==================== 金丹融合相关模型 ====================
+
+
+class FuseRequest(BaseModel):
+    """金丹融合请求 - 合丹为新"""
+    pills: List[SynthesisPillInput] = Field(..., min_length=2, description="原料金丹(至少 2 枚)")
+    model: str = Field(default="", description="融合用 LLM 模型(空则回退默认)")
+    api_key: Optional[str] = Field(default=None, description="按请求覆盖的 API 密钥")
+    base_url: Optional[str] = Field(default=None, description="按请求覆盖的 OpenAI 兼容接口地址")
+    exclude_operator_id: Optional[str] = Field(default=None, description="重试时要排除的算子 id")
+
+
+class FuseOperatorInfo(BaseModel):
+    id: str
+    name: str
+
+
+class FuseResponse(BaseModel):
+    """金丹融合响应"""
+    name: str
+    description: str
+    skill_schema: Dict[str, Any]
+    operator: FuseOperatorInfo
+    model: str = ""
+    degraded: bool = Field(default=False, description="是否走了保底方案(LLM 连续失败)")
