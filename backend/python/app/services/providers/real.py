@@ -10,7 +10,7 @@ service 层从此处导入 get_chat() / get_synthesis() 而非直接构造具体
 import logging
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
-from app.services.providers.base import ChatProvider, SynthesisProvider
+from app.services.providers.base import ChatProvider, FusionProvider, SynthesisProvider
 
 logger = logging.getLogger(__name__)
 
@@ -98,4 +98,24 @@ class RealSynthesisProvider:
             max_tokens=max_tokens,
             api_key=api_key,
             base_url=base_url,
+        )
+
+
+class RealFusionProvider:
+    """包装 app.services.fusion_service.FusionService,实现 FusionProvider 协议"""
+
+    def __init__(self, fusion_service: Any) -> None:
+        self._svc = fusion_service
+
+    def fuse(
+        self,
+        pills: List[Any],
+        model: Optional[str] = None,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+        exclude_operator_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        return self._svc.fuse(
+            pills=pills, model=model, api_key=api_key,
+            base_url=base_url, exclude_operator_id=exclude_operator_id,
         )

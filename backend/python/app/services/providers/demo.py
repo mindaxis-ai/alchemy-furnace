@@ -20,7 +20,7 @@ import re
 import time
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
-from app.services.providers.base import ChatProvider, SynthesisProvider
+from app.services.providers.base import ChatProvider, FusionProvider, SynthesisProvider
 
 logger = logging.getLogger(__name__)
 
@@ -241,4 +241,48 @@ class DemoSynthesisProvider:
             "fingerprint": fp,
             "model": model or "demo-mock",
             "usage": {},
+        }
+
+
+# ==================== DemoFusionProvider ====================
+
+
+class DemoFusionProvider:
+    """演示模式融合 Provider: 固定产物 + 100ms 延迟,无 LLM"""
+
+    def fuse(
+        self,
+        pills: List[Any],
+        model: Optional[str] = None,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+        exclude_operator_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        import time
+        time.sleep(0.1)
+        names = []
+        for p in pills or []:
+            name = getattr(p, "name", None) or (p.get("name") if isinstance(p, dict) else None)
+            if name:
+                names.append(str(name))
+        joined = "、".join(names) if names else "(无)"
+        return {
+            "name": "演示合丹",
+            "description": f"【演示模式】由 {joined} 融合而成的展示用金丹。",
+            "skill_schema": {
+                "identity_card": f"我是 {joined} 的演示融合体。",
+                "expression_dna": {"sentence_length": "mixed", "formality": 0.5,
+                                   "vocabulary": [], "taboo_words": [],
+                                   "rhythm": "", "humor_type": "",
+                                   "certainty_style": "", "citation_habit": ""},
+                "mental_models": [], "decision_heuristics": [], "values": [],
+                "anti_patterns": [], "honest_limits": ["演示模式产物,未经 LLM 创作"],
+                "example_dialogues": [
+                    {"user": "你好", "assistant": "此乃演示合丹,真实模式下方显真身。"},
+                    {"user": "你会什么", "assistant": "演示而已,博君一笑。"},
+                ],
+            },
+            "operator": {"id": "hyperbole", "name": "夸张突变"},
+            "model": "demo-mock",
+            "degraded": False,
         }

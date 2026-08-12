@@ -11,8 +11,8 @@ import logging
 
 from app.core.config import is_demo, mode as mode_str
 from app.services.providers.base import providers
-from app.services.providers.demo import DemoChatProvider, DemoSynthesisProvider
-from app.services.providers.real import RealChatProvider, RealSynthesisProvider
+from app.services.providers.demo import DemoChatProvider, DemoFusionProvider, DemoSynthesisProvider
+from app.services.providers.real import RealChatProvider, RealFusionProvider, RealSynthesisProvider
 
 logger = logging.getLogger(__name__)
 
@@ -27,17 +27,21 @@ def setup_providers() -> None:
         providers.set(
             chat=DemoChatProvider(),
             synthesis=DemoSynthesisProvider(),
+            fusion=DemoFusionProvider(),
         )
-        logger.info("🧪 演示模式 — ChatProvider=DemoChatProvider, SynthesisProvider=DemoSynthesisProvider")
+        logger.info("🧪 演示模式 — Chat/Synthesis/Fusion 均为 Demo Provider")
     else:
         # 真实模式:按需 import 既有 service(避免演示模式启动时浪费)
         from app.services.chat_service import ChatService
         from app.services.language_synthesis_service import LanguageSynthesisService
+        from app.services.fusion_service import FusionService
 
-        chat = RealChatProvider(ChatService())
-        synthesis = RealSynthesisProvider(LanguageSynthesisService())
-        providers.set(chat=chat, synthesis=synthesis)
-        logger.info("🔥 真实模式 — ChatProvider=RealChatProvider, SynthesisProvider=RealSynthesisProvider")
+        providers.set(
+            chat=RealChatProvider(ChatService()),
+            synthesis=RealSynthesisProvider(LanguageSynthesisService()),
+            fusion=RealFusionProvider(FusionService()),
+        )
+        logger.info("🔥 真实模式 — Chat/Synthesis/Fusion 均为 Real Provider")
 
 
 def current_mode() -> str:
@@ -53,3 +57,8 @@ def get_chat_provider():
 def get_synthesis_provider():
     """service 层取 SynthesisProvider 的便捷访问点"""
     return providers.synthesis()
+
+
+def get_fusion_provider():
+    """service 层取 FusionProvider 的便捷访问点"""
+    return providers.fusion()
