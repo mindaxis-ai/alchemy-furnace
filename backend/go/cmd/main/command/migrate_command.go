@@ -1,4 +1,6 @@
-// migrate 子命令: migrate up(执行全部未应用迁移) / migrate down(回滚全部,带确认)
+// migrate 子命令: 基于 GORM AutoMigrate 的多数据库 schema 同步
+//   - migrate up: 同步全部业务表(幂等,跨 PG/MySQL/SQLite)
+//   - migrate down: DropTable 全部业务表(本地重建用,带确认)
 package command
 
 import (
@@ -36,11 +38,20 @@ func newMigrateUpCommand() *cobra.Command {
 				return err
 			}
 			defer dao.CloseDatabase()
+
+			has, err := dao.HasSchema()
+			if err != nil {
+				return err
+			}
+			if has {
+				fmt.Println("[炼丹炉] schema 已存在,AutoMigrate 幂等跳过(可手动 down+up 重建)")
+				return nil
+			}
+
 			if err := dao.MigrateUp(); err != nil {
 				return err
 			}
-			v, dirty, _ := dao.MigrateVersion()
-			fmt.Printf("[炼丹炉] 迁移完成,当前版本: %d (dirty=%v)\n", v, dirty)
+			fmt.Println("[炼丹炉] AutoMigrate 完成,8 张业务表已就位")
 			return nil
 		},
 	}
@@ -67,7 +78,7 @@ func newMigrateDownCommand() *cobra.Command {
 			if err := dao.MigrateDown(); err != nil {
 				return err
 			}
-			fmt.Println("[炼丹炉] 已回滚全部迁移")
+			fmt.Println("[炼丹炉] 已 DROP 全部业务表(数据库文件保留;SQLite 用户可直接删除文件)")
 			return nil
 		},
 	}

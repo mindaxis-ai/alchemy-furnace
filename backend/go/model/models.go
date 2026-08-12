@@ -24,8 +24,8 @@ type ElixirPill struct {
 	UUID        uuid.UUID `json:"-" gorm:"type:uuid;uniqueIndex;comment:对外标识"`
 	Name        string    `json:"name" gorm:"size:100;not null;comment:金丹名称"`
 	Description string    `json:"description" gorm:"type:text;comment:金丹简介（含触发语、反触发语）"`
-	SkillSchema JSONMap   `json:"skill_schema" gorm:"type:jsonb;not null;comment:nuwa-skill 结构化内容"`
-	Tags        JSONList  `json:"tags" gorm:"type:jsonb;comment:标签数组"`
+	SkillSchema JSONMap   `json:"skill_schema" gorm:"not null;serializer:json;comment:nuwa-skill 结构化内容"`
+	Tags        JSONList  `json:"tags" gorm:"serializer:json;comment:标签数组"`
 	Author      string    `json:"author" gorm:"size:100;comment:作者"`
 	Version     string    `json:"version" gorm:"size:20;default:1.0.0;comment:版本号"`
 	IsBuiltin   bool      `json:"is_builtin" gorm:"default:false;index;comment:是否系统内置示例金丹"`
@@ -82,8 +82,8 @@ type AgentPill struct {
 	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime;comment:服用时间"`
 
 	// 关联关系
-	Agent DaoAgent   `json:"agent,omitempty" gorm:"foreignKey:AgentID;references:ID"`
-	Pill  ElixirPill `json:"pill,omitempty" gorm:"foreignKey:PillID;references:ID"`
+	Agent DaoAgent   `json:"agent,omitempty" gorm:"foreignKey:AgentID;references:ID;constraint:OnDelete:CASCADE;"`
+	Pill  ElixirPill `json:"pill,omitempty" gorm:"foreignKey:PillID;references:ID;constraint:OnDelete:CASCADE;"`
 }
 
 // TableName 指定表名
@@ -100,15 +100,15 @@ type LanguagePattern struct {
 	ID                uint      `json:"id" gorm:"primaryKey;autoIncrement;comment:缓存唯一标识"`
 	AgentID           uint      `json:"agent_id" gorm:"not null;uniqueIndex;comment:关联道人ID"`
 	SystemPrompt      string    `json:"system_prompt" gorm:"type:text;not null;comment:合成后的系统提示词"`
-	EmergenceRules    JSONList  `json:"emergence_rules" gorm:"type:jsonb;comment:涌现规则列表"`
-	InnerTensions     JSONList  `json:"inner_tensions" gorm:"type:jsonb;comment:检测到的内在冲突"`
+	EmergenceRules    JSONList  `json:"emergence_rules" gorm:"serializer:json;comment:涌现规则列表"`
+	InnerTensions     JSONList  `json:"inner_tensions" gorm:"serializer:json;comment:检测到的内在冲突"`
 	SourceFingerprint string    `json:"source_fingerprint" gorm:"size:80;not null;comment:来源指纹(sha256: 前缀 + 64 位 hex = 71 字符)"`
 	IsValid           bool      `json:"is_valid" gorm:"default:true;comment:是否有效"`
 	CreatedAt         time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 	UpdatedAt         time.Time `json:"updated_at" gorm:"autoUpdateTime;comment:更新时间"`
 
 	// 关联关系
-	Agent DaoAgent `json:"agent,omitempty" gorm:"foreignKey:AgentID;references:ID"`
+	Agent DaoAgent `json:"agent,omitempty" gorm:"foreignKey:AgentID;references:ID;constraint:OnDelete:CASCADE;"`
 }
 
 // TableName 指定表名
@@ -129,7 +129,7 @@ type ChatSession struct {
 	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime;comment:更新时间"`
 
 	// 关联关系
-	Agent    DaoAgent      `json:"agent,omitempty" gorm:"foreignKey:AgentID;references:ID"`
+	Agent    DaoAgent      `json:"agent,omitempty" gorm:"foreignKey:AgentID;references:ID;constraint:OnDelete:CASCADE;"`
 	Messages []ChatMessage `json:"messages,omitempty" gorm:"foreignKey:SessionID;references:ID;constraint:OnDelete:CASCADE;"`
 }
 
@@ -150,11 +150,11 @@ type ChatMessage struct {
 	SessionID uint      `json:"session_id" gorm:"not null;index;comment:所属会话ID"`
 	Role      string    `json:"role" gorm:"size:20;not null;comment:角色: user/assistant/system"`
 	Content   string    `json:"content" gorm:"type:text;not null;comment:消息内容"`
-	Sources   JSONMap   `json:"sources,omitempty" gorm:"type:jsonb;comment:废弃: 原RAG引用来源(JSONB格式)"`
+	Sources   JSONMap   `json:"sources,omitempty" gorm:"serializer:json;comment:废弃: 原RAG引用来源(JSONB格式)"`
 	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 
 	// 关联关系
-	Session ChatSession `json:"session,omitempty" gorm:"foreignKey:SessionID;references:ID"`
+	Session ChatSession `json:"session,omitempty" gorm:"foreignKey:SessionID;references:ID;constraint:OnDelete:CASCADE;"`
 }
 
 // TableName 指定表名
@@ -204,9 +204,9 @@ type LLMModel struct {
 	Temperature float64   `json:"temperature" gorm:"default:0.7;comment:默认温度(0-2)"`
 	MaxTokens   int       `json:"max_tokens" gorm:"default:4096;comment:默认最大 token"`
 	IsEnabled   bool      `json:"is_enabled" gorm:"default:true;index;comment:是否启用"`
-	IsDefault   bool      `json:"is_default" gorm:"default:false;comment:是否默认模型（全表最多一个）"`
-	IsSynthesis bool      `json:"is_synthesis" gorm:"default:false;comment:是否语言模式合成专用模型（全表最多一个）"`
-	IsFusion    bool      `json:"is_fusion" gorm:"default:false;comment:是否金丹融合专用模型（全表最多一个）"`
+	IsDefault   bool      `json:"is_default" gorm:"default:false;uniqueIndex:idx_llm_models_default,where:is_default = 1;comment:是否默认模型（全表最多一个,部分唯一索引:PG/SQLite 生效,MySQL 靠 service 层校验）"`
+	IsSynthesis bool      `json:"is_synthesis" gorm:"default:false;uniqueIndex:idx_llm_models_synthesis,where:is_synthesis = 1;comment:是否语言模式合成专用模型（全表最多一个,部分唯一索引:PG/SQLite 生效,MySQL 靠 service 层校验）"`
+	IsFusion    bool      `json:"is_fusion" gorm:"default:false;uniqueIndex:idx_llm_models_fusion,where:is_fusion = 1;comment:是否金丹融合专用模型（全表最多一个,部分唯一索引:PG/SQLite 生效,MySQL 靠 service 层校验）"`
 	SortOrder   int       `json:"sort_order" gorm:"default:0;comment:展示顺序"`
 	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime;comment:更新时间"`

@@ -1,71 +1,98 @@
-// golang-migrate 版本化迁移装配(iofs 源 + postgres 驱动,SQL 经 embed.FS 内嵌)
+// GORM AutoMigrate 驱动: 多数据库统一 schema 同步
+// 替代历史 golang-migrate SQL 方案: 由 model/*.go 的 GORM 标签作为唯一事实来源
+//   - 幂等: 重复执行只补齐新增列/索引,不会破坏已有数据
+//   - 驱动无关: 同一组模型在 postgres / mysql / sqlite 上生成等价表结构
+//   - 部分唯一索引(is_default / is_synthesis / is_fusion):
+//       模型 tag 上声明 where 子句,PG/SQLite 自动生成 partial index;
+//       MySQL 8.0.13+ 同步支持,更早版本降级为普通 unique 索引并由 service 层兜底
 package dao
 
 import (
-	"errors"
 	"fmt"
+	"os"
+	"strings"
 
-	"github.com/alchemy-furnace/server/migration"
-
-	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/postgres"
-	"github.com/golang-migrate/migrate/v4/source/iofs"
+	"github.com/alchemy-furnace/server/model"
 )
 
-// newMigrator 基于当前数据库连接构造迁移器
-func newMigrator() (*migrate.Migrate, error) {
-	if DB == nil {
-		return nil, fmt.Errorf("数据库未初始化")
-	}
-	sqlDB, err := DB.DB()
-	if err != nil {
-		return nil, fmt.Errorf("获取底层连接失败: %w", err)
-	}
-
-	source, err := iofs.New(migration.FS, ".")
-	if err != nil {
-		return nil, fmt.Errorf("加载内嵌迁移文件失败: %w", err)
-	}
-	driver, err := postgres.WithInstance(sqlDB, &postgres.Config{})
-	if err != nil {
-		return nil, fmt.Errorf("初始化 postgres 迁移驱动失败: %w", err)
-	}
-	return migrate.NewWithInstance("iofs", source, "postgres", driver)
+// allMigratableModels 全部需要 AutoMigrate 的模型(顺序无关:GORM 解析外键延迟建表)
+// 新增模型时在此追加
+var allMigratableModels = []any{
+	&model.ElixirPill{},
+	&model.DaoAgent{},
+	&model.AgentPill{},
+	&model.LanguagePattern{},
+	&model.ChatSession{},
+	&model.ChatMessage{},
+	&model.LLMProvider{},
+	&model.LLMModel{},
 }
 
-// MigrateUp 执行全部未应用的迁移(幂等: 版本表 schema_migrations 自动跳过已执行项)
+// MigrateUp 同步全部业务表到当前模型定义(幂等,跨驱动)
+// 历史 raw-SQL 迁移文件已不再依赖;若是从旧部署首次切换,可重复运行直至无差异
 func MigrateUp() error {
-	m, err := newMigrator()
-	if err != nil {
-		return err
+	if DB == nil {
+		return fmt.Errorf("数据库未初始化")
 	}
-	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		return fmt.Errorf("执行迁移失败: %w", err)
+	if err := DB.AutoMigrate(allMigratableModels...); err != nil {
+		return fmt.Errorf("AutoMigrate 失败: %w", err)
 	}
 	return nil
 }
 
-// MigrateDown 回滚全部迁移(DROP 所有表;用于开发库重建)
+// MigrateDown 丢弃全部业务表(等同 drop-all;用于本地 / 演示环境重建)
+// SQLite 单文件部署慎用: 直接删 db 文件更快,这里走 GORM Migrator.DropTable 走全流程
 func MigrateDown() error {
-	m, err := newMigrator()
-	if err != nil {
-		return err
+	if DB == nil {
+		return fmt.Errorf("数据库未初始化")
 	}
-	if err := m.Down(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		return fmt.Errorf("回滚迁移失败: %w", err)
+	if err := DB.Migrator().DropTable(allMigratableModels...); err != nil {
+		return fmt.Errorf("DropTable 失败: %w", err)
 	}
 	return nil
 }
 
-// MigrateVersion 返回当前迁移版本(诊断用)
-func MigrateVersion() (uint, bool, error) {
-	m, err := newMigrator()
+// HasSchema 探测是否已经存在任意业务表,供 serve 启动决定是否需要 AutoMigrate
+// (避免每次启动都跑一遍全表 schema diff 的日志噪声)
+func HasSchema() (bool, error) {
+	if DB == nil {
+		return false, fmt.Errorf("数据库未初始化")
+	}
+	return DB.Migrator().HasTable(&model.ElixirPill{}), nil
+}
+
+// MaybeAutoMigrate 启动期调用: SKIP_AUTO_MIGRATE=1 关闭,否则在空库上跑 AutoMigrate
+// 配合 HasSchema 实现「零配置首次启动」体验
+//   - 空库: 自动建表(SQLite/新环境零门槛)
+//   - 已有 schema: 跳过(避免每次启动刷一堆 AutoMigrate 日志)
+//   - 显式关闭: 生产受控环境(运维走自己的迁移流水线)
+func MaybeAutoMigrate() error {
+	if DB == nil {
+		return fmt.Errorf("数据库未初始化")
+	}
+	if isAutoMigrateDisabled() {
+		return nil
+	}
+	has, err := HasSchema()
 	if err != nil {
-		return 0, false, err
+		return err
 	}
-	v, dirty, err := m.Version()
-	if errors.Is(err, migrate.ErrNilVersion) {
-		return 0, false, nil
+	if has {
+		return nil
 	}
-	return v, dirty, err
+	return MigrateUp()
+}
+
+// isAutoMigrateDisabled 检查 SKIP_AUTO_MIGRATE / AF_SKIP_AUTO_MIGRATE
+// 接受 1 / true / TRUE(大小写不敏感),其他值视为启用
+func isAutoMigrateDisabled() bool {
+	for _, name := range []string{"SKIP_AUTO_MIGRATE", "AF_SKIP_AUTO_MIGRATE"} {
+		if v, ok := os.LookupEnv(name); ok {
+			switch strings.ToLower(strings.TrimSpace(v)) {
+			case "1", "true", "yes", "on":
+				return true
+			}
+		}
+	}
+	return false
 }

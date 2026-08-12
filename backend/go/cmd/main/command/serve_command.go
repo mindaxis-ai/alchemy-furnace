@@ -42,11 +42,16 @@ func runServe(cmd *cobra.Command) {
 	if configuration.IsDemo() {
 		log.Println("[炼丹炉] 🧪 演示模式: 跳过数据库连接,使用内存 mock 数据")
 	} else {
-		// 数据库连接(迁移/种子由子命令显式执行,启动不自动建表)
+		// 数据库连接
 		if err := dao.InitDatabase(&cfg.Database); err != nil {
 			log.Fatalf("[炼丹炉] 初始化数据库失败: %v", err)
 		}
 		defer dao.CloseDatabase()
+		// 零配置首次启动: 空库自动 AutoMigrate(多数据库支持)
+		// 已建表或 SKIP_AUTO_MIGRATE=1 时跳过,保持显式控制能力
+		if err := dao.MaybeAutoMigrate(); err != nil {
+			log.Fatalf("[炼丹炉] 自动建表失败: %v", err)
+		}
 	}
 	defer logger.Sync()
 

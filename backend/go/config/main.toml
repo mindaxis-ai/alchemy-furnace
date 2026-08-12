@@ -2,7 +2,7 @@
 # 优先级: 环境变量(AF_ 前缀或历史裸变量如 DB_HOST/GO_PORT) > 本文件 > 代码零值
 # Docker 部署时本文件随镜像拷贝至 /app/config/main.toml,一般只需用环境变量覆盖差异项
 
-# 调试开关(预留,对齐 Luna-CY 模板)
+# 调试开关(预留,对齐模板)
 debug = true
 
 # 模型 API Key 加密密钥(AES-GCM);生产环境务必用 MODEL_KEY_SECRET 环境变量覆盖
@@ -16,14 +16,39 @@ mode = "debug"
 # CORS 允许来源(裸环境变量 ALLOW_ORIGINS)
 allow_origins = "*"
 
+# ══════════════════════════════════════════════════════════════════
+# 数据库: 多驱动支持(postgres / mysql / sqlite)
+#
+# 智能默认值:
+#   - driver 留空 + 配了 host  → postgres(向后兼容旧部署)
+#   - driver 留空 + 没配 host  → sqlite  (零依赖首启,降低使用门槛)
+#
+# 切换驱动只需显式填 driver,其他字段按需调整。
+# ══════════════════════════════════════════════════════════════════
 [database]
-# PostgreSQL 连接(裸环境变量 DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME/DB_SSLMODE)
-host = "localhost"
-port = 5432
-user = "alchemy"
-password = "alchemy123"
-dbname = "alchemy_db"
-sslmode = "disable"
+# 驱动(裸环境变量 DB_DRIVER): 留空时由 host 是否配置智能选择
+# driver = "postgres"
+# driver = "mysql"
+# driver = "sqlite"
+
+# ── PostgreSQL / MySQL 共用字段 ─────────────────────────────
+# 裸环境变量: DB_HOST / DB_PORT / DB_USER / DB_PASSWORD / DB_NAME / DB_SSLMODE
+# host = "localhost"
+# port = 5432
+# user = "alchemy"
+# password = "alchemy123"
+# dbname = "alchemy_db"
+# sslmode = "disable"   # 仅 PG 生效;MySQL 忽略
+
+# ── SQLite 专用 ─────────────────────────────────────────────
+# 单文件路径(相对路径以程序 cwd 解析);父目录不存在时由 InitDatabase 自动创建
+# 裸环境变量 DB_SQLITE_PATH
+# sqlite_path = "./data/alchemy.db"
+
+# 注: schema 同步由 GORM AutoMigrate 自动完成(见 internal/dao/migrate.go)
+#     - 首次启动: 空库自动建表
+#     - 已有 schema: 幂等跳过(避免每次启动刷日志)
+#     - 关闭: SKIP_AUTO_MIGRATE=1(运维自有流水线场景)
 
 [llm]
 # 默认供应商/模型种子来源(裸环境变量 OPENAI_API_KEY/OPENAI_BASE_URL/DEFAULT_MODEL/SYNTHESIS_MODEL/FUSION_MODEL)
