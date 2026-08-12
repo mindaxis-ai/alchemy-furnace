@@ -26,11 +26,12 @@ dbname = "alchemy_db"
 sslmode = "disable"
 
 [llm]
-# 默认供应商/模型种子来源(裸环境变量 OPENAI_API_KEY/OPENAI_BASE_URL/DEFAULT_MODEL/SYNTHESIS_MODEL)
+# 默认供应商/模型种子来源(裸环境变量 OPENAI_API_KEY/OPENAI_BASE_URL/DEFAULT_MODEL/SYNTHESIS_MODEL/FUSION_MODEL)
 api_key = ""
 base_url = "https://api.openai.com/v1"
 default_model = "gpt-4o"
 synthesis_model = "gpt-4o-mini"
+fusion_model = "gpt-4o-mini"
 models = ["gpt-4o", "gpt-4o-mini", "deepseek-chat", "qwen-max"]
 
 [python_engine]

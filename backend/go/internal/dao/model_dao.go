@@ -95,7 +95,7 @@ func (d *ModelDao) ModelNameExistsInProvider(ctx context.Context, providerID uin
 	return count > 0, nil
 }
 
-// SaveModel 新建模型;is_default/is_synthesis 为 true 时事务内先清除其他记录
+// SaveModel 新建模型;is_default/is_synthesis/is_fusion 为 true 时事务内先清除其他记录
 func (d *ModelDao) SaveModel(ctx context.Context, m *model.LLMModel) errors.Error {
 	if err := GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if m.IsDefault {
@@ -108,6 +108,11 @@ func (d *ModelDao) SaveModel(ctx context.Context, m *model.LLMModel) errors.Erro
 				return err
 			}
 		}
+		if m.IsFusion {
+			if err := tx.Model(&model.LLMModel{}).Where("is_fusion = ?", true).Update("is_fusion", false).Error; err != nil {
+				return err
+			}
+		}
 		return tx.Create(m).Error
 	}); err != nil {
 		return errors.ErrorServerInternalError("dao.model.save")
@@ -115,7 +120,7 @@ func (d *ModelDao) SaveModel(ctx context.Context, m *model.LLMModel) errors.Erro
 	return nil
 }
 
-// UpdateModel 部分更新模型字段;is_default/is_synthesis 为 true 时事务内先清除其他记录(排除自身)
+// UpdateModel 部分更新模型字段;is_default/is_synthesis/is_fusion 为 true 时事务内先清除其他记录(排除自身)
 // 标志位从 updates map 中按 bool 读取
 func (d *ModelDao) UpdateModel(ctx context.Context, m *model.LLMModel, updates map[string]any) errors.Error {
 	if err := GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -129,6 +134,13 @@ func (d *ModelDao) UpdateModel(ctx context.Context, m *model.LLMModel, updates m
 		if v, ok := updates["is_synthesis"]; ok {
 			if b, ok := toBool(v); ok && b {
 				if err := tx.Model(&model.LLMModel{}).Where("is_synthesis = ? AND id <> ?", true, m.ID).Update("is_synthesis", false).Error; err != nil {
+					return err
+				}
+			}
+		}
+		if v, ok := updates["is_fusion"]; ok {
+			if b, ok := toBool(v); ok && b {
+				if err := tx.Model(&model.LLMModel{}).Where("is_fusion = ? AND id <> ?", true, m.ID).Update("is_fusion", false).Error; err != nil {
 					return err
 				}
 			}
@@ -215,6 +227,19 @@ func (d *ModelDao) TakeSynthesisEnabled(ctx context.Context) (*model.LLMModel, e
 			return nil, errors.ErrorRecordNotFound("dao.model.take_synthesis")
 		}
 		return nil, errors.ErrorServerInternalError("dao.model.take_synthesis")
+	}
+	return &m, nil
+}
+
+// TakeFusionEnabled 取已启用的金丹融合专用模型(预加载 Provider),不存在返回 ErrorTypeRecordNotFound
+func (d *ModelDao) TakeFusionEnabled(ctx context.Context) (*model.LLMModel, errors.Error) {
+	var m model.LLMModel
+	if err := GetDB().WithContext(ctx).Preload("Provider").
+		Where("is_fusion = ? AND is_enabled = ?", true, true).First(&m).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, errors.ErrorRecordNotFound("dao.model.take_fusion")
+		}
+		return nil, errors.ErrorServerInternalError("dao.model.take_fusion")
 	}
 	return &m, nil
 }

@@ -22,6 +22,9 @@ type Resolver interface {
 
 	// ResolveSynthesisCredentials 解析语言模式合成专用模型凭证(is_synthesis 优先,回退 is_default)
 	ResolveSynthesisCredentials(ctx context.Context) (*ModelCredentials, error)
+
+	// ResolveFusionCredentials 解析金丹融合专用模型凭证(is_fusion 优先;找不到返回明确错误,不静默回退 is_default)
+	ResolveFusionCredentials(ctx context.Context) (*ModelCredentials, error)
 }
 
 // ModelResolver credential.Resolver 实现:直接经 internal/dao 查询模型/供应商并解密 api_key
@@ -117,6 +120,26 @@ func (r *ModelResolver) ResolveSynthesisCredentials(ctx context.Context) (*Model
 		return r.ResolveDefaultCredentials(ctx)
 	default:
 		return nil, fmt.Errorf("查询合成模型配置失败: %w", err)
+	}
+}
+
+// ResolveFusionCredentials 解析金丹融合专用模型凭证:is_fusion 优先,找不到则返回明确错误(不兜底道人默认模型)
+func (r *ModelResolver) ResolveFusionCredentials(ctx context.Context) (*ModelCredentials, error) {
+	// 007-demo-mode: 演示模式无 DB,返回空凭证(Python 端走 DemoFusionProvider)
+	if configuration.IsDemo() {
+		return &ModelCredentials{}, nil
+	}
+
+	var m model.LLMModel
+	err := dao.GetDB().WithContext(ctx).Where("is_fusion = ? AND is_enabled = ?", true, true).First(&m).Error
+	switch {
+	case err == nil:
+		return r.resolveModelCredentials(ctx, &m)
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		// 硬性报错:不静默回退道人默认模型,引导用户去设置中配置融合专用
+		return nil, errors.New("未配置金丹融合专用模型，请前往「设置 → 模型管理」勾选「用于金丹融合」")
+	default:
+		return nil, fmt.Errorf("查询融合模型配置失败: %w", err)
 	}
 }
 

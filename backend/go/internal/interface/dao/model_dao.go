@@ -53,6 +53,9 @@ type Model interface {
 	// TakeSynthesisEnabled 取已启用的合成专用模型(预加载 Provider),不存在返回 ErrorTypeRecordNotFound
 	TakeSynthesisEnabled(ctx context.Context) (*model.LLMModel, errors.Error)
 
+	// TakeFusionEnabled 取已启用的金丹融合专用模型(预加载 Provider),不存在返回 ErrorTypeRecordNotFound
+	TakeFusionEnabled(ctx context.Context) (*model.LLMModel, errors.Error)
+
 	// FindEnabledOptions 已启用供应商下的已启用模型精简列表(供道人表单下拉)
 	FindEnabledOptions(ctx context.Context) ([]model.LLMModelOption, errors.Error)
 

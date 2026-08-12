@@ -91,6 +91,22 @@ func (s *LanguagePatternService) GetOrBuildPattern(ctx context.Context, agentID 
 		emergenceRules = model.JSONList{}
 	}
 
+	// 降级结果(结构化合并兜底 prompt)不落库: 以 is_valid=false 的临时对象返回,
+	// 本次论道可用;因指纹比对要求 is_valid=true,下次请求会重新合成,
+	// 避免「指纹不变 → 兜底 prompt 被长期当有效缓存」的污染(本次 500 的深层原因)
+	if resp.Degraded {
+		zap.L().Warn("[炼丹炉] 语言模式合成为降级结果,本次不落库",
+			zap.Uint("agent_id", agentID))
+		return &model.LanguagePattern{
+			AgentID:           agentID,
+			SystemPrompt:      resp.SystemPrompt,
+			EmergenceRules:    emergenceRules,
+			InnerTensions:     innerTensions,
+			SourceFingerprint: fingerprint,
+			IsValid:           false,
+		}, nil
+	}
+
 	if agent.LanguagePattern != nil {
 		agent.LanguagePattern.SystemPrompt = resp.SystemPrompt
 		agent.LanguagePattern.EmergenceRules = emergenceRules

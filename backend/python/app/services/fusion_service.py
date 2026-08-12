@@ -9,6 +9,7 @@
 import json
 import logging
 import random
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.services.fusion_operators import (
@@ -22,12 +23,134 @@ _REQUIRED_SCHEMA_SECTIONS = [
     "values", "anti_patterns", "honest_limits", "example_dialogues",
 ]
 
-_SYSTEM_PROMPT = "你是炼丹炉的金丹融合大师。你只输出合法 JSON,不要输出任何其他文字。"
+_SYSTEM_PROMPT = (
+    "你是炼丹炉的金丹融合大师。"
+    "严格只输出合法 JSON,不要任何解释、注释、markdown 代码块包裹或多余文字。"
+    "JSON 必须是可被 json.loads 直接解析的完整对象。"
+)
+
+# ─────────────────────────────────────────────────────────────
+# 提示词压缩:全量 skill_schema 太大,多枚时易超 8K 上下文
+# 只保留融合所需的「人格本质」: identity_card + 表达 DNA 摘要 + 关键心智模型
+# 这能让 5 枚金丹的输入从 ~7500 tokens 压到 ~1500 tokens
+# ─────────────────────────────────────────────────────────────
+_PILL_ESSENCE_FIELDS = ("identity_card",)
+_DNA_SUMMARY_FIELDS = (
+    "sentence_length", "formality", "rhythm", "humor_type",
+    "certainty_style", "citation_habit",
+)
+_MODEL_SUMMARY_FIELDS = ("name", "one_liner")
+_DNA_SAFE_LIST_LIMIT = 8
+
+
+def _summarize_dna(dna: Dict[str, Any]) -> Dict[str, Any]:
+    """保留表达 DNA 的关键维度;vocabulary/taboo_words 仅取前 N 项"""
+    summary: Dict[str, Any] = {}
+    for k in _DNA_SUMMARY_FIELDS:
+        v = dna.get(k)
+        if v not in (None, "", []):
+            summary[k] = v
+    vocab = dna.get("vocabulary") or []
+    taboo = dna.get("taboo_words") or []
+    if vocab:
+        summary["vocabulary"] = list(vocab)[:_DNA_SAFE_LIST_LIMIT]
+    if taboo:
+        summary["taboo_words"] = list(taboo)[:_DNA_SAFE_LIST_LIMIT]
+    return summary
+
+
+def _summarize_models(models: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """心智模型只留 name + one_liner,前 3 条"""
+    out: List[Dict[str, Any]] = []
+    for m in models[:3]:
+        if not isinstance(m, dict):
+            continue
+        item = {k: m.get(k) for k in _MODEL_SUMMARY_FIELDS if m.get(k)}
+        if item:
+            out.append(item)
+    return out
+
+
+def _pill_essence(pill: Dict[str, Any]) -> Dict[str, Any]:
+    """从单枚金丹抽出融合所需的人格本质字段"""
+    schema = pill.get("skill_schema") or {}
+    if not isinstance(schema, dict):
+        schema = {}
+    essence: Dict[str, Any] = {}
+    for k in _PILL_ESSENCE_FIELDS:
+        v = schema.get(k)
+        if v:
+            essence[k] = v
+    dna = schema.get("expression_dna")
+    if isinstance(dna, dict) and dna:
+        dna_summary = _summarize_dna(dna)
+        if dna_summary:
+            essence["expression_dna"] = dna_summary
+    models = schema.get("mental_models")
+    if isinstance(models, list) and models:
+        essence["mental_models"] = _summarize_models(models)
+    return essence
+
+
+# 兜底:LLM 偶尔仍会用 ```json ... ``` 围栏,统一剥离
+_FENCE_RE = re.compile(r"^```(?:json)?\s*\n?(.*?)\n?```\s*$", re.DOTALL | re.IGNORECASE)
+
+
+def _parse_llm_json(content: str) -> Dict[str, Any]:
+    """
+    多策略解析 LLM 返回的 JSON,容忍围栏、杂质前缀/后缀、不可见字符
+
+    顺序: 直接 loads → 剥离 ``` 围栏 → 取首个 { 到末个 } 子串 → 报错
+    """
+    if content is None:
+        raise ValueError("LLM 返回为空")
+    text = str(content).strip()
+    if not text:
+        raise ValueError("LLM 返回为空")
+
+    # 1) 直接解析(绝大多数 response_format=json_object 时命中此分支)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # 2) 剥离 markdown 围栏(```json ... ``` 或 ``` ... ```)
+    m = _FENCE_RE.match(text)
+    if m:
+        try:
+            return json.loads(m.group(1).strip())
+        except json.JSONDecodeError:
+            pass
+    # 兜底手剥:首行是 ```/```json,末行是 ```
+    if text.startswith("```"):
+        lines = text.split("\n")
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]
+        # 跳过首行围栏标记
+        inner = "\n".join(lines[1:]).strip() if lines[0].strip().startswith("```") else "\n".join(lines).strip()
+        try:
+            return json.loads(inner)
+        except json.JSONDecodeError:
+            pass
+
+    # 3) 取首个 { 到末个 } 的子串再解析(处理前后杂质)
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end > start:
+        candidate = text[start:end + 1]
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            pass
+
+    raise ValueError(
+        f"无法从 LLM 输出解析 JSON(长度={len(text)}): {text[:200]!r}"
+    )
 
 _TASK_TEMPLATE = """## 融合算子
 {op_name}: {op_instruction}
 
-## 原料金丹 (共 {n} 枚)
+## 原料金丹 (共 {n} 枚,仅含人格本质字段)
 {pills_block}
 
 ## 任务
@@ -55,19 +178,23 @@ _TASK_TEMPLATE = """## 融合算子
   }}
 }}
 
-约束:
-- example_dialogues 至少 2 条
-- mental_models / decision_heuristics 各至少 1 条
-- 所有文本用中文"""
+硬性约束(违反任何一条都视为输出失败):
+- 严格输出合法 JSON,不得用 ``` 围栏包裹,不得附加任何解释
+- 顶层必须是 {{ 开始、}} 结束的对象,字段名双引号
+- example_dialogues 至少 2 条;mental_models / decision_heuristics 各至少 1 条
+- 所有文本用中文,字段值内不可包含未配对的引号或换行干扰 JSON 闭合
+- 控制总长度在 2500 字以内,避免末尾被截断导致 JSON 不闭合"""
 
 
 def _build_pills_block(pills: List[Dict[str, Any]]) -> str:
+    """仅输出融合所需的人格本质字段,避免 prompt 撑爆 8K 上下文"""
     parts = []
     for i, p in enumerate(pills, 1):
+        essence = _pill_essence(p)
         parts.append(
             f"### 金丹 {i}: {p.get('name', '')}\n"
             f"描述: {p.get('description', '')}\n"
-            f"skill_schema: {json.dumps(p.get('skill_schema') or {}, ensure_ascii=False)}"
+            f"人格本质: {json.dumps(essence, ensure_ascii=False)}"
         )
     return "\n\n".join(parts)
 
@@ -114,6 +241,8 @@ class FusionService:
             n=len(pills),
             pills_block=_build_pills_block(pills),
         )
+        # 不强制 response_format=json_object:实测 deepseek-v4-flash 不支持该模式,
+        # 传了会直接返回空 content。改靠「强 prompt + 多策略解析」保证 JSON 合规。
         resp = self._chat.chat_completion(
             messages=[
                 {"role": "system", "content": _SYSTEM_PROMPT},
@@ -126,12 +255,13 @@ class FusionService:
             base_url=base_url,
         )
         content = str(resp.get("content", "")).strip()
-        # 容错: LLM 可能包了 ```json ... ``` 围栏
-        if content.startswith("```"):
-            content = content.strip("`")
-            if content.startswith("json"):
-                content = content[4:]
-        return json.loads(content.strip()), str(resp.get("model", ""))
+        # 暴露 LLM 原始 content 长度,便于事后诊断「返回为空/截断/被围栏」类问题
+        logger.info(
+            "融合 LLM 响应: model=%s, content_len=%d",
+            resp.get("model", ""), len(content),
+        )
+        payload = _parse_llm_json(content)
+        return payload, str(resp.get("model", ""))
 
     def _fallback(self, pills: List[Dict[str, Any]], operator: FusionOperator) -> Dict[str, Any]:
         """保底方案: LLM 连续失败时,结构化拼接原料生成一枚保底金丹"""

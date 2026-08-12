@@ -90,6 +90,8 @@ export interface LLMModel {
   is_default: boolean
   /** 是否为语言模式合成模型 */
   is_synthesis: boolean
+  /** 是否为金丹融合专用模型 */
+  is_fusion: boolean
   sort_order: number
   /** 引用该模型的道人数量 */
   referenced_by: number
@@ -106,6 +108,7 @@ export interface CreateModelRequest {
   is_enabled?: boolean
   is_default?: boolean
   is_synthesis?: boolean
+  is_fusion?: boolean
   sort_order?: number
 }
 

@@ -3,9 +3,11 @@
 package web
 
 import (
+	"github.com/alchemy-furnace/server/internal/service/model_service"
 	"github.com/alchemy-furnace/server/server/http/gateway/web/handler"
 	"github.com/alchemy-furnace/server/server/http/gateway/web/handler/system"
 	"github.com/alchemy-furnace/server/server/http/router"
+	"github.com/alchemy-furnace/server/server/http/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -18,7 +20,11 @@ func Register(r *gin.Engine) error {
 	chatHandler := handler.NewChat()
 	trialHandler := handler.NewTrial()
 	fusionHandler := handler.NewFusion()
-	systemHandler := system.New()
+	// 装配 system handler: 注入 model service 用于 GetConfig 返回实际配置的融合模型
+	daoModel := service.ProvideModelDao()
+	provider := service.ProvideProviderDao()
+	modelService := model_service.New(daoModel, provider)
+	systemHandler := system.New(modelService)
 	modelHandler := handler.NewModel()
 
 	// 金丹管理(UUID 对外标识)

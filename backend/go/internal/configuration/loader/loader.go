@@ -27,6 +27,7 @@ var legacyEnv = map[string]string{
 	"llm.base_url":           "OPENAI_BASE_URL",
 	"llm.default_model":      "DEFAULT_MODEL",
 	"llm.synthesis_model":    "SYNTHESIS_MODEL",
+	"llm.fusion_model":       "FUSION_MODEL",
 	"python_engine.base_url": "PYTHON_ENGINE_BASE_URL",
 	"model_key_secret":       "MODEL_KEY_SECRET",
 }

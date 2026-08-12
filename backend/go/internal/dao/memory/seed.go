@@ -81,17 +81,17 @@ func loadSeed(s *Store) {
 		Name, Display                  string
 		Temp                           float64
 		MaxTokens                      int
-		IsDefault, IsSynthesis, IsEn   bool
+		IsDefault, IsSynthesis, IsFusion, IsEn bool
 	}{
-		{"gpt-4o", "GPT-4o", 0.7, 4096, true, false, true},
-		{"claude-3-5-sonnet", "Claude 3.5 Sonnet", 0.7, 4096, false, false, true},
-		{"gemini-1.5-pro", "Gemini 1.5 Pro", 0.7, 4096, false, false, true},
-		{"mistral-large", "Mistral Large", 0.7, 4096, false, false, true},
-		{"deepseek-chat", "DeepSeek Chat", 0.7, 4096, false, true, true},
-		{"qwen-max", "通义千问 Max", 0.7, 4096, false, false, true},
-		{"ernie-4.0", "文心 ERNIE 4.0", 0.7, 4096, false, false, true},
-		{"glm-4", "智谱 GLM-4", 0.7, 4096, false, false, true},
-		{"moonshot-v1-32k", "Kimi v1 32k", 0.7, 4096, false, false, true},
+		{"gpt-4o", "GPT-4o", 0.7, 4096, true, false, false, true},
+		{"claude-3-5-sonnet", "Claude 3.5 Sonnet", 0.7, 4096, false, false, false, true},
+		{"gemini-1.5-pro", "Gemini 1.5 Pro", 0.7, 4096, false, false, false, true},
+		{"mistral-large", "Mistral Large", 0.7, 4096, false, false, false, true},
+		{"deepseek-chat", "DeepSeek Chat", 0.7, 4096, false, true, false, true},
+		{"qwen-max", "通义千问 Max", 0.7, 4096, false, false, false, true},
+		{"ernie-4.0", "文心 ERNIE 4.0", 0.7, 4096, false, false, false, true},
+		{"glm-4", "智谱 GLM-4", 0.7, 4096, false, false, false, true},
+		{"moonshot-v1-32k", "Kimi v1 32k", 0.7, 4096, false, false, false, true},
 	}
 	for i, m := range modelNames {
 		mm := &model.LLMModel{
@@ -104,6 +104,7 @@ func loadSeed(s *Store) {
 			MaxTokens:   m.MaxTokens,
 			IsDefault:   m.IsDefault,
 			IsSynthesis: m.IsSynthesis,
+			IsFusion:    m.IsFusion,
 			IsEnabled:   m.IsEn,
 			SortOrder:   i,
 			CreatedAt:   now,

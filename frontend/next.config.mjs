@@ -18,6 +18,11 @@ const nextConfig = {
             destination: 'http://localhost:8080/api/:path*',
           },
         ],
+        // 融合/合成长调用可达 180s+,Next.js dev proxy 默认 30s 超时会导致 ECONNRESET
+        // 显式放宽到 5 分钟,前端保持耐心,Go/Python 端超时仍由各自 client 控制
+        experimental: {
+          proxyTimeout: 300_000,
+        },
       }
     : {}),
 }

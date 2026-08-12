@@ -176,7 +176,24 @@
       "saving": "Saving…",
       "saveSuccess": "Saved to the Pill Pavilion",
       "saveError": "Save failed, please retry",
-      "noProvider": "No model provider configured. Go to Settings → Models first"
+      "noProvider": "No model provider configured. Go to Settings → Models first",
+      "noFusionModel": "No model configured for pill fusion",
+      "goToSettingsCta": "Go to Settings",
+      "fusionModelLabel": "Fusion model",
+      "changeCta": "Change",
+      "errorTitle": "Fusion failed",
+      "errorClose": "Close",
+      "errorRetry": "Retry",
+      "picker": {
+        "title": "Select fusion model",
+        "subtitle": "LLM used for pill fusion (independent of agent default model)",
+        "currentBadge": "Current",
+        "setCta": "Use for fusion",
+        "loading": "Loading…",
+        "emptyTitle": "No models available",
+        "emptyDesc": "Add and enable models in Settings → Model Management first",
+        "emptyDescModels": "This provider has no enabled models"
+      }
     }
   },
   "pill": {
@@ -487,6 +504,7 @@
       "temperature": "Temperature",
       "default": "Default",
       "synthesis": "Synthesis",
+      "fusion": "Fusion",
       "enabled": "Enabled",
       "refCount": "Refs",
       "actions": "Actions"
@@ -536,6 +554,7 @@
     "maxTokensLabel": "Max tokens",
     "setDefaultLabel": "Set as default model",
     "useForSynthesisLabel": "Use for pill synthesis",
+    "useForFusionLabel": "Use for pill fusion",
     "deleteProviderTitle": "Delete provider",
     "deleteProviderDesc": "Delete provider \"{name}\"? This cannot be undone.",
     "deleteProviderBlocked": "This provider still has {count} models; deletion will be rejected",

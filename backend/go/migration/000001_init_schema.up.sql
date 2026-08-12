@@ -52,7 +52,7 @@ CREATE TABLE language_patterns (
     system_prompt     TEXT NOT NULL,
     emergence_rules   JSONB,
     inner_tensions    JSONB,
-    source_fingerprint VARCHAR(64) NOT NULL,
+    source_fingerprint VARCHAR(80) NOT NULL,
     is_valid          BOOLEAN DEFAULT TRUE,
     created_at        TIMESTAMPTZ DEFAULT now(),
     updated_at        TIMESTAMPTZ DEFAULT now()
@@ -123,6 +123,7 @@ CREATE UNIQUE INDEX idx_llm_models_uuid ON llm_models(uuid);
 CREATE UNIQUE INDEX idx_llm_models_provider_name ON llm_models(provider_id, name);
 CREATE INDEX idx_llm_models_provider_id ON llm_models(provider_id);
 CREATE INDEX idx_llm_models_is_enabled ON llm_models(is_enabled);
--- 部分唯一索引: 全表至多一个默认模型 / 一个合成专用模型
+-- 部分唯一索引: 全表至多一个默认模型 / 一个合成专用模型 / 一个融合专用模型
 CREATE UNIQUE INDEX idx_llm_models_default ON llm_models(is_default) WHERE is_default;
 CREATE UNIQUE INDEX idx_llm_models_synthesis ON llm_models(is_synthesis) WHERE is_synthesis;
+CREATE UNIQUE INDEX idx_llm_models_fusion ON llm_models(is_fusion) WHERE is_fusion;

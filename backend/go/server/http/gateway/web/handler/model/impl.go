@@ -56,6 +56,7 @@ type ModelResponse struct {
 	IsEnabled           bool      `json:"is_enabled"`
 	IsDefault           bool      `json:"is_default"`
 	IsSynthesis         bool      `json:"is_synthesis"`
+	IsFusion            bool      `json:"is_fusion"`
 	SortOrder           int       `json:"sort_order"`
 	ReferencedBy        int64     `json:"referenced_by"`
 	CreatedAt           time.Time `json:"created_at"`
@@ -104,6 +105,7 @@ func toModelResponse(v *gmodel.ModelView) *ModelResponse {
 		IsEnabled:           v.IsEnabled,
 		IsDefault:           v.IsDefault,
 		IsSynthesis:         v.IsSynthesis,
+		IsFusion:            v.IsFusion,
 		SortOrder:           v.SortOrder,
 		ReferencedBy:        v.ReferencedBy,
 		CreatedAt:           v.CreatedAt,

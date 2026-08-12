@@ -102,7 +102,7 @@ type LanguagePattern struct {
 	SystemPrompt      string    `json:"system_prompt" gorm:"type:text;not null;comment:合成后的系统提示词"`
 	EmergenceRules    JSONList  `json:"emergence_rules" gorm:"type:jsonb;comment:涌现规则列表"`
 	InnerTensions     JSONList  `json:"inner_tensions" gorm:"type:jsonb;comment:检测到的内在冲突"`
-	SourceFingerprint string    `json:"source_fingerprint" gorm:"size:64;not null;comment:来源指纹(SHA256)"`
+	SourceFingerprint string    `json:"source_fingerprint" gorm:"size:80;not null;comment:来源指纹(sha256: 前缀 + 64 位 hex = 71 字符)"`
 	IsValid           bool      `json:"is_valid" gorm:"default:true;comment:是否有效"`
 	CreatedAt         time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 	UpdatedAt         time.Time `json:"updated_at" gorm:"autoUpdateTime;comment:更新时间"`
@@ -206,6 +206,7 @@ type LLMModel struct {
 	IsEnabled   bool      `json:"is_enabled" gorm:"default:true;index;comment:是否启用"`
 	IsDefault   bool      `json:"is_default" gorm:"default:false;comment:是否默认模型（全表最多一个）"`
 	IsSynthesis bool      `json:"is_synthesis" gorm:"default:false;comment:是否语言模式合成专用模型（全表最多一个）"`
+	IsFusion    bool      `json:"is_fusion" gorm:"default:false;comment:是否金丹融合专用模型（全表最多一个）"`
 	SortOrder   int       `json:"sort_order" gorm:"default:0;comment:展示顺序"`
 	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime;comment:更新时间"`
@@ -425,6 +426,7 @@ type LLMModelResponse struct {
 	IsEnabled           bool      `json:"is_enabled"`
 	IsDefault           bool      `json:"is_default"`
 	IsSynthesis         bool      `json:"is_synthesis"`
+	IsFusion            bool      `json:"is_fusion"`
 	SortOrder           int       `json:"sort_order"`
 	ReferencedBy        int64     `json:"referenced_by"` // 引用该模型的道人数量
 	CreatedAt           time.Time `json:"created_at"`
@@ -449,6 +451,7 @@ type CreateLLMModelRequest struct {
 	IsEnabled   *bool   `json:"is_enabled"`                              // 是否启用，缺省 true
 	IsDefault   bool    `json:"is_default"`                              // 是否默认模型
 	IsSynthesis bool    `json:"is_synthesis"`                            // 是否合成专用模型
+	IsFusion    bool    `json:"is_fusion"`                               // 是否金丹融合专用模型
 	SortOrder   int     `json:"sort_order"`                              // 展示顺序
 }
 
@@ -461,6 +464,7 @@ type UpdateLLMModelRequest struct {
 	IsEnabled   *bool    `json:"is_enabled"`
 	IsDefault   *bool    `json:"is_default"`
 	IsSynthesis *bool    `json:"is_synthesis"`
+	IsFusion    *bool    `json:"is_fusion"`
 	SortOrder   *int     `json:"sort_order"`
 }
 

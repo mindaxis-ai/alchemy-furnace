@@ -63,5 +63,5 @@ specs/
 # UI 重构参考文件（本地，不提交）
 reference/
 
-# 部署清单（本地，不提交）— 真实部署走 ~/alchemy-furnace-deploy/k8s/
+# 部署清单
 deploy/

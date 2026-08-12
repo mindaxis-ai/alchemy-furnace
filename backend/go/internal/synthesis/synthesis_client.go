@@ -58,6 +58,9 @@ type CombineResponse struct {
 	InnerTensions  []InnerTension `json:"inner_tensions"`
 	Fingerprint    string         `json:"fingerprint"`
 	Model          string         `json:"model"`
+	// Degraded 为 true 表示 Python 走了结构化合并兜底(LLM 不可用/失败),
+	// 调用方不应落库,避免兜底提示词污染语言模式缓存
+	Degraded bool `json:"degraded"`
 }
 
 // SynthesisClient Client 接口实现

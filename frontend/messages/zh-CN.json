@@ -175,7 +175,24 @@
       "saving": "入库中…",
       "saveSuccess": "已入金丹阁",
       "saveError": "入库失败，请重试",
-      "noProvider": "尚未配置模型供应商，请先到设置 → 模型中添加"
+      "noProvider": "尚未配置模型供应商，请先到设置 → 模型中添加",
+      "noFusionModel": "尚未配置金丹融合专用模型",
+      "goToSettingsCta": "前往设置",
+      "fusionModelLabel": "当前融合模型",
+      "changeCta": "更换",
+      "errorTitle": "融合失败",
+      "errorClose": "关闭",
+      "errorRetry": "重试",
+      "picker": {
+        "title": "选择融合专用模型",
+        "subtitle": "投丹入炉所用的语言模型(独立于道人默认模型)",
+        "currentBadge": "当前",
+        "setCta": "设为融合",
+        "loading": "加载中…",
+        "emptyTitle": "暂无可用模型",
+        "emptyDesc": "请先到「设置 → 模型管理」添加并启用模型",
+        "emptyDescModels": "该供应商下未配置任何启用模型"
+      }
     }
   },
   "pill": {
@@ -535,6 +552,7 @@
     "maxTokensLabel": "最大 Token",
     "setDefaultLabel": "设为默认模型",
     "useForSynthesisLabel": "用于丹性合成",
+    "useForFusionLabel": "用于金丹融合",
     "deleteProviderTitle": "删除供应商",
     "deleteProviderDesc": "确定要删除供应商「{name}」吗？此操作不可撤销。",
     "deleteProviderBlocked": "该供应商下仍有 {count} 个模型，删除将被拒绝",

@@ -810,6 +810,13 @@ func (d *ModelDao) SaveModel(ctx context.Context, m *model.LLMModel) errors.Erro
 			}
 		}
 	}
+	if m.IsFusion {
+		for _, other := range d.store.models {
+			if other.ID != m.ID {
+				other.IsFusion = false
+			}
+		}
+	}
 	d.store.nextModelID++
 	m.ID = d.store.nextModelID
 	if m.UUID == (uuid.UUID{}) {
@@ -843,6 +850,15 @@ func (d *ModelDao) UpdateModel(ctx context.Context, m *model.LLMModel, updates m
 			for _, other := range d.store.models {
 				if other.ID != cur.ID {
 					other.IsSynthesis = false
+				}
+			}
+		}
+	}
+	if v, ok := updates["is_fusion"]; ok {
+		if b, _ := v.(bool); b {
+			for _, other := range d.store.models {
+				if other.ID != cur.ID {
+					other.IsFusion = false
 				}
 			}
 		}
@@ -950,6 +966,25 @@ func (d *ModelDao) TakeSynthesisEnabled(ctx context.Context) (*model.LLMModel, e
 		}
 	}
 	return nil, errors.ErrorRecordNotFound("dao.model.take_synthesis_enabled")
+}
+
+func (d *ModelDao) TakeFusionEnabled(ctx context.Context) (*model.LLMModel, errors.Error) {
+	d.store.muModel.RLock()
+	d.store.muProvider.RLock()
+	defer d.store.muProvider.RUnlock()
+	defer d.store.muModel.RUnlock()
+	for _, m := range d.store.models {
+		if m.IsFusion && m.IsEnabled {
+			for _, p := range d.store.providers {
+				if p.ID == m.ProviderID && p.IsEnabled {
+					out := cloneModel(m)
+					out.Provider = *cloneProvider(p)
+					return out, nil
+				}
+			}
+		}
+	}
+	return nil, errors.ErrorRecordNotFound("dao.model.take_fusion_enabled")
 }
 
 func (d *ModelDao) FindEnabledOptions(ctx context.Context) ([]model.LLMModelOption, errors.Error) {

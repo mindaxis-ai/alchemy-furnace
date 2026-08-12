@@ -131,6 +131,8 @@ class LanguageSynthesisService:
             "fingerprint": fingerprint,
             "model": model,
             "usage": synthesis.get("usage", {}),
+            # degraded=True 时 Go 端不落库,避免兜底提示词污染语言模式缓存
+            "degraded": synthesis.get("degraded", False),
         }
 
     # ==================== 指纹计算 ====================
@@ -458,6 +460,7 @@ class LanguageSynthesisService:
                 "system_prompt": self._fallback_prompt(personality, merged),
                 "emergence_rules": [],
                 "usage": {},
+                "degraded": True,
             }
 
         temp_client: Optional[OpenAI] = None
@@ -558,13 +561,16 @@ class LanguageSynthesisService:
             if not isinstance(emergence_rules, list):
                 emergence_rules = [str(emergence_rules)]
 
+            degraded = False
             if not system_prompt:
                 system_prompt = self._fallback_prompt(personality, merged)
+                degraded = True
 
             return {
                 "system_prompt": system_prompt,
                 "emergence_rules": [str(r) for r in emergence_rules],
                 "usage": usage,
+                "degraded": degraded,
             }
 
         except Exception as e:
@@ -573,6 +579,7 @@ class LanguageSynthesisService:
                 "system_prompt": self._fallback_prompt(personality, merged),
                 "emergence_rules": [],
                 "usage": {},
+                "degraded": True,
             }
         finally:
             if temp_client is not None:

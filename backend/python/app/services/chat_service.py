@@ -174,6 +174,7 @@ class ChatService:
         max_tokens: int = 4096,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
+        response_format: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
         """
         非流式对话 - 道人一次性回答
@@ -185,6 +186,8 @@ class ChatService:
             max_tokens: 最大 token 数
             api_key: 调用级覆盖的 API 密钥（缺省回退环境变量）
             base_url: 调用级覆盖的接口地址（缺省回退环境变量）
+            response_format: 响应格式约束,例如 {"type": "json_object"} 强制 JSON 输出
+                            (仅在目标模型支持时生效;不传则不约束)
 
         Returns:
             包含 content, model, usage 的字典
@@ -211,12 +214,16 @@ class ChatService:
             logger.info(f"求道之问 - 模型: {model}")
             chat_messages = self._normalize_messages(messages)
 
-            response = client.chat.completions.create(
-                model=model,
-                messages=chat_messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
+            create_kwargs: Dict[str, Any] = {
+                "model": model,
+                "messages": chat_messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            }
+            if response_format is not None:
+                create_kwargs["response_format"] = response_format
+
+            response = client.chat.completions.create(**create_kwargs)
 
             content = response.choices[0].message.content
             usage = {

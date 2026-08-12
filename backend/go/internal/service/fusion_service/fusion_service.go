@@ -12,7 +12,6 @@ import (
 	"github.com/alchemy-furnace/server/internal/synthesis"
 	"github.com/alchemy-furnace/server/model"
 	"github.com/google/uuid"
-	"go.uber.org/zap"
 )
 
 // Fusion service.Fusion 接口实现
@@ -32,7 +31,7 @@ func New(pill idao.Pill, fusionClient synthesis.FusionClient, credential credent
 }
 
 // Fuse 融合预览:按 UUID 批量加载金丹,转发 Python 融合引擎
-// 凭证解析失败降级为 nil(Python 回退环境变量配置),不阻塞融合流程(与 trial 对齐)
+// 凭证解析失败时返回 400 硬性错误,引导用户去设置中配置融合专用模型(不静默回退道人默认)
 func (s *Fusion) Fuse(ctx context.Context, pillUUIDs []uuid.UUID, excludeOperatorID string) (*synthesis.FuseResponse, errors.Error) {
 	if len(pillUUIDs) < 2 {
 		return nil, errors.New(errors.ErrorTypeInvalidRequest, "service.fusion.too_few", "融合至少需要 2 枚金丹")
@@ -61,13 +60,16 @@ func (s *Fusion) Fuse(ctx context.Context, pillUUIDs []uuid.UUID, excludeOperato
 		})
 	}
 
+	// 解析融合专用模型凭证:未配置 is_fusion 时硬性报错(不静默回退道人默认模型)
+	// 硬错误比静默 fallback 更安全——避免「道人大模型被融合 prompt 撑爆」类隐式 bug
 	var creds *credential.ModelCredentials
 	if s.credential != nil {
-		if c, e := s.credential.ResolveSynthesisCredentials(ctx); e == nil {
-			creds = c
-		} else {
-			zap.L().Warn("[炼丹炉] 融合模型凭证解析失败，回退环境变量配置", zap.Error(e))
+		c, e := s.credential.ResolveFusionCredentials(ctx)
+		if e != nil {
+			// credential.Resolver 返回 stdlib error;包装为 errors.Error 以携带中文消息
+			return nil, errors.New(errors.ErrorTypeInvalidRequest, "service.fusion.resolve_fusion", e.Error())
 		}
+		creds = c
 	}
 
 	resp, e := s.fusion.Fuse(ctx, inputs, excludeOperatorID, creds)

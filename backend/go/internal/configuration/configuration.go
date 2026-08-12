@@ -63,6 +63,7 @@ type LLMConfig struct {
 	BaseURL        string   `toml:"base_url" mapstructure:"base_url"`
 	DefaultModel   string   `toml:"default_model" mapstructure:"default_model"`
 	SynthesisModel string   `toml:"synthesis_model" mapstructure:"synthesis_model"`
+	FusionModel    string   `toml:"fusion_model" mapstructure:"fusion_model"`
 	Models         []string `toml:"models" mapstructure:"models"`
 }
 

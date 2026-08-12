@@ -10,6 +10,7 @@ import (
 	"github.com/alchemy-furnace/server/internal/configuration"
 	"github.com/alchemy-furnace/server/internal/errors"
 	"github.com/alchemy-furnace/server/internal/interface/dao"
+	iservice "github.com/alchemy-furnace/server/internal/interface/service"
 	"github.com/alchemy-furnace/server/internal/service/credential"
 	"github.com/alchemy-furnace/server/model"
 	"github.com/google/uuid"
@@ -113,7 +114,8 @@ func (s *ModelService) GetModelByUUID(ctx context.Context, uid uuid.UUID) (*mode
 // ---------- 写入 ----------
 
 // CreateModel 在指定供应商下创建模型;供应商停用返回 ErrorInvalidRequest
-func (s *ModelService) CreateModel(ctx context.Context, providerUID uuid.UUID, name, displayName string, temperature float64, maxTokens int, isEnabled, isDefault, isSynthesis bool, sortOrder int) (*model.ModelView, errors.Error) {
+// is_default / is_synthesis / is_fusion 为 true 时事务内清除其他记录的同字段
+func (s *ModelService) CreateModel(ctx context.Context, providerUID uuid.UUID, name, displayName string, temperature float64, maxTokens int, isEnabled, isDefault, isSynthesis, isFusion bool, sortOrder int) (*model.ModelView, errors.Error) {
 	p, err := s.provider.TakeProviderByUUID(ctx, providerUID)
 	if err != nil {
 		return nil, err.Relation(errors.ErrorRecordNotFound("service.model.create_take_provider"))
@@ -158,6 +160,7 @@ func (s *ModelService) CreateModel(ctx context.Context, providerUID uuid.UUID, n
 		IsEnabled:   isEnabled,
 		IsDefault:   isDefault,
 		IsSynthesis: isSynthesis,
+		IsFusion:    isFusion,
 		SortOrder:   sortOrder,
 	}
 	if err := s.model.SaveModel(ctx, m); err != nil {
@@ -172,8 +175,8 @@ func (s *ModelService) CreateModel(ctx context.Context, providerUID uuid.UUID, n
 	return s.toView(m, 0), nil
 }
 
-// UpdateModel 按 UUID 部分更新模型;is_default/is_synthesis 为 true 时事务内清除其他记录
-func (s *ModelService) UpdateModel(ctx context.Context, uid uuid.UUID, name, displayName *string, temperature *float64, maxTokens *int, isEnabled, isDefault, isSynthesis *bool, sortOrder *int) (*model.ModelView, errors.Error) {
+// UpdateModel 按 UUID 部分更新模型;is_default/is_synthesis/is_fusion 为 true 时事务内清除其他记录
+func (s *ModelService) UpdateModel(ctx context.Context, uid uuid.UUID, name, displayName *string, temperature *float64, maxTokens *int, isEnabled, isDefault, isSynthesis, isFusion *bool, sortOrder *int) (*model.ModelView, errors.Error) {
 	m, err := s.model.TakeModelByUUID(ctx, uid)
 	if err != nil {
 		return nil, err.Relation(errors.ErrorRecordNotFound("service.model.update_take"))
@@ -229,6 +232,9 @@ func (s *ModelService) UpdateModel(ctx context.Context, uid uuid.UUID, name, dis
 	}
 	if isSynthesis != nil {
 		updates["is_synthesis"] = *isSynthesis
+	}
+	if isFusion != nil {
+		updates["is_fusion"] = *isFusion
 	}
 	if sortOrder != nil {
 		updates["sort_order"] = *sortOrder
@@ -366,4 +372,38 @@ func (s *ModelService) ResolveSynthesisCredentials(ctx context.Context) (*creden
 		return nil, err.Relation(errors.ErrorServerInternalError("service.model.resolve_synthesis"))
 	}
 	return s.resolveCredentials(ctx, m)
+}
+
+// ResolveFusionCredentials 解析金丹融合专用模型凭证;未配置则返回 ErrorInvalidRequest(不兜底道人默认模型)
+func (s *ModelService) ResolveFusionCredentials(ctx context.Context) (*credential.ModelCredentials, errors.Error) {
+	m, err := s.model.TakeFusionEnabled(ctx)
+	if err != nil {
+		if err.IsType(errors.ErrorTypeRecordNotFound) {
+			return nil, errors.New(errors.ErrorTypeInvalidRequest, "service.model.resolve_fusion",
+				"未配置金丹融合专用模型，请前往「设置 → 模型管理」勾选「用于金丹融合」")
+		}
+		return nil, err.Relation(errors.ErrorServerInternalError("service.model.resolve_fusion"))
+	}
+	return s.resolveCredentials(ctx, m)
+}
+
+// GetFusionModelConfig 返回当前已配置的融合专用模型详情(供 /fusion 页面 banner 展示)
+// 未配置时返回 Configured=false 的空结构,供前端走「未配置」提示分支
+func (s *ModelService) GetFusionModelConfig(ctx context.Context) (*iservice.FusionModelConfig, errors.Error) {
+	m, err := s.model.TakeFusionEnabled(ctx)
+	if err != nil {
+		if err.IsType(errors.ErrorTypeRecordNotFound) {
+			// 未配置不属于错误,返回 Configured=false 的空结构让前端走警告分支
+			return &iservice.FusionModelConfig{Configured: false}, nil
+		}
+		return nil, err.Relation(errors.ErrorServerInternalError("service.model.get_fusion_config"))
+	}
+	// 预加载 provider 已在 TakeFusionEnabled 内完成
+	return &iservice.FusionModelConfig{
+		Configured:          true,
+		ModelName:           m.Name,
+		ModelDisplayName:    m.DisplayName,
+		ProviderName:        m.Provider.Name,
+		ProviderDisplayName: m.Provider.DisplayName,
+	}, nil
 }

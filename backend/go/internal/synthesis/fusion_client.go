@@ -54,9 +54,12 @@ type FusionHTTPClient struct {
 
 // NewFusionClient 构造融合引擎客户端
 func NewFusionClient(baseURL string) *FusionHTTPClient {
+	// 融合 prompt 长 + LLM 重试可达 60s+;前端走 Next.js dev proxy 转发(默认 30s 超时),
+	// 实测需要 ≥180s 才能覆盖 deepseek 慢响应 + Python 内部 JSON 解析重试一轮的场景。
+	// 真正的根因修复在 next.config.mjs 侧加 proxyTimeout;此处给 Go 客户端也留足余量。
 	return &FusionHTTPClient{
 		baseURL: baseURL,
-		client:  &http.Client{Timeout: 120 * time.Second}, // 融合 prompt 长,超时对齐 trial
+		client:  &http.Client{Timeout: 180 * time.Second},
 	}
 }
 
@@ -80,7 +83,10 @@ func (c *FusionHTTPClient) Fuse(ctx context.Context, pills []PillInput, excludeO
 		return nil, fmt.Errorf("序列化融合请求失败: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonBody))
+	// 解耦客户端断开取消:Next.js dev proxy 默认 30s 超时,断开时 c.Request.Context() 会被取消,
+	// 进而把 Python 的长调用一刀切掉。用 context.WithoutCancel 保留 request_id 等 values,
+	// 但切断取消传播,让 c.client.Timeout(180s) 真正生效。
+	req, err := http.NewRequestWithContext(context.WithoutCancel(ctx), http.MethodPost, url, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return nil, fmt.Errorf("构建融合请求失败: %w", err)
 	}

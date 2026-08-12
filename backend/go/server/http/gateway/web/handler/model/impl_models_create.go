@@ -16,6 +16,7 @@ type CreateModelRequest struct {
 	IsEnabled   *bool   `json:"is_enabled"`                              // 是否启用,缺省 true
 	IsDefault   bool    `json:"is_default"`                              // 是否默认模型(全表最多一个)
 	IsSynthesis bool    `json:"is_synthesis"`                            // 是否合成专用模型(全表最多一个)
+	IsFusion    bool    `json:"is_fusion"`                               // 是否金丹融合专用模型(全表最多一个)
 	SortOrder   int     `json:"sort_order"`                              // 展示顺序
 }
 
@@ -39,7 +40,7 @@ func (cls *Model) CreateModel(c *gin.Context) (response.Code, any, error) {
 
 	v, serr := cls.model.CreateModel(contextutil.NewContextWithGin(c), uid,
 		body.Name, body.DisplayName, body.Temperature, body.MaxTokens,
-		isEnabled, body.IsDefault, body.IsSynthesis, body.SortOrder)
+		isEnabled, body.IsDefault, body.IsSynthesis, body.IsFusion, body.SortOrder)
 	if serr != nil {
 		return 0, nil, serr
 	}

@@ -21,6 +21,7 @@ import {
   AlertCircle,
   Star,
   Wand2,
+  FlaskConical,
   ChevronDown,
   ChevronRight,
   Server,
@@ -78,6 +79,7 @@ interface ModelForm {
   is_enabled: boolean
   is_default: boolean
   is_synthesis: boolean
+  is_fusion: boolean
   sort_order: number
 }
 
@@ -89,6 +91,7 @@ const EMPTY_MODEL_FORM: ModelForm = {
   is_enabled: true,
   is_default: false,
   is_synthesis: false,
+  is_fusion: false,
   sort_order: 0,
 }
 
@@ -358,6 +361,7 @@ export function ModelsPanel() {
       is_enabled: model.is_enabled,
       is_default: model.is_default,
       is_synthesis: model.is_synthesis,
+      is_fusion: model.is_fusion,
       sort_order: model.sort_order,
     })
     setFormError(null)
@@ -379,6 +383,7 @@ export function ModelsPanel() {
       is_enabled: modelForm.is_enabled,
       is_default: modelForm.is_default,
       is_synthesis: modelForm.is_synthesis,
+      is_fusion: modelForm.is_fusion,
       sort_order: modelForm.sort_order,
     }
 
@@ -638,6 +643,7 @@ export function ModelsPanel() {
                               <th className="px-3 py-2 text-xs font-medium text-muted-foreground whitespace-nowrap">{t('th.temperature')}</th>
                               <th className="px-3 py-2 text-xs font-medium text-muted-foreground text-center whitespace-nowrap">{t('th.default')}</th>
                               <th className="px-3 py-2 text-xs font-medium text-muted-foreground text-center whitespace-nowrap">{t('th.synthesis')}</th>
+                              <th className="px-3 py-2 text-xs font-medium text-muted-foreground text-center whitespace-nowrap">{t('th.fusion')}</th>
                               <th className="px-3 py-2 text-xs font-medium text-muted-foreground text-center whitespace-nowrap">{t('th.enabled')}</th>
                               <th className="px-3 py-2 text-xs font-medium text-muted-foreground text-center whitespace-nowrap">{t('th.refCount')}</th>
                               <th className="px-3 py-2 text-xs font-medium text-muted-foreground text-right whitespace-nowrap">{t('th.actions')}</th>
@@ -661,6 +667,9 @@ export function ModelsPanel() {
                                 </td>
                                 <td className="px-3 py-2.5 text-center">
                                   {model.is_synthesis && <Wand2 className="w-4 h-4 text-sage inline" />}
+                                </td>
+                                <td className="px-3 py-2.5 text-center">
+                                  {model.is_fusion && <FlaskConical className="w-4 h-4 text-primary inline" />}
                                 </td>
                                 <td className="px-3 py-2.5 text-center">
                                   <button
@@ -1057,6 +1066,15 @@ export function ModelsPanel() {
                     className="accent-sage w-4 h-4"
                   />
                   {t('useForSynthesisLabel')}
+                </label>
+                <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer whitespace-nowrap">
+                  <input
+                    type="checkbox"
+                    checked={modelForm.is_fusion}
+                    onChange={e => setModelForm({ ...modelForm, is_fusion: e.target.checked })}
+                    className="accent-primary w-4 h-4"
+                  />
+                  {t('useForFusionLabel')}
                 </label>
               </div>
 

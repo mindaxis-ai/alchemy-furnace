@@ -93,6 +93,7 @@ class CombineResponse(BaseModel):
         fingerprint: 来源指纹（SHA256）
         model: 使用的合成模型
         usage: token 用量
+        degraded: 是否走了结构化合并兜底(LLM 不可用/失败);True 时 Go 端不落库
     """
     system_prompt: str = Field(..., description="合成后的系统提示词")
     emergence_rules: List[Any] = Field(default_factory=list, description="涌现规则列表")
@@ -100,6 +101,7 @@ class CombineResponse(BaseModel):
     fingerprint: str = Field(..., description="来源指纹 SHA256")
     model: str = Field(default="", description="使用的合成模型")
     usage: Dict[str, int] = Field(default_factory=dict, description="token 用量")
+    degraded: bool = Field(default=False, description="是否走了兜底提示词(LLM 不可用/失败)")
 
 
 # ==================== 对话相关模型 ====================
