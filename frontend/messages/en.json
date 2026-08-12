@@ -35,6 +35,7 @@
         }
       },
       "fusion": { "label": "Fusion" },
+      "fusion": { "label": "Fusion" },
       "settings": { "label": "Settings" }
     }
   },
