@@ -34,6 +34,7 @@
           "history": { "title": "论道旧录", "description": "翻检历史会话，续当日未完之缘" }
         }
       },
+      "fusion": { "label": "融合" },
       "settings": { "label": "设置" }
     }
   },
@@ -148,6 +149,34 @@
       "submit": "开始炼制"
     },
     "closeModal": "关闭弹窗"
+  },
+  "fusion": {
+    "title": "融合炉",
+    "subtitle": "投丹入炉，合而新之",
+    "poolTitle": "金丹池",
+    "poolSearchPlaceholder": "搜索金丹…",
+    "slotTitle": "融合槽",
+    "slotEmpty": "从左侧金丹池点选至少 2 枚投入炉中",
+    "fuseCta": "开始融合",
+    "fuseMinHint": "至少选 2 枚金丹",
+    "fusing": "炉火烧炼中…",
+    "preview": {
+      "title": "新丹出世",
+      "operatorLabel": "本次算子",
+      "lineageLabel": "血统",
+      "nameLabel": "丹名",
+      "descLabel": "简介",
+      "schemaTitle": "丹方详情",
+      "degradedWarning": "本次融合使用了保底方案（LLM 连续失败）",
+      "rerollCta": "换一炉",
+      "editCta": "编辑",
+      "saveCta": "保存入库",
+      "closeCta": "关闭",
+      "saving": "入库中…",
+      "saveSuccess": "已入金丹阁",
+      "saveError": "入库失败，请重试",
+      "noProvider": "尚未配置模型供应商，请先到设置 → 模型中添加"
+    }
   },
   "pill": {
     "backToList": "返回金丹阁",

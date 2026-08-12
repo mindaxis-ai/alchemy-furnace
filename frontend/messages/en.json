@@ -34,6 +34,7 @@
           "history": { "title": "Past discourses", "description": "Review past sessions, pick up an unfinished thread" }
         }
       },
+      "fusion": { "label": "Fusion" },
       "settings": { "label": "Settings" }
     }
   },
@@ -148,6 +149,34 @@
       "submit": "Start forging"
     },
     "closeModal": "Close dialog"
+  },
+  "fusion": {
+    "title": "Fusion Furnace",
+    "subtitle": "Cast pills into the fire, and something new emerges",
+    "poolTitle": "Pill Pool",
+    "poolSearchPlaceholder": "Search pills…",
+    "slotTitle": "Fusion Slot",
+    "slotEmpty": "Pick at least 2 pills from the pool",
+    "fuseCta": "Start Fusion",
+    "fuseMinHint": "Select at least 2 pills",
+    "fusing": "The furnace is burning…",
+    "preview": {
+      "title": "A New Pill Is Born",
+      "operatorLabel": "Operator",
+      "lineageLabel": "Lineage",
+      "nameLabel": "Name",
+      "descLabel": "Description",
+      "schemaTitle": "Schema Details",
+      "degradedWarning": "Fallback used (LLM failed twice)",
+      "rerollCta": "Re-roll",
+      "editCta": "Edit",
+      "saveCta": "Save",
+      "closeCta": "Close",
+      "saving": "Saving…",
+      "saveSuccess": "Saved to the Pill Pavilion",
+      "saveError": "Save failed, please retry",
+      "noProvider": "No model provider configured. Go to Settings → Models first"
+    }
   },
   "pill": {
     "backToList": "Back to Pill Vault",

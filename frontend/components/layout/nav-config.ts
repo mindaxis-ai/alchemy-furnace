@@ -9,6 +9,7 @@ import {
   UserPlus,
   History,
   Sparkles,
+  FlaskConical,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -109,5 +110,6 @@ export const navItems: NavItem[] = [
       },
     ],
   },
+  { labelKey: 'items.fusion.label', path: '/fusion', icon: FlaskConical },
   { labelKey: 'items.settings.label', path: '/settings', icon: Settings },
 ]
