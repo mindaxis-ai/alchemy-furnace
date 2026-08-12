@@ -8,8 +8,8 @@
  * - 流式中网络中断的回复标记「可能不完整」,错误消息以错误气泡内联展示
  *
  * 流式性能:
- *   - chunk 回调经 requestAnimationFrame 节流:同一帧内到达的多个 chunk 合并成一次 dispatch,
- *     React 至多以 60fps 重渲染,避免快速流时 React tree 跟不上
+ *   - chunk 入 createChunkDispatcher 队列后,以 30ms 节奏依次派发(见 createChunkDispatcher)
+ *     即使 LLM 服务端把整段一次性 flush,前端也以"打字机"节奏逐 chunk 渲染,体感如 deepseek
  *   - 流结束后由 MarkdownRenderer 自动切到完整 markdown 渲染(代码高亮等)
  */
 import React, { createContext, useContext, useReducer, useCallback, useRef, useEffect } from 'react'
@@ -147,40 +147,62 @@ interface ChatContextType {
 const ChatContext = createContext<ChatContextType | null>(null)
 
 /**
- * 流式 chunk 调度器 — requestAnimationFrame 节流
- * 同一帧内到达的多个 chunk 合并为一次 dispatch,React 至多 60fps 重渲染
- * 流结束/出错时立即 flush 剩余 buffer,保证收尾动作不延迟
+ * 流式 chunk 调度器 — typing 节奏控制
+ * 解决"LLM 服务端批量 flush"问题:deepseek 等 LLM 厂商常把整段响应一次性 flush,
+ * 浏览器在 1ms 内收到 80+ chunk,React 一次性渲染,体感"一次性出完"而非"逐字"。
+ *
+ * 解决: 收到的 chunk 入队,以 TYPING_INTERVAL_MS 间隔依次派发,
+ *       对应"打字机节奏",与 deepseek/chatgpt 网页版体感一致。
+ *
+ * 流结束/出错时 flushNow 立即排空剩余 chunk(不拖到最后一次节拍,避免收尾延迟)。
+ *
+ * 调速: TYPING_INTERVAL_MS=30 ≈ DeepSeek 网页(~33 字/秒)
+ *       TYPING_INTERVAL_MS=50 ≈ ChatGPT 体感 (~20 字/秒)
+ *       越大越慢,设为 0 则退化为 RAF 模式(由调用方决定)
  */
-function createChunkDispatcher(dispatch: React.Dispatch<ChatAction>) {
-  let pending = ''
-  let rafId: number | null = null
+const TYPING_INTERVAL_MS = 30
 
-  const flush = () => {
-    rafId = null
-    if (pending) {
-      const buf = pending
-      pending = ''
-      dispatch({ type: 'ADD_STREAM_CHUNK', payload: buf })
+function createChunkDispatcher(dispatch: React.Dispatch<ChatAction>) {
+  /** 队列:每个元素是 LLM 给的一个 chunk(原样保留,1-3 汉字或 1 词) */
+  const queue: string[] = []
+  let timer: ReturnType<typeof setTimeout> | null = null
+
+  /**
+   * tick 派发一片并调度下一片
+   * 关键: 派发后**无条件** schedule 下一拍(即使当前 queue 空)。
+   * 因为 push 可能正在 sync 块里持续塞新 chunk,我们不能在派发后让 timer=null,
+   * 否则下一个 push 看到 timer===null 就会同步再 tick,80 片一次喷出。
+   */
+  const tick = () => {
+    if (queue.length === 0) {
+      timer = null
+      return
     }
+    const next = queue.shift()!
+    dispatch({ type: 'ADD_STREAM_CHUNK', payload: next })
+    timer = setTimeout(tick, TYPING_INTERVAL_MS)
   }
 
   return {
     push(chunk: string) {
-      pending += chunk
-      if (rafId === null && typeof requestAnimationFrame !== 'undefined') {
-        rafId = requestAnimationFrame(flush)
-      } else if (rafId === null) {
-        // SSR / 异常环境:直接同步 flush
-        flush()
+      queue.push(chunk)
+      if (timer === null) {
+        // 第一片立刻派发(不延迟首字),tick 内部会 schedule 下一拍
+        tick()
       }
     },
-    /** 立即冲刷 buffer(流结束/出错时调用) */
+    /**
+     * 立即冲刷剩余 queue(流结束/出错时调用)
+     * 注意:仍逐片派发(保持 React 单一 ADD_STREAM_CHUNK action 流),但不再等节拍
+     */
     flushNow() {
-      if (rafId !== null) {
-        cancelAnimationFrame(rafId)
-        rafId = null
+      if (timer !== null) {
+        clearTimeout(timer)
+        timer = null
       }
-      flush()
+      while (queue.length > 0) {
+        dispatch({ type: 'ADD_STREAM_CHUNK', payload: queue.shift()! })
+      }
     },
   }
 }
@@ -269,23 +291,25 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         chunker.push(chunk)
       },
       onDone: () => {
-        // 收尾:先 flush 残余 buffer,再派发完成事件
-        chunker.flushNow()
+        // 服务端已发送 [DONE]: 不 flush 残余 queue,让 typing dispatcher 按节奏自然排空
+        // (flush 会破坏"逐字"体感 — 末尾也会一次性出现)
         partialReceivedRef.current = false
         dispatch({ type: 'FINISH_STREAM' })
       },
       onStopped: () => {
+        // 用户主动停止: 立即 flush 已收到的部分内容,不再等节拍
         chunker.flushNow()
         partialReceivedRef.current = false
         dispatch({ type: 'STOP_STREAM' })
       },
       onError: (error) => {
+        // 服务端错误: 立即 flush 残余,确保错误前的部分内容也展示出来
         chunker.flushNow()
         partialReceivedRef.current = false
         dispatch({ type: 'ADD_ERROR_MESSAGE', payload: error })
       },
       onInterrupted: () => {
-        // 流式生成中网络中断:恢复输入,标记该条回复「可能不完整」
+        // 流式生成中网络中断: 立即 flush 残余内容
         chunker.flushNow()
         partialReceivedRef.current = false
         dispatch({ type: 'FINISH_STREAM' })
