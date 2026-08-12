@@ -18,6 +18,7 @@
 - **服用金丹** —— 一位道人可服用多颗金丹，支持权重与服用顺序
 - **金丹化性** —— 合成引擎把多颗金丹按权重合并，去重、检测冲突，LLM 涌现提炼统一丹性
 - **试丹预览** —— 不绑定道人，临时组合性格与金丹即可预览合成效果
+- **金丹融合** —— 任意 N 枚金丹（N ≥ 2）投入融合炉，随机抽取变异算子（Promptbreeder 风格），LLM 自由发挥炼出新丹；血统可追溯，预览满意才入库
 - **论道对答** —— SSE 流式对话，合成后的系统提示词全程生效
 
 **技术亮点**
@@ -162,6 +163,28 @@ AI Agent 实体。拥有基础性格、选用的模型、被授予的金丹。�
 | 温养 | 缓存 | 合成提示词缓存于道人，变化时自动重建 |
 | 开炉取丹 | 论道 | 以合成提示词调用 LLM 流式回复 |
 
+### 融合（Pill Fusion）
+
+任意 N 枚金丹（N ≥ 2）投入融合炉，由大模型自由发挥炼成一枚全新金丹。
+
+**流程**：选丹 → 开炉（动画）→ 预览（含算子与血统）→ 换一炉 / 编辑 / 保存入库。
+
+**随机性来自**每次随机抽取 7 个融合算子之一（temperature 1.0）：
+
+| 算子 | 效果 |
+|---|---|
+| 夸张突变 | 特质推向极端，风格浓度翻倍 |
+| 蒸馏提炼 | 只留最深层共同点 |
+| 对立调和 | 矛盾成为新人格的张力引擎 |
+| 角色反转 | 反转核心立场，熟悉的陌生人 |
+| 血统稀释 | 一丹主导，其余点缀 |
+| 基因重组 | 字段级杂交 |
+| 涌现变异 | 产出原料们的「下一代」 |
+
+新金丹的 `skill_schema.fusion_lineage` 记录父代、算子与时间，详情页可溯血统。
+
+**技术参考**：[Promptbreeder](https://arxiv.org/abs/2309.16797)（LLM 作为变异算子执行器）、[Blended Skill Talk](https://arxiv.org/abs/2004.08449)（多技能融合为单一人格）、[EvoPrompt](https://arxiv.org/abs/2309.08532)（LLM 驱动的 prompt crossover）。
+
 ---
 
 ## API 速查
@@ -186,6 +209,11 @@ curl -X POST http://localhost:8080/api/v1/agents/{agent_uuid}/pills \
 curl -N -X POST http://localhost:8080/api/v1/chat/sse/{session_uuid} \
   -H "Content-Type: application/json" \
   -d '{"content": "何为道"}'
+
+# 金丹融合预览（N ≥ 2 枚金丹 → 新丹，不落库）
+curl -X POST http://localhost:8080/api/v1/fusion/fuse \
+  -H "Content-Type: application/json" \
+  -d '{"pill_uuids": ["<uuid1>", "<uuid2>"]}'
 ```
 
 完整接口见 [docs/api.md](docs/api.md)。

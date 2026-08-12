@@ -18,6 +18,7 @@ Under the hood: a Go API gateway, a Python synthesis engine, and a Next.js front
 - **Bind Pill** — One agent can ingest multiple pills, with weight and intake-order control
 - **Pill Essence Synthesis** — Engine merges pills by weight, deduplicates, detects conflicts, then an LLM call distills a unified system prompt
 - **Trial Synthesis** — Preview the synthesis without binding any agent
+- **Pill Fusion** — Drop any N pills (N ≥ 2) into the Fusion Furnace. A random mutation operator (Promptbreeder-style) is sampled, and the LLM freely forges a brand-new pill. Lineage is traced; save only when satisfied.
 - **Streaming Discourse** — SSE-based chat; the synthesized prompt is always live
 
 **Engineering**
@@ -162,6 +163,28 @@ Merge pills by weight, deduplicate, detect conflicts, then let an LLM distill a 
 | Temper | Cache | The synthesized prompt is cached per-agent; rebuilt on change |
 | Unseal | Discourse | Stream LLM replies using the synthesized prompt |
 
+### Fusion (Pill Fusion)
+
+Drop any N pills (N ≥ 2) into the Fusion Furnace and let the LLM freely forge a brand-new pill.
+
+**Flow**: pick pills → light the furnace (animation) → preview (with operator & lineage) → re-roll / edit / save.
+
+**Randomness** comes from sampling one of 7 fusion operators (temperature 1.0) per call:
+
+| Operator | Effect |
+|---|---|
+| Hyperbole | Push traits to the extreme; double the style density |
+| Distillation | Strip away; keep only the deepest common ground |
+| Dialectic | Let the inner contradictions become the new persona's tension engine |
+| Inversion | Flip the core stance; a familiar stranger |
+| Dilution | One pill dominates (~70%); the rest are spices |
+| Recombination | Field-level crossover across pills |
+| Emergent | Don't blend — imagine the next generation raised by all of them |
+
+The new pill's `skill_schema.fusion_lineage` records its parents, operator, and timestamp; the detail page can trace the lineage.
+
+**Technical references**: [Promptbreeder](https://arxiv.org/abs/2309.16797) (LLM as a mutation-operator executor), [Blended Skill Talk](https://arxiv.org/abs/2004.08449) (multiple skills fused into a single coherent persona), [EvoPrompt](https://arxiv.org/abs/2309.08532) (LLM-driven prompt crossover).
+
 ---
 
 ## API Quick Reference
@@ -186,6 +209,11 @@ curl -X POST http://localhost:8080/api/v1/agents/{agent_uuid}/pills \
 curl -N -X POST http://localhost:8080/api/v1/chat/sse/{session_uuid} \
   -H "Content-Type: application/json" \
   -d '{"content": "What is the Dao?"}'
+
+# Pill fusion preview (N >= 2 pills -> new pill, NOT persisted)
+curl -X POST http://localhost:8080/api/v1/fusion/fuse \
+  -H "Content-Type: application/json" \
+  -d '{"pill_uuids": ["<uuid1>", "<uuid2>"]}'
 ```
 
 Full reference: [docs/api.md](docs/api.md).
