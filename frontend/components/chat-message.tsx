@@ -4,7 +4,10 @@
  * 聊天消息气泡组件 - 浅色宣纸卷轴风
  * 用户消息: 右侧，朱砂红边框
  * AI 消息: 左侧，金色边框，卷轴风格
- * 支持 markdown 渲染（RAG 引用来源展示已移除）
+ *
+ * 流式性能:
+ *   - streaming=true:  走纯文本路径(见 MarkdownRenderer),无 markdown 解析,逐字显示
+ *   - streaming=false: 走完整 markdown 渲染(代码高亮、表格、列表等)
  */
 import { useTranslations } from 'next-intl'
 import { User, Bot, TriangleAlert, CircleStop } from 'lucide-react'
@@ -63,7 +66,7 @@ export function ChatMessage({ message, streaming = false }: ChatMessageProps) {
             : 'bg-card/90 border border-gold/30 rounded-tl-sm'
           }
         `}>
-          {/* 卷轴装饰（仅 AI 消息） */}
+          {/* 卷轴装饰(仅 AI 消息) */}
           {!isUser && (
             <>
               <div className="absolute -left-1 top-2 bottom-2 w-1 bg-gradient-to-b from-gold/60 via-gold/40 to-gold/60 rounded-full" />
@@ -71,24 +74,25 @@ export function ChatMessage({ message, streaming = false }: ChatMessageProps) {
             </>
           )}
 
-          {/* 消息内容 - Markdown 渲染 */}
+          {/* 消息内容 */}
           <div className={`${isUser ? '' : 'pl-2 pr-2'} min-w-0 break-words`}>
             {isUser ? (
               <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
                 {message.content}
               </p>
             ) : (
-              <MarkdownRenderer content={message.content} />
+              // 流中走纯文本路径(streaming=true);流结束后走完整 markdown
+              <MarkdownRenderer content={message.content} streaming={streaming} />
             )}
           </div>
 
-          {/* 流式输出光标 */}
+          {/* 流式输出光标 — 仅流中、仅 AI 消息 */}
           {streaming && !isUser && (
-            <span className="inline-block w-2 h-4 bg-gold ml-1 animate-pulse" />
+            <span className="inline-block w-2 h-4 bg-gold ml-1 align-text-bottom animate-pulse" />
           )}
         </div>
 
-        {/* 状态标记（仅 AI 消息） */}
+        {/* 状态标记(仅 AI 消息) */}
         {!isUser && (message.incomplete || message.stopped) && (
           <div className="flex items-center gap-3 mt-1.5 pl-1 flex-wrap">
             {message.incomplete && (
