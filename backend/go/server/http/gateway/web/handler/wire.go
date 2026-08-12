@@ -7,6 +7,7 @@ package handler
 import (
 	"github.com/alchemy-furnace/server/server/http/gateway/web/handler/agent"
 	"github.com/alchemy-furnace/server/server/http/gateway/web/handler/chat"
+	"github.com/alchemy-furnace/server/server/http/gateway/web/handler/fusion"
 	"github.com/alchemy-furnace/server/server/http/gateway/web/handler/model"
 	"github.com/alchemy-furnace/server/server/http/gateway/web/handler/pill"
 	"github.com/alchemy-furnace/server/server/http/gateway/web/handler/trial"
@@ -32,6 +33,13 @@ func NewAgent() *agent.Agent {
 func NewTrial() *trial.Trial {
 	panic(wire.Build(
 		service.TrialService, trial.New,
+	))
+}
+
+// NewFusion 金丹融合处理器装配
+func NewFusion() *fusion.Fusion {
+	panic(wire.Build(
+		service.FusionService, fusion.New,
 	))
 }
 

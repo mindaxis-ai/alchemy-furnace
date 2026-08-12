@@ -15,6 +15,7 @@ import (
 	"github.com/alchemy-furnace/server/internal/service/agent_service"
 	"github.com/alchemy-furnace/server/internal/service/chat_service"
 	"github.com/alchemy-furnace/server/internal/service/credential"
+	"github.com/alchemy-furnace/server/internal/service/fusion_service"
 	"github.com/alchemy-furnace/server/internal/service/language_pattern_service"
 	"github.com/alchemy-furnace/server/internal/service/model_service"
 	"github.com/alchemy-furnace/server/internal/service/pill_service"
@@ -87,6 +88,11 @@ func NewSynthesisClient() synthesis.Client {
 	return synthesis.New(configuration.Configuration.PythonEngine.BaseURL)
 }
 
+// NewFusionClient 融合引擎客户端 provider(与 NewSynthesisClient 同一配置来源)
+func NewFusionClient() synthesis.FusionClient {
+	return synthesis.NewFusionClient(configuration.Configuration.PythonEngine.BaseURL)
+}
+
 // NewEngineBaseURL 语言引擎 BaseURL provider(对话流式接口直连 Python 引擎)
 func NewEngineBaseURL() string {
 	return configuration.Configuration.PythonEngine.BaseURL
@@ -109,6 +115,14 @@ var TrialService = wire.NewSet(
 	NewSynthesisClient,
 	credential.NewResolver, wire.Bind(new(credential.Resolver), new(*credential.ModelResolver)),
 	trial_service.New, wire.Bind(new(iservice.Trial), new(*trial_service.Trial)),
+)
+
+// FusionService 金丹融合域装配集(依赖金丹 DAO + 融合客户端 + 凭证解析器)
+var FusionService = wire.NewSet(
+	ProvidePillDao,
+	NewFusionClient,
+	credential.NewResolver, wire.Bind(new(credential.Resolver), new(*credential.ModelResolver)),
+	fusion_service.New, wire.Bind(new(iservice.Fusion), new(*fusion_service.Fusion)),
 )
 
 // ProviderService 供应商域装配集(连接测试回退取首个启用模型,故依赖模型 DAO)

@@ -10,6 +10,7 @@ import (
 	"github.com/alchemy-furnace/server/internal/service/agent_service"
 	"github.com/alchemy-furnace/server/internal/service/chat_service"
 	"github.com/alchemy-furnace/server/internal/service/credential"
+	"github.com/alchemy-furnace/server/internal/service/fusion_service"
 	"github.com/alchemy-furnace/server/internal/service/language_pattern_service"
 	"github.com/alchemy-furnace/server/internal/service/model_service"
 	"github.com/alchemy-furnace/server/internal/service/pill_service"
@@ -17,6 +18,7 @@ import (
 	"github.com/alchemy-furnace/server/internal/service/trial_service"
 	"github.com/alchemy-furnace/server/server/http/gateway/web/handler/agent"
 	"github.com/alchemy-furnace/server/server/http/gateway/web/handler/chat"
+	"github.com/alchemy-furnace/server/server/http/gateway/web/handler/fusion"
 	"github.com/alchemy-furnace/server/server/http/gateway/web/handler/model"
 	"github.com/alchemy-furnace/server/server/http/gateway/web/handler/pill"
 	"github.com/alchemy-furnace/server/server/http/gateway/web/handler/trial"
@@ -51,6 +53,16 @@ func NewTrial() *trial.Trial {
 	trial_serviceTrial := trial_service.New(daoPill, client, modelResolver)
 	trialTrial := trial.New(trial_serviceTrial)
 	return trialTrial
+}
+
+// NewFusion 金丹融合处理器装配
+func NewFusion() *fusion.Fusion {
+	daoPill := service.ProvidePillDao()
+	fusionClient := service.NewFusionClient()
+	modelResolver := credential.NewResolver()
+	fusion_serviceFusion := fusion_service.New(daoPill, fusionClient, modelResolver)
+	fusionFusion := fusion.New(fusion_serviceFusion)
+	return fusionFusion
 }
 
 // NewModel 供应商与模型管理处理器装配

@@ -17,6 +17,7 @@ func Register(r *gin.Engine) error {
 	agentHandler := handler.NewAgent()
 	chatHandler := handler.NewChat()
 	trialHandler := handler.NewTrial()
+	fusionHandler := handler.NewFusion()
 	systemHandler := system.New()
 	modelHandler := handler.NewModel()
 
@@ -65,6 +66,12 @@ func Register(r *gin.Engine) error {
 	{
 		trialGroup.POST("/synthesis", router.Wrapper(trialHandler.Synthesize))
 		trialGroup.POST("/chat", router.Wrapper(trialHandler.Chat))
+	}
+
+	// 金丹融合(N 枚金丹随机融合为新丹预览,不落库)
+	fusionGroup := v1.Group("/fusion")
+	{
+		fusionGroup.POST("/fuse", router.Wrapper(fusionHandler.Fuse))
 	}
 
 	// 供应商与模型管理(UUID 对外标识;/templates 与 /options 静态路由先于 :uuid 注册)
