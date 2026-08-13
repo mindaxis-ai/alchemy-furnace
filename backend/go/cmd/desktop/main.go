@@ -72,7 +72,7 @@ func main() {
 		log.Fatalf("[炼丹炉] 端口监听失败: %v", err)
 	}
 	addr := ln.Addr().String()
-	engine, err := web.NewEngine(middleware.DesktopGuard(token, addr))
+	engine, err := web.NewEngine(true, middleware.DesktopGuard(token, addr))
 	if err != nil {
 		log.Fatalf("[炼丹炉] 装配路由失败: %v", err)
 	}

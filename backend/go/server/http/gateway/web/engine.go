@@ -11,9 +11,10 @@ import (
 
 // NewEngine 装配 gin 引擎(中间件 + 路由 + NoRoute 分流)
 //
+// isDesktop: true → 启用 /api/v1/update/* 端点(desktop 模式专用)
 // extraAPIGuards: 仅挂到 /api/v1 组(serve 模式传空,desktop 模式传 DesktopGuard)
-// serve 与 desktop 行为差异通过 guards 控制,装配主体共用 → 零回归
-func NewEngine(extraAPIGuards ...gin.HandlerFunc) (*gin.Engine, error) {
+// serve 与 desktop 行为差异通过 guards + isDesktop 控制,装配主体共用 → 零回归
+func NewEngine(isDesktop bool, extraAPIGuards ...gin.HandlerFunc) (*gin.Engine, error) {
 	r := gin.New()
 	r.Use(
 		middleware.RequestID(),
@@ -22,7 +23,7 @@ func NewEngine(extraAPIGuards ...gin.HandlerFunc) (*gin.Engine, error) {
 		middleware.GinLogger(),
 		middleware.CORS(configuration.Configuration.Server.AllowOrigins),
 	)
-	if err := Register(r, extraAPIGuards...); err != nil {
+	if err := Register(r, isDesktop, extraAPIGuards...); err != nil {
 		return nil, err
 	}
 	// NoRoute 分流: /api/* JSON 404,其他走 webui(serve/desktop 都有)

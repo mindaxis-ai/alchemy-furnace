@@ -12,7 +12,7 @@ import (
 )
 
 // Register 注册新网关全部路由(已迁移域: pill + agent + system)
-func Register(r *gin.Engine, guards ...gin.HandlerFunc) error {
+func Register(r *gin.Engine, isDesktop bool, guards ...gin.HandlerFunc) error {
 	v1 := r.Group("/api/v1")
 	if len(guards) > 0 {
 		v1.Use(guards...)
@@ -59,6 +59,17 @@ func Register(r *gin.Engine, guards ...gin.HandlerFunc) error {
 	{
 		sys.GET("/health", router.Wrapper(systemHandler.HealthCheck))
 		sys.GET("/config", router.Wrapper(systemHandler.GetConfig))
+	}
+	// 版本信息(全模式: serve + desktop 都暴露,前端关于区消费)
+	v1.GET("/version", router.Wrapper(systemHandler.GetVersion))
+	// 自动更新(仅 desktop 模式,无 isDesktop 时不挂载;guard 已挂到 v1 组,自动生效)
+	if isDesktop {
+		upd := v1.Group("/update")
+		{
+			upd.GET("/check", router.Wrapper(systemHandler.CheckUpdate))
+			upd.POST("/apply", router.Wrapper(systemHandler.ApplyUpdate))
+			upd.GET("/progress", router.Wrapper(systemHandler.ProgressUpdate))
+		}
 	}
 
 	// 对话管理(会话 UUID 对外标识;SSE 流式对话为 RAW handler,不经 Wrapper)

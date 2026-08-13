@@ -56,7 +56,7 @@ func runServe(cmd *cobra.Command) {
 
 
 	// 共用引擎装配(serve/desktop 都走 web.NewEngine;此处无 guards 保持固定端口行为)
-	r, err := web.NewEngine()
+	r, err := web.NewEngine(false)
 	if err != nil {
 		log.Fatalf("[炼丹炉] 引擎装配失败: %v", err)
 	}
