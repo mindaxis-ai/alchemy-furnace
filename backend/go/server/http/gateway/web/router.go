@@ -12,8 +12,11 @@ import (
 )
 
 // Register 注册新网关全部路由(已迁移域: pill + agent + system)
-func Register(r *gin.Engine) error {
+func Register(r *gin.Engine, guards ...gin.HandlerFunc) error {
 	v1 := r.Group("/api/v1")
+	if len(guards) > 0 {
+		v1.Use(guards...)
+	}
 
 	pillHandler := handler.NewPill()
 	agentHandler := handler.NewAgent()
