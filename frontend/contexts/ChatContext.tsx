@@ -14,6 +14,7 @@
  */
 import React, { createContext, useContext, useReducer, useCallback, useRef, useEffect } from 'react'
 import * as chatService from '@/services/chatService'
+import { createStreamDispatcher } from '@/services/streamDispatcher'
 import type { ChatSession, ChatMessage } from '@/services/types'
 
 /** 对话状态 */
@@ -24,6 +25,8 @@ interface ChatState {
   loading: boolean
   streaming: boolean // 是否正在流式输出
   error: string | null
+  /** 群聊: 当前正在发言的道人(用于 typing 指示器显示名字/头像) */
+  currentSpeaker: { agent_id: string; agent_name: string; agent_avatar?: string } | null
 }
 
 /** 操作类型 */
@@ -38,6 +41,14 @@ type ChatAction =
   | { type: 'STOP_STREAM' } // 流式输出被停止(保留部分内容)
   | { type: 'MARK_LAST_INCOMPLETE' } // 标记最后一条助手回复「可能不完整」
   | { type: 'ADD_ERROR_MESSAGE'; payload: string } // 内联错误气泡
+  /** 回合内系统通知(群聊单道人失败等): 追加系统条,不动 streaming 状态 */
+  | { type: 'ADD_SYSTEM_NOTICE'; payload: { text: string; isError: boolean } }
+  | { type: 'SPEAKER_START'; payload: { agent_id: string; agent_name: string; agent_avatar?: string } }
+  | { type: 'SPEAKER_DONE' }
+  /** 群聊:用服务端真实 message_id 替换临时 id='-1',可附 mentions */
+  | { type: 'FINALIZE_STREAM_WITH_ID'; payload: { message_id: string; mentions?: import('@/services/types').ChatMessage['mentions'] } }
+  | { type: 'SET_SESSION_TITLE'; payload: { sessionId: string; title: string } }
+  | { type: 'UPDATE_SESSION_MEMBERS'; payload: { sessionId: string; members: import('@/services/types').GroupMember[] } }
   | { type: 'ADD_SESSION'; payload: ChatSession }
   | { type: 'SET_LOADING'; payload: boolean }
   | { type: 'SET_STREAMING'; payload: boolean }
@@ -52,6 +63,7 @@ const initialState: ChatState = {
   loading: false,
   streaming: false,
   error: null,
+  currentSpeaker: null,
 }
 
 /** 将流式临时消息转换为正式消息 */
@@ -130,6 +142,60 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       }
       return { ...state, messages: [...state.messages, errorMessage], streaming: false }
     }
+    case 'ADD_SYSTEM_NOTICE': {
+      // 回合内通知(群聊单道人失败等): 按序插入系统条,回合流式状态保持不变
+      const notice: ChatMessage = {
+        id: String(Date.now()),
+        session_id: state.currentSession?.id || '',
+        role: 'system',
+        content: action.payload.text,
+        created_at: new Date().toISOString(),
+        is_error: action.payload.isError,
+      }
+      return { ...state, messages: [...state.messages, notice] }
+    }
+    case 'SPEAKER_START': {
+      // 群聊: 某道人开始发言,先把可能的 -1 临时消息 finalize,再开新气泡
+      const messages = finalizeStreamMessage(state.messages)
+      messages.push({
+        id: '-1',
+        session_id: state.currentSession?.id || '',
+        role: 'assistant',
+        content: '',
+        agent_id: action.payload.agent_id,
+        agent_name: action.payload.agent_name,
+        created_at: new Date().toISOString(),
+      })
+      return { ...state, messages, currentSpeaker: { agent_id: action.payload.agent_id, agent_name: action.payload.agent_name } }
+    }
+    case 'SPEAKER_DONE':
+      // 群聊: 当前发言人 finalize,清空 currentSpeaker
+      return { ...state, messages: finalizeStreamMessage(state.messages), currentSpeaker: null }
+    case 'FINALIZE_STREAM_WITH_ID': {
+      // 群聊: 服务端已返回真实 message_id,直接用该 id 替换 -1(同时携带 mentions)
+      const messages = [...state.messages]
+      const lastIdx = messages.length - 1
+      if (lastIdx >= 0 && messages[lastIdx].role === 'assistant' && messages[lastIdx].id === '-1') {
+        messages[lastIdx] = {
+          ...messages[lastIdx],
+          id: action.payload.message_id,
+          mentions: action.payload.mentions || messages[lastIdx].mentions,
+        }
+      }
+      return { ...state, messages, currentSpeaker: null }
+    }
+    case 'SET_SESSION_TITLE': {
+      const { sessionId, title } = action.payload
+      const sessions = state.sessions.map(s => s.id === sessionId ? { ...s, title } : s)
+      const currentSession = state.currentSession?.id === sessionId ? { ...state.currentSession, title } : state.currentSession
+      return { ...state, sessions, currentSession }
+    }
+    case 'UPDATE_SESSION_MEMBERS': {
+      const { sessionId, members } = action.payload
+      const sessions = state.sessions.map(s => s.id === sessionId ? { ...s, members } : s)
+      const currentSession = state.currentSession?.id === sessionId ? { ...state.currentSession, members } : state.currentSession
+      return { ...state, sessions, currentSession }
+    }
     case 'ADD_SESSION':
       return { ...state, sessions: [action.payload, ...state.sessions], currentSession: action.payload, loading: false }
     case 'SET_LOADING':
@@ -152,8 +218,12 @@ interface ChatContextType {
   // 异步操作
   fetchSessions: () => Promise<void>
   createSession: (agentId: string, title?: string) => Promise<ChatSession | null>
+  createGroupSession: (memberAgentIds: string[]) => Promise<ChatSession | null>
+  renameSession: (sessionId: string, title: string) => Promise<ChatSession | null>
+  inviteMembers: (sessionId: string, agentIds: string[]) => Promise<void>
+  kickMember: (sessionId: string, agentId: string) => Promise<void>
   loadMessages: (sessionId: string) => Promise<void>
-  streamMessage: (sessionId: string, content: string) => Promise<void>
+  streamMessage: (sessionId: string, content: string, opts?: { allSilentText?: string }) => Promise<void>
   /** 停止当前流式生成(中断 SSE 连接,部分内容落定为「已停止」) */
   stopStream: () => void
 }
@@ -161,88 +231,10 @@ interface ChatContextType {
 const ChatContext = createContext<ChatContextType | null>(null)
 
 /**
- * 流式 chunk 调度器 — typing 节奏控制
- * 解决"LLM 服务端批量 flush"问题:deepseek 等 LLM 厂商常把整段响应一次性 flush,
- * 浏览器在 1ms 内收到 80+ chunk,React 一次性渲染,体感"一次性出完"而非"逐字"。
- *
- * 解决: 收到的 chunk 入队,以 TYPING_INTERVAL_MS 间隔依次派发,
- *       对应"打字机节奏",与 deepseek/chatgpt 网页版体感一致。
- *
- * 流结束/出错时 flushNow 立即排空剩余 chunk(不拖到最后一次节拍,避免收尾延迟)。
- *
- * 调速: TYPING_INTERVAL_MS=30 ≈ DeepSeek 网页(~33 字/秒)
- *       TYPING_INTERVAL_MS=50 ≈ ChatGPT 体感 (~20 字/秒)
- *       越大越慢,设为 0 则退化为 RAF 模式(由调用方决定)
+ * 流式调度器已抽至 @/services/streamDispatcher(群聊标记队列版)
+ * 关键差异: 发言人切换事件与 chunk 同队列按序消费,不再 flush 清仓,
+ * 修复群聊"一次性加载"(详见该文件头注释与 scripts/test-stream-dispatcher.ts)
  */
-const TYPING_INTERVAL_MS = 30
-
-function createChunkDispatcher(
-  dispatch: React.Dispatch<ChatAction>,
-  /** typing queue 清空时回调(用于 finalize 临时消息) */
-  onQueueEmpty?: () => void,
-) {
-  /** 队列:每个元素是 LLM 给的一个 chunk(原样保留,1-3 汉字或 1 词) */
-  const queue: string[] = []
-  let timer: ReturnType<typeof setTimeout> | null = null
-  /** 是否已收到服务端 done 信号(收到后 queue 排空则 finalize) */
-  let serverDone = false
-
-  /**
-   * tick 派发一片并调度下一片
-   * 关键: 派发后**无条件** schedule 下一拍(即使当前 queue 空)。
-   * 因为 push 可能正在 sync 块里持续塞新 chunk,我们不能在派发后让 timer=null,
-   * 否则下一个 push 看到 timer===null 就会同步再 tick,80 片一次喷出。
-   */
-  const tick = () => {
-    if (queue.length === 0) {
-      timer = null
-      // serverDone 后 queue 清空,可以正式 finalize
-      if (serverDone) {
-        onQueueEmpty?.()
-      }
-      return
-    }
-    const next = queue.shift()!
-    dispatch({ type: 'ADD_STREAM_CHUNK', payload: next })
-    timer = setTimeout(tick, TYPING_INTERVAL_MS)
-  }
-
-  return {
-    push(chunk: string) {
-      queue.push(chunk)
-      if (timer === null) {
-        // 第一片立刻派发(不延迟首字),tick 内部会 schedule 下一拍
-        tick()
-      }
-    },
-    /**
-     * 标记服务端已发送 done,但 queue 可能仍有残余 chunk
-     * 让 typing 节奏继续,排完才 finalize
-     */
-    markDone() {
-      serverDone = true
-      // queue 已空(timer=null)则立即触发 finalize
-      if (timer === null && queue.length === 0) {
-        onQueueEmpty?.()
-      }
-    },
-    /**
-     * 立即冲刷剩余 queue(流结束/出错时调用)
-     * 注意:仍逐片派发(保持 React 单一 ADD_STREAM_CHUNK action 流),但不再等节拍
-     */
-    flushNow() {
-      if (timer !== null) {
-        clearTimeout(timer)
-        timer = null
-      }
-      while (queue.length > 0) {
-        dispatch({ type: 'ADD_STREAM_CHUNK', payload: queue.shift()! })
-      }
-      // flush 完后立即 finalize
-      onQueueEmpty?.()
-    },
-  }
-}
 
 /** Provider 组件 */
 export function ChatProvider({ children }: { children: React.ReactNode }) {
@@ -250,8 +242,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const sessionsRef = useRef<ChatSession[]>([])
   // 本轮流式是否已收到内容片段
   const partialReceivedRef = useRef(false)
-  // RAF 节流的 chunk 调度器(每次 streamMessage 重新构造,避免上一轮残留)
-  const chunkerRef = useRef<ReturnType<typeof createChunkDispatcher> | null>(null)
+  // 群聊: 本回合是否已有发言人开腔(用于区分单道人失败 vs 启动即败的致命错误)
+  const groupActiveRef = useRef(false)
+  // 流式事件调度器(每次 streamMessage 重新构造,避免上一轮残留)
+  const chunkerRef = useRef<ReturnType<typeof createStreamDispatcher> | null>(null)
 
   // 同步会话列表引用,供 loadMessages 查找当前会话
   useEffect(() => {
@@ -269,16 +263,61 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  /** 创建会话 */
+  /** 创建 1v1 会话 */
   const createSession = useCallback(async (agentId: string, title?: string): Promise<ChatSession | null> => {
     dispatch({ type: 'SET_LOADING', payload: true })
     try {
+      // title 参数保留但忽略(后端自动命名)
       const session = await chatService.createSession({ agent_id: agentId, title })
       dispatch({ type: 'ADD_SESSION', payload: session })
       return session
     } catch (error) {
       dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '创建会话失败' })
       return null
+    }
+  }, [])
+
+  /** 建群(≥2 位道人;首问答自动命名) */
+  const createGroupSession = useCallback(async (memberAgentIds: string[]): Promise<ChatSession | null> => {
+    try {
+      const session = await chatService.createGroupSession(memberAgentIds)
+      dispatch({ type: 'ADD_SESSION', payload: session })
+      return session
+    } catch (error) {
+      dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '建群失败' })
+      return null
+    }
+  }, [])
+
+  /** 重命名会话 */
+  const renameSession = useCallback(async (sessionId: string, title: string): Promise<ChatSession | null> => {
+    try {
+      const session = await chatService.renameSession(sessionId, title)
+      dispatch({ type: 'SET_SESSION_TITLE', payload: { sessionId, title: session.title || title } })
+      return session
+    } catch (error) {
+      dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '改名失败' })
+      return null
+    }
+  }, [])
+
+  /** 邀请入群(已在群静默跳过);更新本地 members */
+  const inviteMembers = useCallback(async (sessionId: string, agentIds: string[]) => {
+    try {
+      const { members } = await chatService.addMembers(sessionId, agentIds)
+      dispatch({ type: 'UPDATE_SESSION_MEMBERS', payload: { sessionId, members } })
+    } catch (error) {
+      dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '邀请失败' })
+    }
+  }, [])
+
+  /** 移出群成员;更新本地 members */
+  const kickMember = useCallback(async (sessionId: string, agentId: string) => {
+    try {
+      const { members } = await chatService.removeMember(sessionId, agentId)
+      dispatch({ type: 'UPDATE_SESSION_MEMBERS', payload: { sessionId, members } })
+    } catch (error) {
+      dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '踢人失败' })
     }
   }, [])
 
@@ -318,43 +357,81 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     partialReceivedRef.current = false
     dispatch({ type: 'SET_STREAMING', payload: true })
 
-    // 重建 chunk 调度器(确保上一轮缓冲不残留)
-    // onQueueEmpty: typing queue 清空时 finalize 临时消息(把 id='-1' 改为真实 id)
-    const chunker = createChunkDispatcher(dispatch, () => {
-      dispatch({ type: 'FINALIZE_STREAM' })
+    // 重建流式调度器(发言人标记与 chunk 同队列按序消费,切换不再 flush)
+    // onDrained: typing 队列清空时 finalize 临时消息(把 id='-1' 改为真实 id)
+    const isGroup = sessionsRef.current.find(s => s.id === sessionId)?.type === 'group'
+    groupActiveRef.current = false
+    const chunker = createStreamDispatcher({
+      onChunk: (text) => dispatch({ type: 'ADD_STREAM_CHUNK', payload: text }),
+      onSpeakerStart: (info) => dispatch({ type: 'SPEAKER_START', payload: info }),
+      onSpeakerDone: (info) => {
+        if (info.message_id) {
+          dispatch({ type: 'FINALIZE_STREAM_WITH_ID', payload: { message_id: info.message_id, mentions: info.mentions as ChatMessage['mentions'] } })
+        } else {
+          dispatch({ type: 'SPEAKER_DONE' })
+        }
+      },
+      onNotice: (text, isError) => dispatch({ type: 'ADD_SYSTEM_NOTICE', payload: { text, isError } }),
+      onDrained: () => dispatch({ type: 'FINALIZE_STREAM' }),
     })
     chunkerRef.current = chunker
 
     await chatService.streamChatMessage(sessionId, content, {
       onChunk: (chunk) => {
         partialReceivedRef.current = true
-        chunker.push(chunk)
+        chunker.pushChunk(chunk)
       },
       onDone: () => {
-        // 服务端已发送 [DONE]: 标记 done,让 typing dispatcher 按节奏自然排空
-        // queue 清空时由 onQueueEmpty 回调触发 FINALIZE_STREAM(不 flush,保持"逐字"体感)
+        // 单聊: 服务端 [DONE] → 标记结束,typing 按节奏自然排空后由 onDrained finalize
         partialReceivedRef.current = false
         chunker.markDone()
         dispatch({ type: 'FINISH_STREAM' })
       },
       onStopped: () => {
-        // 用户主动停止: 立即 flush 已收到的部分内容,不再等节拍
+        // 用户主动停止: 按序立即应用队列残余,STOP_STREAM 给 -1 临时消息打「已停止」
         chunker.flushNow()
         partialReceivedRef.current = false
+        groupActiveRef.current = false
         dispatch({ type: 'STOP_STREAM' })
       },
       onError: (error) => {
-        // 服务端错误: 立即 flush 残余,确保错误前的部分内容也展示出来
+        // 群聊回合中(已有发言人/内容): 单道人失败按序插通知条,回合继续
+        // 否则(单聊/群聊启动即败,后端不再发 turn_done): 致命错误,flush 收尾
+        if (isGroup && (groupActiveRef.current || partialReceivedRef.current)) {
+          chunker.pushNotice(error, true)
+          return
+        }
         chunker.flushNow()
         partialReceivedRef.current = false
+        groupActiveRef.current = false
         dispatch({ type: 'ADD_ERROR_MESSAGE', payload: error })
       },
       onInterrupted: () => {
-        // 流式生成中网络中断: 立即 flush 残余内容
+        // 流式生成中网络中断: 按序立即应用残余内容
         chunker.flushNow()
         partialReceivedRef.current = false
+        groupActiveRef.current = false
         dispatch({ type: 'FINISH_STREAM' })
         dispatch({ type: 'MARK_LAST_INCOMPLETE' })
+      },
+      // ========== 群聊回调(标记入队,不打断 typing 节奏) ==========
+      onSpeakerStart: (info) => {
+        groupActiveRef.current = true
+        chunker.pushSpeakerStart(info)
+      },
+      onSpeakerDone: (info) => {
+        chunker.pushSpeakerDone(info)
+      },
+      onTurnDone: () => {
+        // 回合结束: 标记服务端完毕,队列按节奏播完由 onDrained finalize
+        partialReceivedRef.current = false
+        groupActiveRef.current = false
+        chunker.markDone()
+        dispatch({ type: 'FINISH_STREAM' })
+      },
+      onTitle: (title) => {
+        // 自动命名(首问答命名)
+        dispatch({ type: 'SET_SESSION_TITLE', payload: { sessionId, title } })
       },
     })
   }, [])
@@ -371,6 +448,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         dispatch,
         fetchSessions,
         createSession,
+        createGroupSession,
+        renameSession,
+        inviteMembers,
+        kickMember,
         loadMessages,
         streamMessage,
         stopStream,

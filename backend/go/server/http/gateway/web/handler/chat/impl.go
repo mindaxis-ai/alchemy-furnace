@@ -30,26 +30,49 @@ func New(chat service.Chat) *Chat {
 
 // SessionResponse 会话响应 DTO:id/agent_id 输出 UUID 字符串,不泄露数字主键
 type SessionResponse struct {
-	ID        string    `json:"id"`
-	AgentID   string    `json:"agent_id"`
-	Title     string    `json:"title"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID        string            `json:"id"`
+	Type      string            `json:"type"` // single | group
+	AgentID   string            `json:"agent_id"`
+	Title     string            `json:"title"`
+	Members   []*MemberResponse `json:"members,omitempty"`
+	CreatedAt time.Time         `json:"created_at"`
+	UpdatedAt time.Time         `json:"updated_at"`
+}
+
+// MemberResponse 群成员 DTO(前端抽屉展示用)
+type MemberResponse struct {
+	AgentID     string `json:"agent_id"`
+	Name        string `json:"name"`
+	Avatar      string `json:"avatar"`
+	Proactivity int    `json:"proactivity"`
 }
 
 // MessageResponse 消息响应 DTO:id 输出消息 UUID;session_id 不输出
 type MessageResponse struct {
-	ID        string    `json:"id"`
-	Role      string    `json:"role"`
-	Content   string    `json:"content"`
-	CreatedAt time.Time `json:"created_at"`
+	ID        string        `json:"id"`
+	Role      string        `json:"role"`
+	Content   string        `json:"content"`
+	AgentID   string        `json:"agent_id,omitempty"`
+	AgentName string        `json:"agent_name,omitempty"`
+	Mentions  model.JSONMap `json:"mentions,omitempty"`
+	CreatedAt time.Time     `json:"created_at"`
 }
 
 // toSessionResponse 内部模型 -> 对外 DTO(agent 需预加载以取 UUID)
+// 群聊 AgentID 可能为 nil(单聊字段未使用),需空值安全
 func toSessionResponse(s *model.ChatSession) *SessionResponse {
+	agentID := ""
+	if s.AgentID != nil {
+		agentID = s.Agent.UUID.String()
+	}
+	typeStr := s.Type
+	if typeStr == "" {
+		typeStr = model.SessionTypeSingle
+	}
 	return &SessionResponse{
 		ID:        s.UUID.String(),
-		AgentID:   s.Agent.UUID.String(),
+		Type:      typeStr,
+		AgentID:   agentID,
 		Title:     s.Title,
 		CreatedAt: s.CreatedAt,
 		UpdatedAt: s.UpdatedAt,
@@ -67,12 +90,46 @@ func toSessionResponseList(sessions []*model.ChatSession) []*SessionResponse {
 
 // toMessageResponse 内部模型 -> 对外 DTO
 func toMessageResponse(m *model.ChatMessage) *MessageResponse {
-	return &MessageResponse{
+	r := &MessageResponse{
 		ID:        m.UUID.String(),
 		Role:      m.Role,
 		Content:   m.Content,
+		Mentions:  m.Mentions,
 		CreatedAt: m.CreatedAt,
 	}
+	if m.AgentID != nil && m.Agent != nil {
+		r.AgentID = m.Agent.UUID.String()
+		r.AgentName = m.Agent.Name
+	}
+	return r
+}
+
+// toMemberResponse 群成员 → DTO
+func toMemberResponse(m *model.SessionMember) *MemberResponse {
+	return &MemberResponse{
+		AgentID:     m.Agent.UUID.String(),
+		Name:        m.Agent.Name,
+		Avatar:      m.Agent.Avatar,
+		Proactivity: m.Agent.Proactivity,
+	}
+}
+
+// toMemberResponseList 批量转换
+func toMemberResponseList(members []*model.SessionMember) []*MemberResponse {
+	list := make([]*MemberResponse, 0, len(members))
+	for _, m := range members {
+		list = append(list, toMemberResponse(m))
+	}
+	return list
+}
+
+// toSessionResponseWithMembers 单聊+群聊通用,群聊带 members
+func toSessionResponseWithMembers(s *model.ChatSession, members []*model.SessionMember) *SessionResponse {
+	r := toSessionResponse(s)
+	if len(members) > 0 {
+		r.Members = toMemberResponseList(members)
+	}
+	return r
 }
 
 // toMessageResponseList 批量转换

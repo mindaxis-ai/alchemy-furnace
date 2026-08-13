@@ -48,7 +48,11 @@ func (s *Agent) GetAgentDetailByUUID(ctx context.Context, uid uuid.UUID) (*model
 }
 
 // CreateAgent 创建道人
-func (s *Agent) CreateAgent(ctx context.Context, name string, avatar string, personality string, modelName string) (*model.DaoAgent, errors.Error) {
+// proactivity 为 nil 时取默认值 50;合法区间 0-100,越界返回 InvalidRequest
+func (s *Agent) CreateAgent(ctx context.Context, name string, avatar string, personality string, modelName string, proactivity *int) (*model.DaoAgent, errors.Error) {
+	if proactivity != nil && (*proactivity < 0 || *proactivity > 100) {
+		return nil, errors.New(errors.ErrorTypeInvalidRequest, "service.agent.create_proactivity", "主动性需在 0-100 之间")
+	}
 	if err := s.validateModelName(ctx, modelName); err != nil {
 		return nil, err
 	}
@@ -56,12 +60,17 @@ func (s *Agent) CreateAgent(ctx context.Context, name string, avatar string, per
 	if modelName == "" {
 		modelName = "gpt-4o"
 	}
+	proactivityVal := 50
+	if proactivity != nil {
+		proactivityVal = *proactivity
+	}
 	agent := &model.DaoAgent{
 		Name:        name,
 		Avatar:      avatar,
 		Personality: personality,
 		ModelName:   modelName,
 		Status:      "active",
+		Proactivity: proactivityVal,
 	}
 	if err := s.agent.SaveAgent(ctx, agent); err != nil {
 		return nil, err.Relation(errors.ErrorServerInternalError("service.agent.create"))
@@ -72,11 +81,15 @@ func (s *Agent) CreateAgent(ctx context.Context, name string, avatar string, per
 }
 
 // UpdateAgent 部分更新道人;性格变化时失效语言模式缓存
-func (s *Agent) UpdateAgent(ctx context.Context, uid uuid.UUID, name *string, avatar *string, personality *string, modelName *string, status *string) (*model.DaoAgent, errors.Error) {
+// proactivity 合法区间 0-100;nil=不更新
+func (s *Agent) UpdateAgent(ctx context.Context, uid uuid.UUID, name *string, avatar *string, personality *string, modelName *string, status *string, proactivity *int) (*model.DaoAgent, errors.Error) {
 	if modelName != nil && *modelName != "" {
 		if err := s.validateModelName(ctx, *modelName); err != nil {
 			return nil, err
 		}
+	}
+	if proactivity != nil && (*proactivity < 0 || *proactivity > 100) {
+		return nil, errors.New(errors.ErrorTypeInvalidRequest, "service.agent.update_proactivity", "主动性需在 0-100 之间")
 	}
 
 	agent, err := s.agent.TakeAgentByUUID(ctx, uid)
@@ -99,6 +112,9 @@ func (s *Agent) UpdateAgent(ctx context.Context, uid uuid.UUID, name *string, av
 	}
 	if status != nil && *status != "" {
 		updates["status"] = *status
+	}
+	if proactivity != nil {
+		updates["proactivity"] = *proactivity
 	}
 
 	if len(updates) > 0 {

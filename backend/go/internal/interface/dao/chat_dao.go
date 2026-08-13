@@ -31,4 +31,13 @@ type Chat interface {
 
 	// SaveMessage 写入消息并刷新所属会话 updated_at
 	SaveMessage(ctx context.Context, message *model.ChatMessage) errors.Error
+
+	// SaveMembers 批量写入群成员(调用方保证不重复;sort_order 由调用方赋值)
+	SaveMembers(ctx context.Context, members []*model.SessionMember) errors.Error
+
+	// FindMembers 按发言顺序(SortOrder ASC)查询群成员,预加载 Agent
+	FindMembers(ctx context.Context, sessionID uint) ([]*model.SessionMember, errors.Error)
+
+	// DeleteMember 移出群成员;不存在返回 ErrorTypeRecordNotFound
+	DeleteMember(ctx context.Context, sessionID uint, agentID uint) errors.Error
 }

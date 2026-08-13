@@ -11,12 +11,13 @@ import { Info, Flame, ExternalLink, Heart } from 'lucide-react'
 import { TopTabs } from '@/components/interaction/top-tabs'
 import { ModelsPanel } from '@/components/models/models-panel'
 import { FireEffectPanel } from '@/components/settings/fire-effect-panel'
+import { ProfilePanel } from '@/components/settings/profile-panel'
 
-const TAB_KEYS = ['models', 'fire', 'about'] as const
+const TAB_KEYS = ['models', 'fire', 'profile', 'about'] as const
 type TabKey = (typeof TAB_KEYS)[number]
 
 function isTabKey(v: string | null): v is TabKey {
-  return v === 'models' || v === 'fire' || v === 'about'
+  return v === 'models' || v === 'fire' || v === 'profile' || v === 'about'
 }
 
 export function SettingsTabs() {
@@ -41,6 +42,7 @@ export function SettingsTabs() {
           tabs={[
             { key: 'models', label: t('models') },
             { key: 'fire', label: t('fire') },
+            { key: 'profile', label: t('profile') },
             { key: 'about', label: t('about') },
           ]}
           activeKey={active}
@@ -51,6 +53,8 @@ export function SettingsTabs() {
         <ModelsPanel />
       ) : active === 'fire' ? (
         <FireEffectPanel />
+      ) : active === 'profile' ? (
+        <ProfilePanel />
       ) : (
         <AboutPanel />
       )}

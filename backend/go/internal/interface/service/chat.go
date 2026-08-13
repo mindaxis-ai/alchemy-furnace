@@ -20,8 +20,9 @@ type LanguagePatternProvider interface {
 // Chat 对话域业务逻辑接口(会话/消息/SSE 流式对话)
 // 对外以 UUID 标识会话;内部联结仍用自增 ID。SSE 入口按 session UUID 解析
 type Chat interface {
-	// CreateSession 创建会话;agentUID 为道人对外 UUID,title 为空时按道人名生成默认标题
-	CreateSession(ctx context.Context, agentUID uuid.UUID, title string) (*model.ChatSession, errors.Error)
+	// CreateSession 创建 1v1 会话;agentUID 为道人对外 UUID
+	// 标题一律留空,由首个问答自动命名;group 会话走 Service 扩展入口
+	CreateSession(ctx context.Context, agentUID uuid.UUID) (*model.ChatSession, errors.Error)
 
 	// ListSessions 分页查询会话列表(agentUID 非零时按道人过滤),按更新时间倒序
 	ListSessions(ctx context.Context, agentUID uuid.UUID, page int, size int) (int64, []*model.ChatSession, errors.Error)
@@ -48,6 +49,28 @@ type Chat interface {
 	// DeleteSession 删除会话(消息由 FK CASCADE 清理)
 	DeleteSession(ctx context.Context, sessionUID uuid.UUID) errors.Error
 
-	// UpdateSessionTitle 更新会话标题
+	// UpdateSessionTitle 更新会话标题(trim 后空或 >30 字返 InvalidRequest)
 	UpdateSessionTitle(ctx context.Context, sessionUID uuid.UUID, title string) errors.Error
+
+	// CreateGroupSession 建群:成员≥2、去重、全部 active;title 置空待自动命名
+	CreateGroupSession(ctx context.Context, agentUIDs []uuid.UUID) (*model.ChatSession, errors.Error)
+
+	// ListMembers 列群成员(按发言顺序,预加载道人)
+	ListMembers(ctx context.Context, sessionUID uuid.UUID) ([]*model.SessionMember, errors.Error)
+
+	// AddMembers 邀请入群(已在群的静默跳过),落系统通知消息
+	AddMembers(ctx context.Context, sessionUID uuid.UUID, agentUIDs []uuid.UUID) errors.Error
+
+	// RemoveMember 踢出群,落系统通知消息;不在群返回 ErrorTypeRecordNotFound
+	RemoveMember(ctx context.Context, sessionUID uuid.UUID, agentUID uuid.UUID) errors.Error
+
+	// SaveAgentMessage 写带道人归属与提及的消息(群聊编排器用)
+	SaveAgentMessage(ctx context.Context, sessionID uint, agentID uint, role string, content string, mentions model.JSONMap) (*model.ChatMessage, errors.Error)
+
+	// GenerateSessionTitle 单聊自动命名入口:title 已非空(用户手改)放弃;失败返回 ""
+	GenerateSessionTitle(ctx context.Context, sessionUID uuid.UUID, userContent string, firstReply string) string
+
+	// RunGroupTurn 群聊回合编排:落用户消息→≤3轮逐道人发言→自动命名→turn_done
+	// emit 由 handler 提供(带锁 + 心跳)
+	RunGroupTurn(ctx context.Context, sessionUID uuid.UUID, content string, emit func(event string, payload any))
 }

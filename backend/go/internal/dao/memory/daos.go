@@ -450,7 +450,7 @@ func (d *ChatDao) TakeSessionByUUID(ctx context.Context, uid uuid.UUID) (*model.
 	// 预加载道人(按 AgentID 反查)
 	d.store.muAgent.RLock()
 	for _, a := range d.store.agents {
-		if a.ID == s.AgentID {
+		if s.AgentID != nil && a.ID == *s.AgentID {
 			out.Agent = *cloneAgent(a)
 			break
 		}
@@ -464,7 +464,7 @@ func (d *ChatDao) FindSessions(ctx context.Context, agentID uint, page int, size
 	defer d.store.muChat.RUnlock()
 	all := make([]*model.ChatSession, 0, len(d.store.sessions))
 	for _, s := range d.store.sessions {
-		if agentID > 0 && s.AgentID != agentID {
+		if agentID > 0 && (s.AgentID == nil || *s.AgentID != agentID) {
 			continue
 		}
 		all = append(all, cloneSession(s))
@@ -523,7 +523,6 @@ func (d *ChatDao) DeleteSession(ctx context.Context, session *model.ChatSession)
 
 func (d *ChatDao) FindMessages(ctx context.Context, sessionID uint, page int, size int) (int64, []*model.ChatMessage, errors.Error) {
 	d.store.muChat.RLock()
-	defer d.store.muChat.RUnlock()
 	msgs := d.store.messages[sessionID]
 	total := int64(len(msgs))
 	if total == 0 || size <= 0 || int64((page-1)*size) >= total {
@@ -539,6 +538,24 @@ func (d *ChatDao) FindMessages(ctx context.Context, sessionID uint, page int, si
 		mc := *msgs[i]
 		out = append(out, &mc)
 	}
+	d.store.muChat.RUnlock() // 先释放,避免嵌套持锁
+
+	// 预加载 Agent(两段式):AgentID 为 nil(用户/系统消息)跳过
+	d.store.muAgent.RLock()
+	for _, m := range out {
+		if m.AgentID == nil {
+			continue
+		}
+		for _, a := range d.store.agents {
+			if a.ID == *m.AgentID {
+				agent := *cloneAgent(a)
+				m.Agent = &agent
+				break
+			}
+		}
+	}
+	d.store.muAgent.RUnlock()
+
 	return total, out, nil
 }
 
@@ -560,6 +577,62 @@ func (d *ChatDao) SaveMessage(ctx context.Context, message *model.ChatMessage) e
 		}
 	}
 	return nil
+}
+
+// SaveMembers 批量写入群成员(调用方保证不重复;sort_order 由调用方赋值)
+func (d *ChatDao) SaveMembers(ctx context.Context, members []*model.SessionMember) errors.Error {
+	d.store.muChat.Lock()
+	defer d.store.muChat.Unlock()
+	for _, m := range members {
+		d.store.nextMemberID++
+		cp := *m
+		cp.ID = d.store.nextMemberID
+		cp.JoinedAt = time.Now()
+		d.store.members[cp.SessionID] = append(d.store.members[cp.SessionID], &cp)
+	}
+	return nil
+}
+
+// FindMembers 按发言顺序(SortOrder ASC)查询群成员,预加载 Agent
+func (d *ChatDao) FindMembers(ctx context.Context, sessionID uint) ([]*model.SessionMember, errors.Error) {
+	d.store.muChat.RLock()
+	src := d.store.members[sessionID]
+	out := make([]*model.SessionMember, 0, len(src))
+	for _, m := range src {
+		cp := *m
+		out = append(out, &cp)
+	}
+	d.store.muChat.RUnlock()
+
+	// 预加载 Agent(两段式,避免嵌套持锁;照抄 TakeSessionByUUID 模式)
+	d.store.muAgent.RLock()
+	for _, m := range out {
+		for _, a := range d.store.agents {
+			if a.ID == m.AgentID {
+				agent := *cloneAgent(a)
+				m.Agent = agent
+				break
+			}
+		}
+	}
+	d.store.muAgent.RUnlock()
+
+	sort.SliceStable(out, func(i, j int) bool { return out[i].SortOrder < out[j].SortOrder })
+	return out, nil
+}
+
+// DeleteMember 移出群成员;不存在返回 ErrorTypeRecordNotFound
+func (d *ChatDao) DeleteMember(ctx context.Context, sessionID uint, agentID uint) errors.Error {
+	d.store.muChat.Lock()
+	defer d.store.muChat.Unlock()
+	src := d.store.members[sessionID]
+	for i, m := range src {
+		if m.AgentID == agentID {
+			d.store.members[sessionID] = append(src[:i], src[i+1:]...)
+			return nil
+		}
+	}
+	return errors.ErrorRecordNotFound("dao.chat.delete_member")
 }
 
 // ==================== ProviderDao ====================

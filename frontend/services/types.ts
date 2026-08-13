@@ -106,6 +106,8 @@ export interface Agent {
   personality?: string
   model_name: string
   status: AgentStatus
+  /** 主动性/表达欲 0-100(群聊发言欲) */
+  proactivity: number
   created_at: string
   updated_at?: string
 }
@@ -153,13 +155,26 @@ export interface AgentDetail extends Agent {
 // ========== 对话 ==========
 
 /** 对话会话 */
+/** 群成员 */
+export interface GroupMember {
+  agent_id: string
+  name: string
+  avatar?: string
+  proactivity: number
+}
+
 export interface ChatSession {
   id: string
+  /** 会话类型: single 1v1 / group 多道人群 */
+  type?: 'single' | 'group'
+  /** single: 所属道人 UUID;group 留空 */
   agent_id: string
   title?: string
   created_at: string
   updated_at: string
   agent?: Agent
+  /** group: 群成员列表(按发言顺序) */
+  members?: GroupMember[]
 }
 
 /** 对话消息（无 RAG 引用来源） */
@@ -176,6 +191,12 @@ export interface ChatMessage {
   stopped?: boolean
   /** 服务端错误消息（以错误气泡展示） */
   is_error?: boolean
+  /** 群聊: 发言道人 UUID */
+  agent_id?: string
+  /** 群聊: 发言道人名(气泡身份头) */
+  agent_name?: string
+  /** @提及: agents=道人 UUID 数组;user=是否@了用户 */
+  mentions?: { agents?: string[]; user?: boolean }
 }
 
 // ========== 请求 ==========
@@ -199,6 +220,7 @@ export interface CreateAgentRequest {
   avatar?: string
   personality?: string
   model_name?: string
+  proactivity?: number
 }
 
 /** 更新道人请求 */
@@ -220,8 +242,13 @@ export interface UpdateAgentPillRequest {
 }
 
 /** 创建会话请求 */
+//   - single: agent_id 必填
+//   - group: type="group" + member_agent_ids ≥2
+//   - title 字段忽略(自动命名)
 export interface CreateSessionRequest {
-  agent_id: string
+  agent_id?: string
+  type?: 'single' | 'group'
+  member_agent_ids?: string[]
   title?: string
 }
 

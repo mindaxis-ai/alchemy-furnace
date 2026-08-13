@@ -11,6 +11,10 @@ import (
 	"github.com/alchemy-furnace/server/server/http/response"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
+
+	"github.com/alchemy-furnace/server/model"
+
+	"github.com/google/uuid"
 )
 
 // sseChatRequest SSE 流式对话请求体
@@ -66,7 +70,17 @@ func (cls *Chat) SSEChat(c *gin.Context) {
 		sseWriteEvent(w, flusher, "error", ssePayload{Content: "获取会话信息失败"})
 		return
 	}
-	agentID := session.AgentID
+	// 群聊 Type=group 走专门通道(编排器驱动,带心跳保活)
+	if session.Type == model.SessionTypeGroup {
+		cls.runGroupSSE(c, sessionUID, content)
+		return
+	}
+	// 群聊 AgentID=nil 走单聊入口视为错误(防御性兜底)
+	if session.AgentID == nil {
+		sseWriteEvent(w, flusher, "error", ssePayload{Content: "该会话不支持单聊通道"})
+		return
+	}
+	agentID := *session.AgentID
 	sessionID := session.ID
 	modelName := session.Agent.ModelName
 
@@ -136,7 +150,7 @@ func (cls *Chat) SSEChat(c *gin.Context) {
 			sseWriteComment(w, flusher, "ping")
 
 		case res := <-resultCh:
-			cls.finishSSEStream(ctx, sessionID, w, flusher, res)
+			cls.finishSSEStream(ctx, sessionUID, sessionID, content, w, flusher, res)
 			return
 
 		case <-ctx.Done():
@@ -159,7 +173,7 @@ func (cls *Chat) SSEChat(c *gin.Context) {
 
 // finishSSEStream 处理 StreamChat 正常收尾: done / error / 取消(恰好遇完成按 done 处理)
 // 取消与落库使用脱离取消的上下文,保证客户端断连后仍能写入部分回复
-func (cls *Chat) finishSSEStream(ctx context.Context, sessionID uint, w http.ResponseWriter, flusher http.Flusher, res streamResult) {
+func (cls *Chat) finishSSEStream(ctx context.Context, sessionUID uuid.UUID, sessionID uint, userContent string, w http.ResponseWriter, flusher http.Flusher, res streamResult) {
 	saveCtx := context.WithoutCancel(ctx)
 	switch {
 	case res.canceled:
@@ -182,6 +196,12 @@ func (cls *Chat) finishSSEStream(ctx context.Context, sessionID uint, w http.Res
 			if _, err := cls.chat.SaveMessage(saveCtx, sessionID, "assistant", res.full); err != nil {
 				zap.L().Error("[炼丹炉] 保存助手回复失败", zap.Error(err))
 			}
+		}
+		// 首问答自动命名(单聊触发点): 失败静默
+		if title := cls.chat.GenerateSessionTitle(saveCtx, sessionUID, userContent, res.full); title != "" {
+			sseWriteEvent(w, flusher, "title", struct {
+				Title string `json:"title"`
+			}{Title: title})
 		}
 		sseWriteEvent(w, flusher, "done", ssePayload{})
 		zap.L().Info("[炼丹炉] 论道一轮完成",

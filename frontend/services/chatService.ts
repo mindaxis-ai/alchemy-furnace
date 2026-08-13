@@ -10,8 +10,8 @@
  * - 心跳为 SSE 注释行（: ping），解析器忽略
  * - 请求级生命周期，无长驻连接，无需重连
  */
-import { get, post, buildApiUrl } from './api'
-import type { ChatSession, ChatMessage, CreateSessionRequest, PagedList, ListParams } from './types'
+import { get, post, put, del, buildApiUrl } from './api'
+import type { ChatSession, ChatMessage, GroupMember, CreateSessionRequest, PagedList, ListParams } from './types'
 
 /**
  * 获取会话列表
@@ -40,6 +40,34 @@ export function getMessages(sessionId: string, params: ListParams = {}): Promise
   })
 }
 
+/**
+ * 建群(≥2 位道人;首问答自动命名,无 title 入参)
+ */
+export function createGroupSession(memberAgentIds: string[]): Promise<ChatSession> {
+  return post<ChatSession>('/chat/sessions', { type: 'group', member_agent_ids: memberAgentIds })
+}
+
+/**
+ * 重命名会话
+ */
+export function renameSession(sessionId: string, title: string): Promise<ChatSession> {
+  return put<ChatSession>(`/chat/sessions/${sessionId}`, { title })
+}
+
+/**
+ * 邀请入群(已在群静默跳过)
+ */
+export function addMembers(sessionId: string, agentIds: string[]): Promise<{ members: GroupMember[] }> {
+  return post<{ members: GroupMember[] }>(`/chat/sessions/${sessionId}/members`, { agent_ids: agentIds })
+}
+
+/**
+ * 移出群成员
+ */
+export function removeMember(sessionId: string, agentId: string): Promise<{ members: GroupMember[] }> {
+  return del<{ members: GroupMember[] }>(`/chat/sessions/${sessionId}/members/${agentId}`)
+}
+
 /** 流式对话回调 */
 export interface StreamHandlers {
   /** 收到内容片段 */
@@ -52,6 +80,14 @@ export interface StreamHandlers {
   onError: (error: string) => void
   /** 流式生成中网络中断（已收到部分内容，该条回复可能不完整） */
   onInterrupted: () => void
+  /** 群聊: 某道人开始发言(气泡身份头) */
+  onSpeakerStart?: (info: { agent_id: string; agent_name: string; agent_avatar?: string }) => void
+  /** 群聊: 某道人发言完毕(已入库) */
+  onSpeakerDone?: (info: { agent_id: string; message_id?: string; mentions?: ChatMessage['mentions'] }) => void
+  /** 群聊: 回合结束(spoke=本回合发言总数) */
+  onTurnDone?: (info: { spoke: number }) => void
+  /** 自动命名成功(单/群聊) */
+  onTitle?: (title: string) => void
 }
 
 // 当前活跃的流式请求（同一时间只允许一条）
@@ -114,14 +150,14 @@ export async function streamChatMessage(
       dataLines = []
       if (!type) return
 
-      let payload: { content?: string } = {}
+      let payload: Record<string, unknown> = {}
       try {
         payload = data ? JSON.parse(data) : {}
       } catch {
         // 忽略无法解析的 data
       }
 
-      if (type === 'chunk' && payload.content) {
+      if (type === 'chunk' && typeof payload.content === 'string') {
         received = true
         handlers.onChunk(payload.content)
       } else if (type === 'done') {
@@ -129,7 +165,17 @@ export async function streamChatMessage(
         handlers.onDone()
       } else if (type === 'error') {
         finished = true
-        handlers.onError(payload.content || '论道出错了')
+        handlers.onError(typeof payload.content === 'string' ? payload.content : '论道出错了')
+      } else if (type === 'speaker_start') {
+        handlers.onSpeakerStart?.(payload as unknown as { agent_id: string; agent_name: string; agent_avatar?: string })
+      } else if (type === 'speaker_done') {
+        handlers.onSpeakerDone?.(payload as unknown as { agent_id: string; message_id?: string; mentions?: ChatMessage['mentions'] })
+      } else if (type === 'turn_done') {
+        finished = true
+        handlers.onTurnDone?.(payload as unknown as { spoke: number })
+      } else if (type === 'title' && typeof payload.title === 'string') {
+        // 单/群聊 title 事件统一 {"title": "..."} 形态
+        handlers.onTitle?.(payload.title)
       }
     }
 

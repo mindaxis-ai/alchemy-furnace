@@ -39,7 +39,7 @@ func TestAutoMigrateSQLite(t *testing.T) {
 
 	wantTables := []string{
 		"elixir_pills", "dao_agents", "agent_pills", "language_patterns",
-		"chat_sessions", "chat_messages", "llm_providers", "llm_models",
+		"chat_sessions", "chat_messages", "session_members", "llm_providers", "llm_models",
 	}
 	for _, table := range wantTables {
 		if !db.Migrator().HasTable(table) {

@@ -33,6 +33,7 @@ type Response struct {
 	Personality string    `json:"personality"`
 	ModelName   string    `json:"model_name"`
 	Status      string    `json:"status"`
+	Proactivity int       `json:"proactivity"`
 	CreatedAt   time.Time `json:"created_at"`
 }
 
@@ -45,6 +46,7 @@ func toResponse(a *model.DaoAgent) *Response {
 		Personality: a.Personality,
 		ModelName:   a.ModelName,
 		Status:      a.Status,
+		Proactivity: a.Proactivity,
 		CreatedAt:   a.CreatedAt,
 	}
 }

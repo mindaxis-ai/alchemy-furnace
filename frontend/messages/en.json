@@ -10,40 +10,70 @@
     "closeMenu": "Close menu",
     "startCta": "Light the furnace",
     "items": {
-      "home": { "label": "Furnace" },
+      "home": {
+        "label": "Furnace"
+      },
       "pills": {
         "label": "Pills",
         "children": {
-          "all": { "title": "All pills", "description": "Browse every pill forged so far — a thousand language modes" },
-          "new": { "title": "Refine a new pill", "description": "Strike the flint, forge a fresh language-mode pill" },
-          "recipes": { "title": "Recipe canon", "description": "Consult the ancient recipes, learn the craft" }
+          "all": {
+            "title": "All pills",
+            "description": "Browse every pill forged so far — a thousand language modes"
+          },
+          "new": {
+            "title": "Refine a new pill",
+            "description": "Strike the flint, forge a fresh language-mode pill"
+          },
+          "recipes": {
+            "title": "Recipe canon",
+            "description": "Consult the ancient recipes, learn the craft"
+          }
         }
       },
       "agents": {
         "label": "Agents",
         "children": {
-          "all": { "title": "All daoists", "description": "The roster — every agent in the hall" },
-          "invite": { "title": "Recruit a daoist", "description": "Welcome a new agent into the hall and grant a pill" },
-          "bind": { "title": "Bestow a pill", "description": "Bind a pill to a daoist, transform their nature" }
+          "all": {
+            "title": "All daoists",
+            "description": "The roster — every agent in the hall"
+          },
+          "invite": {
+            "title": "Recruit a daoist",
+            "description": "Welcome a new agent into the hall and grant a pill"
+          },
+          "bind": {
+            "title": "Bestow a pill",
+            "description": "Bind a pill to a daoist, transform their nature"
+          }
         }
       },
       "chat": {
         "label": "Discourse",
         "children": {
-          "new": { "title": "New discourse", "description": "Open a new conversation, debate the subtle Way" },
-          "history": { "title": "Past discourses", "description": "Review past sessions, pick up an unfinished thread" }
+          "new": {
+            "title": "New discourse",
+            "description": "Open a new conversation, debate the subtle Way"
+          },
+          "history": {
+            "title": "Past discourses",
+            "description": "Review past sessions, pick up an unfinished thread"
+          }
         }
       },
-      "fusion": { "label": "Fusion" },
-      "fusion": { "label": "Fusion" },
-      "settings": { "label": "Settings" }
+      "fusion": {
+        "label": "Fusion"
+      },
+      "settings": {
+        "label": "Settings"
+      }
     }
   },
   "settings": {
     "tabs": {
       "models": "Model Management",
       "fire": "Furnace",
-      "about": "About"
+      "about": "About",
+      "profile": "My Profile"
     },
     "fire": {
       "title": "Furnace",
@@ -53,14 +83,38 @@
       "smokeLabel": "Smoke density",
       "smokeHint": "0% = no smoke, 100% = heavy",
       "options": {
-        "plume": { "label": "Plume", "desc": "Tapered tongue, sharpens upward, like a real hearth" },
-        "ember": { "label": "Ember", "desc": "Slow orange, quiet and low-key" },
-        "flicker": { "label": "Flicker", "desc": "Short bursts, ritual flair" },
-        "veil": { "label": "Veil", "desc": "Multi-layered haze, grand ceremonial flame" },
-        "classic": { "label": "Classic", "desc": "Original water-mist particles, cream-white blend, retro" },
-        "sanmei": { "label": "Sanmei", "desc": "Ice-blue core + cinnabar outer, alchemy fantasy" },
-        "spark": { "label": "Spark", "desc": "Gold/cinnabar embers shooting up, lantern-rise feel" },
-        "dragon": { "label": "Dragon", "desc": "Long ribbon flame, elegant commanding fire" }
+        "plume": {
+          "label": "Plume",
+          "desc": "Tapered tongue, sharpens upward, like a real hearth"
+        },
+        "ember": {
+          "label": "Ember",
+          "desc": "Slow orange, quiet and low-key"
+        },
+        "flicker": {
+          "label": "Flicker",
+          "desc": "Short bursts, ritual flair"
+        },
+        "veil": {
+          "label": "Veil",
+          "desc": "Multi-layered haze, grand ceremonial flame"
+        },
+        "classic": {
+          "label": "Classic",
+          "desc": "Original water-mist particles, cream-white blend, retro"
+        },
+        "sanmei": {
+          "label": "Sanmei",
+          "desc": "Ice-blue core + cinnabar outer, alchemy fantasy"
+        },
+        "spark": {
+          "label": "Spark",
+          "desc": "Gold/cinnabar embers shooting up, lantern-rise feel"
+        },
+        "dragon": {
+          "label": "Dragon",
+          "desc": "Long ribbon flame, elegant commanding fire"
+        }
       }
     }
   },
@@ -77,10 +131,26 @@
     },
     "stats": {
       "ariaLabel": "Furnace overview",
-      "pills": { "label": "Pills in store", "unit": "", "caption": "Language modes in the pill vault" },
-      "agents": { "label": "Daoists in hall", "unit": "", "caption": "Agents registered in the daoist hall" },
-      "sessions": { "label": "Discourses held", "unit": "", "caption": "Both concluded and ongoing" },
-      "builtins": { "label": "Built-in recipes", "unit": "", "caption": "Pills pre-shipped with the system" }
+      "pills": {
+        "label": "Pills in store",
+        "unit": "",
+        "caption": "Language modes in the pill vault"
+      },
+      "agents": {
+        "label": "Daoists in hall",
+        "unit": "",
+        "caption": "Agents registered in the daoist hall"
+      },
+      "sessions": {
+        "label": "Discourses held",
+        "unit": "",
+        "caption": "Both concluded and ongoing"
+      },
+      "builtins": {
+        "label": "Built-in recipes",
+        "unit": "",
+        "caption": "Pills pre-shipped with the system"
+      }
     },
     "spotlight": {
       "badge": "Freshly forged",
@@ -586,5 +656,81 @@
     "success": "Bestowed",
     "errorLoadAgents": "Failed to load daoist list",
     "errorBind": "Binding failed"
+  },
+  "groupChat": {
+    "create": "Group Chat",
+    "single": "Solo Chat",
+    "selectMembers": "Pick agents (at least 2)",
+    "confirmCreate": "Create",
+    "members": "Members",
+    "membersTitle": "Group Members",
+    "invite": "Invite",
+    "kick": "Remove",
+    "kickConfirm": "Remove {name} from the group?",
+    "untitledGroup": "New Group",
+    "untitledSession": "New Chat",
+    "userLabel": "User",
+    "speaking": "{name} is speaking…",
+    "allSilent": "Everyone stays silent…",
+    "mentioned": "Mentioned",
+    "rename": "Rename",
+    "renameHint": "Click to rename",
+    "renamePlaceholder": "Session name",
+    "cancel": "Cancel",
+    "selectCandidates": "Pick agents to invite",
+    "noCandidates": "No agents to invite",
+    "confirmInvite": "Invite ({count})",
+    "noMembers": "No members yet",
+    "close": "Close",
+    "proactivity": "Proactivity"
+  },
+  "agentDetail": {
+    "editor": {
+      "proactivity": "Proactivity",
+      "proactivityHint": "Willingness to speak in group chats (0-100)"
+    }
+  },
+  "profile": {
+    "userTitle": "User Profile",
+    "agentTitle": "Agent Profile",
+    "userSubtitle": "Local Furnace Master",
+    "defaultUser": "User",
+    "noBio": "This fellow has not written a bio yet.",
+    "noPersonality": "This agent has not declared a doctrine yet.",
+    "editInSettings": "Edit in Settings",
+    "settingsTitle": "My Profile",
+    "settingsSubtitle": "Agents will see this info",
+    "displayName": "Display Name",
+    "displayNamePlaceholder": "Give yourself a title",
+    "bio": "Bio",
+    "bioPlaceholder": "Your hobbies, pursuits, or what you hope to gain from the agents...",
+    "bioHint": "1-500 chars. Markdown not supported yet.",
+    "save": "Save",
+    "saved": "Saved",
+    "saving": "Saving...",
+    "saveError": "Save failed, please retry",
+    "loadError": "Failed to load profile",
+    "required": "Display name cannot be empty",
+    "tooLong": "Cannot exceed {max} characters"
+  },
+  "chatView": {
+    "newSession": "New Session",
+    "mode": {
+      "single": "Solo Talk",
+      "group": "Group Discussion",
+      "singleHint": "Sit down with one agent",
+      "groupHint": "Invite 2+ agents to the furnace",
+      "selectAgent": "Select an agent",
+      "selectAgents": "Invite agents to the table",
+      "selectAtLeast": "Select at least {n} agents",
+      "noAgents": "No agents yet. Recruit one first.",
+      "confirm": "Open",
+      "backToList": "Back"
+    }
+  },
+  "mention": {
+    "placeholder": "Pick an agent to mention...",
+    "noMatches": "No matching agents",
+    "allMembers": "All members"
   }
 }

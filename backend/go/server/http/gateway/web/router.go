@@ -26,6 +26,7 @@ func Register(r *gin.Engine) error {
 	modelService := model_service.New(daoModel, provider)
 	systemHandler := system.New(modelService)
 	modelHandler := handler.NewModel()
+	userHandler := handler.NewUser()
 
 	// 金丹管理(UUID 对外标识)
 	pills := v1.Group("/pills")
@@ -64,7 +65,10 @@ func Register(r *gin.Engine) error {
 		chatGroup.POST("/sessions", router.Wrapper(chatHandler.CreateSession))
 		chatGroup.GET("/sessions", router.WrapperPage(chatHandler.ListSessions))
 		chatGroup.GET("/sessions/:uuid/messages", router.WrapperPage(chatHandler.GetMessages))
-		chatGroup.POST("/sse/:uuid", chatHandler.SSEChat) // RAW: 自行写出标准 SSE 事件
+		chatGroup.PUT("/sessions/:uuid", router.Wrapper(chatHandler.UpdateSession))
+		chatGroup.POST("/sessions/:uuid/members", router.Wrapper(chatHandler.AddMembers))
+		chatGroup.DELETE("/sessions/:uuid/members/:agent_uuid", router.Wrapper(chatHandler.RemoveMember))
+		chatGroup.POST("/sse/:uuid", chatHandler.SSEChat) // RAW: 自行写出标准 SSE 事件(单/群分流)
 	}
 
 	// 试丹(临时组合「基础性格 + 金丹」预览,无需创建道人)
@@ -100,6 +104,13 @@ func Register(r *gin.Engine) error {
 		models.GET("/:uuid", router.Wrapper(modelHandler.GetModel))
 		models.PUT("/:uuid", router.Wrapper(modelHandler.UpdateModel))
 		models.DELETE("/:uuid", router.Wrapper(modelHandler.DeleteModel))
+	}
+
+	// 用户档案(本地/单用户部署,整库固定 id=1)
+	userGroup := v1.Group("/user")
+	{
+		userGroup.GET("/profile", router.Wrapper(userHandler.Get))
+		userGroup.PUT("/profile", router.Wrapper(userHandler.Update))
 	}
 
 	return nil

@@ -53,6 +53,7 @@ type DaoAgent struct {
 	Personality string    `json:"personality" gorm:"type:text;comment:基础性格描述/系统提示词"`
 	ModelName   string    `json:"model_name" gorm:"size:50;default:gpt-4o;comment:使用的LLM模型名称"`
 	Status      string    `json:"status" gorm:"size:20;default:active;comment:状态: active(活跃)/inactive(停用)"`
+	Proactivity int       `json:"proactivity" gorm:"default:50;comment:主动性/表达欲(0-100,群聊发言欲)"`
 	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 
 	// 关联关系：一个道人服用多个金丹
@@ -118,19 +119,27 @@ func (LanguagePattern) TableName() string {
 
 // ---------- 对话会话 ----------
 
+// 会话类型常量
+const (
+	SessionTypeSingle = "single" // 单聊(1v1)
+	SessionTypeGroup  = "group"  // 群聊(多道人)
+)
+
 // ChatSession 对话会话模型，对应 chat_sessions 表
-// 用户与某个道人之间的对话上下文，一个会话包含多条消息
+// single: 用户与某个道人;group: 用户与多个道人(成员见 session_members,AgentID 为 NULL)
 type ChatSession struct {
 	ID        uint      `json:"id" gorm:"primaryKey;autoIncrement;comment:会话唯一标识"`
-	UUID        uuid.UUID `json:"-" gorm:"type:uuid;uniqueIndex;comment:对外标识"`
-	AgentID   uint      `json:"agent_id" gorm:"not null;index;comment:关联的道人ID"`
-	Title     string    `json:"title" gorm:"size:200;comment:会话标题"`
+	UUID      uuid.UUID `json:"-" gorm:"type:uuid;uniqueIndex;comment:对外标识"`
+	Type      string    `json:"type" gorm:"size:10;default:single;index;comment:会话类型: single/group"`
+	AgentID   *uint     `json:"agent_id" gorm:"index;comment:单聊所属道人ID;群聊为NULL"`
+	Title     string    `json:"title" gorm:"size:200;comment:会话标题(空=待自动命名)"`
 	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime;comment:更新时间"`
 
 	// 关联关系
-	Agent    DaoAgent      `json:"agent,omitempty" gorm:"foreignKey:AgentID;references:ID;constraint:OnDelete:CASCADE;"`
-	Messages []ChatMessage `json:"messages,omitempty" gorm:"foreignKey:SessionID;references:ID;constraint:OnDelete:CASCADE;"`
+	Agent    DaoAgent        `json:"agent,omitempty" gorm:"foreignKey:AgentID;references:ID;constraint:OnDelete:CASCADE;"`
+	Messages []ChatMessage   `json:"messages,omitempty" gorm:"foreignKey:SessionID;references:ID;constraint:OnDelete:CASCADE;"`
+	Members  []SessionMember `json:"members,omitempty" gorm:"foreignKey:SessionID;references:ID;constraint:OnDelete:CASCADE;"`
 }
 
 // TableName 指定表名
@@ -146,20 +155,43 @@ func (ChatSession) TableName() string {
 // sources 字段已废弃，保留 JSONB 列以兼容历史数据，不再写入新数据
 type ChatMessage struct {
 	ID        uint      `json:"id" gorm:"primaryKey;autoIncrement;comment:消息唯一标识"`
-	UUID        uuid.UUID `json:"-" gorm:"type:uuid;uniqueIndex;comment:对外标识"`
+	UUID      uuid.UUID `json:"-" gorm:"type:uuid;uniqueIndex;comment:对外标识"`
 	SessionID uint      `json:"session_id" gorm:"not null;index;comment:所属会话ID"`
 	Role      string    `json:"role" gorm:"size:20;not null;comment:角色: user/assistant/system"`
 	Content   string    `json:"content" gorm:"type:text;not null;comment:消息内容"`
 	Sources   JSONMap   `json:"sources,omitempty" gorm:"serializer:json;comment:废弃: 原RAG引用来源(JSONB格式)"`
+	AgentID   *uint     `json:"agent_id" gorm:"index;comment:发言道人ID(群聊);NULL=用户或系统通知"`
+	Mentions  JSONMap   `json:"mentions,omitempty" gorm:"serializer:json;comment:@提及:{\"agents\":[agent_uuid…],\"user\":bool}"`
 	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 
 	// 关联关系
 	Session ChatSession `json:"session,omitempty" gorm:"foreignKey:SessionID;references:ID;constraint:OnDelete:CASCADE;"`
+	Agent   *DaoAgent   `json:"agent,omitempty" gorm:"foreignKey:AgentID;references:ID;constraint:OnDelete:SET NULL;"`
 }
 
 // TableName 指定表名
 func (ChatMessage) TableName() string {
 	return "chat_messages"
+}
+
+// ---------- 群聊成员 ----------
+
+// SessionMember 群聊成员模型，对应 session_members 表
+// 仅 group 会话使用;(session_id, agent_id) 联合唯一;被踢后重新邀请=删旧行插新行
+type SessionMember struct {
+	ID        uint      `json:"id" gorm:"primaryKey;autoIncrement;comment:成员记录唯一标识"`
+	SessionID uint      `json:"session_id" gorm:"not null;uniqueIndex:idx_session_agent;index;comment:所属会话ID"`
+	AgentID   uint      `json:"agent_id" gorm:"not null;uniqueIndex:idx_session_agent;comment:道人ID"`
+	SortOrder int       `json:"sort_order" gorm:"default:0;comment:发言顺序(拉人顺序)"`
+	JoinedAt  time.Time `json:"joined_at" gorm:"autoCreateTime;comment:入群时间"`
+
+	// 关联关系
+	Agent DaoAgent `json:"agent,omitempty" gorm:"foreignKey:AgentID;references:ID;constraint:OnDelete:CASCADE;"`
+}
+
+// TableName 指定表名
+func (SessionMember) TableName() string {
+	return "session_members"
 }
 
 // ---------- LLM 供应商配置 ----------
@@ -520,3 +552,31 @@ func (m *LLMModel) BeforeCreate(tx *gorm.DB) error {
 	}
 	return nil
 }
+
+// ---------- 用户简介(单行表;本地/单用户部署,无注册登录) ----------
+
+// UserProfile 用户档案表
+// 整库固定 1 行(id=1):本地或单用户部署,无注册登录
+// 字段:
+//   - DisplayName: 聊天消息/选人列表展示的"我"的名字
+//   - Bio: 点击用户头像的 popover 简介(支持多行)
+//   - Avatar: 自定义头像(URL 或 data:image/...);为空时由前端首字渐变
+type UserProfile struct {
+	ID          uint      `json:"-" gorm:"primaryKey;autoIncrement;comment:固定为 1"`
+	DisplayName string    `json:"display_name" gorm:"size:64;not null;default:'用户';comment:显示名"`
+	Bio         string    `json:"bio" gorm:"type:text;comment:简介(支持多行,最多 500 字)"`
+	Avatar      string    `json:"avatar" gorm:"size:500;default:'';comment:头像 URL 或 data URI"`
+	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime;comment:最近更新时间"`
+}
+
+// TableName 指定表名
+func (UserProfile) TableName() string {
+	return "user_profile"
+}
+
+// BeforeCreate 强制单行(id=1),避免误增
+func (m *UserProfile) BeforeCreate(tx *gorm.DB) error {
+	m.ID = 1
+	return nil
+}
+

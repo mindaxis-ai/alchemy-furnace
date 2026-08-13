@@ -8,12 +8,13 @@ import (
 	"bytes"
 	"context"
 	stderrors "errors"
-	"encoding/json"
 	"fmt"
+	"encoding/json"
 	"io"
 	"net"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 	"time"
 
 	"github.com/alchemy-furnace/server/internal/configuration"
@@ -41,20 +42,19 @@ func New(chat dao.Chat, agent dao.Agent, pattern service.LanguagePatternProvider
 	return &Chat{chat: chat, agent: agent, pattern: pattern, creds: creds, engineBaseURL: engineBaseURL}
 }
 
-// CreateSession 创建会话;agentUID 为道人对外 UUID,title 为空时按道人名生成默认标题
-func (s *Chat) CreateSession(ctx context.Context, agentUID uuid.UUID, title string) (*model.ChatSession, ierr.Error) {
+// CreateSession 创建 1v1 会话;agentUID 为道人对外 UUID
+// 标题一律留空,由首个问答自动命名(群聊/单聊统一);group 会话改由 GroupService 路径另建
+func (s *Chat) CreateSession(ctx context.Context, agentUID uuid.UUID) (*model.ChatSession, ierr.Error) {
 	agent, err := s.agent.TakeAgentByUUID(ctx, agentUID)
 	if err != nil {
 		return nil, err.Relation(ierr.ErrorRecordNotFound("service.chat.create_take_agent"))
 	}
 
-	if title == "" {
-		title = fmt.Sprintf("与 %s 的论道", agent.Name)
-	}
-
+	agentID := agent.ID
 	session := &model.ChatSession{
-		AgentID: agent.ID,
-		Title:   title,
+		Type:    model.SessionTypeSingle,
+		AgentID: &agentID,
+		Title:   "", // 标题一律留空,由首个问答自动命名
 	}
 	if err := s.chat.SaveSession(ctx, session); err != nil {
 		return nil, err.Relation(ierr.ErrorServerInternalError("service.chat.create_save"))
@@ -64,7 +64,7 @@ func (s *Chat) CreateSession(ctx context.Context, agentUID uuid.UUID, title stri
 
 	zap.L().Info("[炼丹炉] 新的论道会话开启",
 		zap.String("session_uuid", session.UUID.String()),
-		zap.String("title", session.Title),
+		zap.String("type", session.Type),
 		zap.String("agent", agent.Name))
 	return session, nil
 }
@@ -162,6 +162,10 @@ func (s *Chat) DeleteSession(ctx context.Context, sessionUID uuid.UUID) ierr.Err
 
 // UpdateSessionTitle 更新会话标题
 func (s *Chat) UpdateSessionTitle(ctx context.Context, sessionUID uuid.UUID, title string) ierr.Error {
+	title = strings.TrimSpace(title)
+	if title == "" || utf8.RuneCountInString(title) > 30 {
+		return ierr.New(ierr.ErrorTypeInvalidRequest, "service.chat.title_invalid", "标题需为 1-30 个字符")
+	}
 	session, err := s.chat.TakeSessionByUUID(ctx, sessionUID)
 	if err != nil {
 		return err.Relation(ierr.ErrorRecordNotFound("service.chat.update_title_take"))
@@ -242,6 +246,54 @@ func (s *Chat) StreamChat(ctx context.Context, messages []map[string]string, cre
 	}
 }
 
+// callChatCompletion 调用 Python 非流式对话接口(标题生成等短任务)
+// 返回 content 字段;错误经 engine.MapEngineError 映射
+func (s *Chat) callChatCompletion(ctx context.Context, messages []map[string]string, creds *credential.ModelCredentials) (string, error) {
+	url := fmt.Sprintf("%s/api/v1/chat/completions", s.engineBaseURL)
+	modelName := configuration.Configuration.LLM.DefaultModel
+	if creds != nil && creds.Model != "" {
+		modelName = creds.Model
+	}
+	reqBody := map[string]interface{}{"messages": messages, "model": modelName}
+	if creds != nil {
+		if creds.BaseURL != "" {
+			reqBody["base_url"] = creds.BaseURL
+		}
+		if creds.APIKey != "" {
+			reqBody["api_key"] = creds.APIKey
+		}
+	}
+	jsonBody, _ := json.Marshal(reqBody)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return "", fmt.Errorf("构建对话请求失败: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		return "", &engine.EngineError{Op: "语言引擎对话接口", StatusCode: 0, Body: err.Error()}
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", &engine.EngineError{Op: "语言引擎对话接口", StatusCode: resp.StatusCode, Body: string(body)}
+	}
+	// Python 端走统一 BaseResponse 包络:{code, message, data:{content, model, usage}}
+	var wrapper struct {
+		Data struct {
+			Content string `json:"content"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&wrapper); err != nil {
+		return "", fmt.Errorf("解析对话响应失败: %w", err)
+	}
+	return wrapper.Data.Content, nil
+}
+
 // callChatStream 调用 Python 语言引擎的流式对话接口(SSE),返回响应流
 // messages 应已包含合成后的 system 消息;ctx 取消时上游 HTTP 请求随之中断(停止指令贯穿取消链)
 // creds 为按请求传递的模型凭证;base_url/api_key 为空时 Python 回退自身环境变量(向后兼容)
@@ -286,4 +338,138 @@ func (s *Chat) callChatStream(ctx context.Context, messages []map[string]string,
 	}
 
 	return resp.Body, nil
+}
+
+
+// CreateGroupSession 建群:成员≥2、去重、全部 active;title 置空待自动命名
+func (s *Chat) CreateGroupSession(ctx context.Context, agentUIDs []uuid.UUID) (*model.ChatSession, ierr.Error) {
+	// 去重(保序)
+	seen := map[uuid.UUID]bool{}
+	uids := make([]uuid.UUID, 0, len(agentUIDs))
+	for _, u := range agentUIDs {
+		if !seen[u] {
+			seen[u] = true
+			uids = append(uids, u)
+		}
+	}
+	if len(uids) < 2 {
+		return nil, ierr.New(ierr.ErrorTypeInvalidRequest, "service.chat.group_min_members", "群聊至少需要 2 位道人")
+	}
+
+	agents := make([]*model.DaoAgent, 0, len(uids))
+	for _, u := range uids {
+		a, err := s.agent.TakeAgentByUUID(ctx, u)
+		if err != nil || a.Status != "active" {
+			return nil, ierr.New(ierr.ErrorTypeInvalidRequest, "service.chat.group_member_invalid", "成员不存在或已停用")
+		}
+		agents = append(agents, a)
+	}
+
+	session := &model.ChatSession{Type: model.SessionTypeGroup, Title: ""}
+	if err := s.chat.SaveSession(ctx, session); err != nil {
+		return nil, err.Relation(ierr.ErrorServerInternalError("service.chat.group_save"))
+	}
+	members := make([]*model.SessionMember, 0, len(agents))
+	for i, a := range agents {
+		members = append(members, &model.SessionMember{SessionID: session.ID, AgentID: a.ID, SortOrder: i})
+	}
+	if err := s.chat.SaveMembers(ctx, members); err != nil {
+		return nil, err.Relation(ierr.ErrorServerInternalError("service.chat.group_save_members"))
+	}
+	zap.L().Info("[炼丹炉] 群聊开坛", zap.String("session_uuid", session.UUID.String()), zap.Int("members", len(members)))
+	return session, nil
+}
+
+// ListMembers 列群成员(按发言顺序)
+func (s *Chat) ListMembers(ctx context.Context, sessionUID uuid.UUID) ([]*model.SessionMember, ierr.Error) {
+	session, err := s.chat.TakeSessionByUUID(ctx, sessionUID)
+	if err != nil {
+		return nil, err.Relation(ierr.ErrorRecordNotFound("service.chat.members_take"))
+	}
+	return s.chat.FindMembers(ctx, session.ID)
+}
+
+// AddMembers 邀请入群(已在群的静默跳过),落系统通知消息
+func (s *Chat) AddMembers(ctx context.Context, sessionUID uuid.UUID, agentUIDs []uuid.UUID) ierr.Error {
+	session, err := s.chat.TakeSessionByUUID(ctx, sessionUID)
+	if err != nil {
+		return err.Relation(ierr.ErrorRecordNotFound("service.chat.invite_take"))
+	}
+	if session.Type != model.SessionTypeGroup {
+		return ierr.New(ierr.ErrorTypeInvalidRequest, "service.chat.invite_not_group", "仅群聊会话支持邀请成员")
+	}
+	existing, ferr := s.chat.FindMembers(ctx, session.ID)
+	if ferr != nil {
+		return ferr.Relation(ierr.ErrorServerInternalError("service.chat.invite_find"))
+	}
+	inGroup := map[uint]bool{}
+	maxSort := -1
+	for _, m := range existing {
+		inGroup[m.AgentID] = true
+		if m.SortOrder > maxSort {
+			maxSort = m.SortOrder
+		}
+	}
+
+	var newMembers []*model.SessionMember
+	var names []string
+	for _, u := range agentUIDs {
+		a, aerr := s.agent.TakeAgentByUUID(ctx, u)
+		if aerr != nil || a.Status != "active" {
+			return ierr.New(ierr.ErrorTypeInvalidRequest, "service.chat.invite_member_invalid", "邀请的道人不存在或已停用")
+		}
+		if inGroup[a.ID] {
+			continue
+		}
+		maxSort++
+		newMembers = append(newMembers, &model.SessionMember{SessionID: session.ID, AgentID: a.ID, SortOrder: maxSort})
+		names = append(names, a.Name)
+		inGroup[a.ID] = true
+	}
+	if len(newMembers) == 0 {
+		return nil
+	}
+	if err := s.chat.SaveMembers(ctx, newMembers); err != nil {
+		return err.Relation(ierr.ErrorServerInternalError("service.chat.invite_save"))
+	}
+	// 系统通知(role=system,不进 LLM 历史,前端居中灰条)
+	if _, serr := s.SaveMessage(ctx, session.ID, "system", fmt.Sprintf("你邀请了 %s 入群", strings.Join(names, "、"))); serr != nil {
+		zap.L().Warn("[炼丹炉] 写入群通知失败", zap.Error(serr))
+	}
+	return nil
+}
+
+// RemoveMember 踢出群,落系统通知消息
+func (s *Chat) RemoveMember(ctx context.Context, sessionUID uuid.UUID, agentUID uuid.UUID) ierr.Error {
+	session, err := s.chat.TakeSessionByUUID(ctx, sessionUID)
+	if err != nil {
+		return err.Relation(ierr.ErrorRecordNotFound("service.chat.kick_take"))
+	}
+	agent, aerr := s.agent.TakeAgentByUUID(ctx, agentUID)
+	if aerr != nil {
+		return aerr.Relation(ierr.ErrorRecordNotFound("service.chat.kick_agent"))
+	}
+	if err := s.chat.DeleteMember(ctx, session.ID, agent.ID); err != nil {
+		return err // DAO 已区分 not-found / internal
+	}
+	if _, serr := s.SaveMessage(ctx, session.ID, "system", fmt.Sprintf("%s 被移出群", agent.Name)); serr != nil {
+		zap.L().Warn("[炼丹炉] 写入群通知失败", zap.Error(serr))
+	}
+	return nil
+}
+
+// SaveAgentMessage 写带道人归属与提及的消息(群聊编排器用)
+func (s *Chat) SaveAgentMessage(ctx context.Context, sessionID uint, agentID uint, role string, content string, mentions model.JSONMap) (*model.ChatMessage, ierr.Error) {
+	aid := agentID
+	msg := &model.ChatMessage{
+		SessionID: sessionID,
+		Role:      role,
+		Content:   content,
+		AgentID:   &aid,
+		Mentions:  mentions,
+	}
+	if err := s.chat.SaveMessage(ctx, msg); err != nil {
+		return nil, err.Relation(ierr.ErrorServerInternalError("service.chat.save_agent_message"))
+	}
+	return msg, nil
 }

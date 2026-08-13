@@ -23,6 +23,7 @@ import (
 	"github.com/alchemy-furnace/server/internal/service/trial_service"
 	"github.com/alchemy-furnace/server/internal/synthesis"
 	"github.com/google/wire"
+	"gorm.io/gorm"
 )
 
 // ==================== DAO Provider(真实/演示二选一) ====================
@@ -136,3 +137,12 @@ var ProviderService = wire.NewSet(
 var ModelService = wire.NewSet(
 	model_service.New, wire.Bind(new(iservice.Model), new(*model_service.ModelService)),
 )
+
+// ProvideDB 暴露 GORM *DB 给需要直接 query 的 handler(目前只有 user 包用)
+func ProvideDB() *gorm.DB {
+	if configuration.IsDemo() {
+		// 演示模式无真实 DB;用户档案 handler 应走内存路径(本次实现未支持,先 nil 触底保护)
+		return nil
+	}
+	return dao.GetDB()
+}

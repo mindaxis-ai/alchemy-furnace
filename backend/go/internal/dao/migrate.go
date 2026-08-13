@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/alchemy-furnace/server/model"
+	"gorm.io/gorm"
 )
 
 // allMigratableModels 全部需要 AutoMigrate 的模型(顺序无关:GORM 解析外键延迟建表)
@@ -24,8 +25,21 @@ var allMigratableModels = []any{
 	&model.LanguagePattern{},
 	&model.ChatSession{},
 	&model.ChatMessage{},
+	&model.SessionMember{},
 	&model.LLMProvider{},
 	&model.LLMModel{},
+	&model.UserProfile{},
+}
+
+// nullableAlterations 新老 schema 漂移:GORM AutoMigrate 不会把已存在的 NOT NULL 列改为可空
+// 这里显式 ALTER;运行前会查 information_schema 跳过已是可空的列(幂等)
+var nullableAlterations = []struct {
+	Table  string
+	Column string
+}{
+	// 群聊场景:会话和消息的 AgentID 由单聊时的必填改为可空(指针化)
+	{"chat_sessions", "agent_id"},
+	{"chat_messages", "agent_id"},
 }
 
 // MigrateUp 同步全部业务表到当前模型定义(幂等,跨驱动)
@@ -37,7 +51,37 @@ func MigrateUp() error {
 	if err := DB.AutoMigrate(allMigratableModels...); err != nil {
 		return fmt.Errorf("AutoMigrate 失败: %w", err)
 	}
+	// 手动 ALTER 列约束:GORM 无法回溯调整已建列的可空性
+	for _, alt := range nullableAlterations {
+		if err := alterColumnToNullable(DB, alt.Table, alt.Column); err != nil {
+			return fmt.Errorf("ALTER %s.%s 失败: %w", alt.Table, alt.Column, err)
+		}
+	}
 	return nil
+}
+
+// alterColumnToNullable 将指定列改为可空(已是可空则跳过);驱动差异:
+//   - PostgreSQL:走 information_schema + ALTER COLUMN DROP NOT NULL
+//   - SQLite/MySQL:GORM AutoMigrate 已能直接调整,这里 no-op
+func alterColumnToNullable(db *gorm.DB, table, column string) error {
+	if db.Dialector.Name() != "postgres" {
+		return nil
+	}
+	var notNull bool
+	row := db.Raw(`
+		SELECT is_nullable = 'NO'
+		FROM information_schema.columns
+		WHERE table_schema = CURRENT_SCHEMA()
+		  AND table_name = ? AND column_name = ?
+	`, table, column).Row()
+	if err := row.Scan(&notNull); err != nil {
+		return fmt.Errorf("查询可空性失败: %w", err)
+	}
+	if !notNull {
+		return nil
+	}
+	stmt := fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s DROP NOT NULL", table, column)
+	return db.Exec(stmt).Error
 }
 
 // MigrateDown 丢弃全部业务表(等同 drop-all;用于本地 / 演示环境重建)

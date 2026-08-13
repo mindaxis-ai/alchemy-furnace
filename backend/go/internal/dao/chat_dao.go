@@ -96,7 +96,8 @@ func (d *ChatDao) FindMessages(ctx context.Context, sessionID uint, page int, si
 	}
 
 	var messages []*model.ChatMessage
-	if err := db.Order("created_at ASC").
+	if err := db.Preload("Agent").
+		Order("created_at ASC").
 		Offset((page - 1) * size).Limit(size).
 		Find(&messages).Error; err != nil {
 		return 0, nil, errors.ErrorServerInternalError("dao.chat.find_messages")
@@ -113,6 +114,44 @@ func (d *ChatDao) SaveMessage(ctx context.Context, message *model.ChatMessage) e
 		Where("id = ?", message.SessionID).
 		Update("updated_at", time.Now()).Error; err != nil {
 		return errors.ErrorServerInternalError("dao.chat.save_message_touch")
+	}
+	return nil
+}
+
+// SaveMembers 批量写入群成员
+func (d *ChatDao) SaveMembers(ctx context.Context, members []*model.SessionMember) errors.Error {
+	if len(members) == 0 {
+		return nil
+	}
+	if err := GetDB().WithContext(ctx).Create(members).Error; err != nil {
+		return errors.ErrorServerInternalError("dao.chat.save_members")
+	}
+	return nil
+}
+
+// FindMembers 按发言顺序查询群成员(预加载道人)
+func (d *ChatDao) FindMembers(ctx context.Context, sessionID uint) ([]*model.SessionMember, errors.Error) {
+	var members []*model.SessionMember
+	if err := GetDB().WithContext(ctx).
+		Preload("Agent").
+		Where("session_id = ?", sessionID).
+		Order("sort_order ASC").
+		Find(&members).Error; err != nil {
+		return nil, errors.ErrorServerInternalError("dao.chat.find_members")
+	}
+	return members, nil
+}
+
+// DeleteMember 移出群成员
+func (d *ChatDao) DeleteMember(ctx context.Context, sessionID uint, agentID uint) errors.Error {
+	res := GetDB().WithContext(ctx).
+		Where("session_id = ? AND agent_id = ?", sessionID, agentID).
+		Delete(&model.SessionMember{})
+	if res.Error != nil {
+		return errors.ErrorServerInternalError("dao.chat.delete_member")
+	}
+	if res.RowsAffected == 0 {
+		return errors.ErrorRecordNotFound("dao.chat.delete_member")
 	}
 	return nil
 }
