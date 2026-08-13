@@ -7,13 +7,14 @@
  * 选择道人后开始对话（标准 SSE 流式输出，无 RAG 引用来源）
  * SSE：fetch POST + ReadableStream；停止 = AbortController 中断连接
  */
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   MessageSquare,
   Plus,
   Loader2,
   ChevronLeft,
+  ChevronDown,
   Bot,
   Send,
   X,
@@ -38,6 +39,13 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [showAgentSelect, setShowAgentSelect] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesScrollRef = useRef<HTMLDivElement>(null)
+  /** 是否粘底(用户当前在底部附近)。ref 而非 state:scroll 事件高频触发,避免触发 re-render */
+  const stickyToBottomRef = useRef(true)
+  /** 「回到底部」浮按钮显示状态 */
+  const [showJumpToBottom, setShowJumpToBottom] = useState(false)
+  /** 离底多少 px 算粘底(给用户一点容差,避免边界值抖动) */
+  const STICKY_THRESHOLD_PX = 80
 
   const currentSession = chatState.currentSession
   const messages = chatState.messages
@@ -59,18 +67,78 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
     }
   }, [sessionId, loadMessages, dispatch])
 
-  // 自动滚动到底部
+  // 自动滚动到底部 — 仅当用户"粘底"时才跟随,避免抢用户滚轮
+  // 流式输出时 messages 每 ~30ms 变一次,如果不判断 stickyToBottom,用户的滚轮会被
+  // 持续 scrollIntoView 抢走,导致"滚不上去/抖动"
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (!stickyToBottomRef.current) return
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [messages, chatState.streaming])
+
+  // 切换会话:强制粘底 + 滚到底(等消息列表渲染完再滚)
+  useEffect(() => {
+    if (!currentSession) return
+    // 等 messages 渲染完(useEffect 顺序:先 messages effect,后这里)
+    const t = setTimeout(() => {
+      stickyToBottomRef.current = true
+      setShowJumpToBottom(false)
+      messagesEndRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' })
+    }, 50)
+    return () => clearTimeout(t)
+  }, [currentSession?.id])
 
   /** 发送消息 */
   const handleSend = async () => {
     if (!input.trim() || !currentSession || chatState.streaming) return
     const content = input.trim()
     setInput('')
+    // 发送时启用粘底(用户刚发了消息,理应看到 AI 回复)
+    stickyToBottomRef.current = true
+    setShowJumpToBottom(false)
     await streamMessage(currentSession.id, content)
   }
+
+  // 发送去重锁: 某些 IME/浏览器组合下,Enter 可能触发 onKeyDown 与 blur 双事件,
+  // 或 React 严格模式双重触发。150ms 内只发一次。
+  const sendingLockRef = useRef(false)
+  const handleSendOnce = async () => {
+    if (sendingLockRef.current) {
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('[ChatView] 发送被去重锁拦截')
+      }
+      return
+    }
+    sendingLockRef.current = true
+    try {
+      await handleSend()
+    } finally {
+      setTimeout(() => { sendingLockRef.current = false }, 150)
+    }
+  }
+
+  // 滚动监听:根据用户离底距离,更新粘底状态
+  // 离底 <= 80px 视为粘底,> 80px 视为"已离开底部",停止自动滚
+  const handleMessagesScroll = useCallback(() => {
+    const el = messagesScrollRef.current
+    if (!el) return
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+    const sticky = distanceFromBottom <= STICKY_THRESHOLD_PX
+    stickyToBottomRef.current = sticky
+    setShowJumpToBottom(prev => {
+      if (prev === !sticky) return prev
+      return !sticky
+    })
+  }, [])
+
+  /**
+   * 用户主动「回到底部」:重新启用粘底并滚到底
+   * 与 DeepSeek / ChatGPT / Claude 一致的浮按钮行为
+   */
+  const jumpToBottom = useCallback(() => {
+    stickyToBottomRef.current = true
+    setShowJumpToBottom(false)
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+  }, [])
 
   /** 创建会话并跳转 */
   const handleCreateSession = async (agentId: string) => {
@@ -334,7 +402,7 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
         </div>
 
         {/* 消息列表 */}
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+        <div ref={messagesScrollRef} onScroll={handleMessagesScroll} className="flex-1 overflow-y-auto relative px-4 py-4 space-y-4">
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full text-center">
               <Sparkles className="w-10 h-10 text-sage/50 mb-3" />
@@ -377,6 +445,32 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
           )}
 
           <div ref={messagesEndRef} />
+
+          {/* 「回到底部」浮按钮:用户滚上去后才出现(deepseek/chatgpt/claude 同款) */}
+          {showJumpToBottom && (
+            <button
+              type="button"
+              onClick={jumpToBottom}
+              aria-label="回到底部"
+              title="回到底部"
+              className="
+                absolute bottom-4 left-1/2 -translate-x-1/2 z-10
+                inline-flex items-center gap-1.5
+                h-9 px-3.5 rounded-full
+                bg-card/95 backdrop-blur
+                border border-gold/40 hover:border-gold
+                text-gold hover:text-foreground
+                shadow-lg shadow-black/20
+                text-xs font-medium
+                transition-all duration-150
+                hover:scale-105 active:scale-95
+                animate-in fade-in slide-in-from-bottom-2
+              "
+            >
+              <ChevronDown className="w-4 h-4" />
+              <span>回到底部</span>
+            </button>
+          )}
         </div>
 
         {/* 输入框 */}
@@ -388,7 +482,7 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
               onKeyDown={e => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault()
-                  handleSend()
+                  handleSendOnce()
                 }
               }}
               placeholder="向道人请教..."
@@ -397,7 +491,7 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
             />
             <button
               aria-label={chatState.streaming ? '停止输出' : '发送'}
-              onClick={chatState.streaming ? stopStream : handleSend}
+              onClick={chatState.streaming ? stopStream : handleSendOnce}
               disabled={!chatState.streaming && !input.trim()}
               className="dao-btn-primary px-3 py-2.5 flex-shrink-0 disabled:opacity-40"
               title={chatState.streaming ? '停止输出' : '发送'}

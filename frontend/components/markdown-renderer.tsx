@@ -3,9 +3,14 @@
 /**
  * Markdown 渲染组件
  * 支持代码高亮、表格、列表等常见 Markdown 语法
- * 使用 react-markdown + remark-gfm + highlight.js（浅色主题）
+ * 使用 react-markdown + remark-gfm + highlight.js(浅色主题)
+ *
+ * 流式性能:
+ *   - streaming=true 时: 纯文本逐字显示(跳过 react-markdown 解析 + hljs 全局扫描)
+ *     这避免了每 chunk 都 O(n) 重新解析,让 LLM 流式逐字进入 UI 跟得上
+ *   - streaming=false 时: 完整 markdown 渲染(代码高亮、表格等)
  */
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
@@ -14,16 +19,45 @@ import 'highlight.js/styles/github.min.css'
 
 interface MarkdownRendererProps {
   content: string
+  /**
+   * 是否处于流式输出中
+   * - true:  纯文本逐字显示(零解析开销,流式体感顺滑)
+   * - false: 完整 markdown 渲染
+   */
+  streaming?: boolean
 }
 
-export function MarkdownRenderer({ content }: MarkdownRendererProps) {
-  // 代码高亮
+export function MarkdownRenderer({ content, streaming = false }: MarkdownRendererProps) {
+  // 代码高亮的容器 ref — 只在流结束后 highlight 当前容器(而非 hljs.highlightAll 全局扫描)
+  const containerRef = useRef<HTMLDivElement>(null)
+
   useEffect(() => {
-    hljs.highlightAll()
-  }, [content])
+    if (streaming) return // 流中不做高亮,等流结束切到 markdown 模式时再做
+    if (!containerRef.current) return
+    // 只高亮当前容器内的 code 块(避免 hljs.highlightAll() 扫整页)
+    containerRef.current.querySelectorAll('pre code').forEach((block) => {
+      // 已高亮过则跳过(react-markdown 重渲可能不重置 class)
+      if (block.classList.contains('hljs')) {
+        try {
+          hljs.highlightElement(block as HTMLElement)
+        } catch {
+          /* 忽略高亮异常,回退到纯文本 */
+        }
+      }
+    })
+  }, [content, streaming])
+
+  if (streaming) {
+    // 流式模式: 纯文本(保留换行),无 markdown 解析,光标放在最末由父组件光标 span 实现
+    return (
+      <div ref={containerRef} className="whitespace-pre-wrap break-words leading-relaxed">
+        {content}
+      </div>
+    )
+  }
 
   return (
-    <div className="markdown-body">
+    <div ref={containerRef} className="markdown-body">
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkBreaks]}
         components={{
