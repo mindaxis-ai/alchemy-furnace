@@ -18,10 +18,25 @@ interface ChatMessageProps {
   message: ChatMessageType
   /** 是否正在流式输出中 */
   streaming?: boolean
+  /** 群聊: 成员列表(用于 @ 提及查名字) */
+  members?: import('@/services/types').GroupMember[]
 }
 
-export function ChatMessage({ message, streaming = false }: ChatMessageProps) {
+export function ChatMessage({ message, streaming = false, members }: ChatMessageProps) {
   const t = useTranslations('chatMessage')
+  const tGroup = useTranslations('groupChat')
+
+  // 群聊 system 通知条(成员变动 / 整轮沉默)
+  if (message.role === 'system' && !message.is_error) {
+    return (
+      <div className="flex justify-center animate-in fade-in duration-300 my-1">
+        <span className="text-[10px] text-muted-foreground bg-muted px-3 py-1 rounded-full">
+          {message.content}
+        </span>
+      </div>
+    )
+  }
+
   const isUser = message.role === 'user'
 
   return (
@@ -38,7 +53,9 @@ export function ChatMessage({ message, streaming = false }: ChatMessageProps) {
           : 'bg-gold/15 text-gold border border-gold/30'
         }
       `}>
-        {isUser ? <User className="w-5 h-5" /> : <Bot className="w-5 h-5" />}
+        {isUser
+            ? <User className="w-5 h-5" />
+            : (message.agent_name ? <span className="font-serif font-bold">{message.agent_name.charAt(0)}</span> : <Bot className="w-5 h-5" />)}
       </div>
 
       {/* 消息内容 */}
@@ -54,7 +71,7 @@ export function ChatMessage({ message, streaming = false }: ChatMessageProps) {
             : 'bg-gold/10 text-gold/80'
           }
         `}>
-          {isUser ? t('userLabel') : t('assistantLabel')}
+          {isUser ? t('userLabel') : (message.agent_name || t('assistantLabel'))}
         </span>
 
         {/* 消息气泡 */}
@@ -77,8 +94,13 @@ export function ChatMessage({ message, streaming = false }: ChatMessageProps) {
           {/* 消息内容 */}
           <div className={`${isUser ? '' : 'pl-2 pr-2'} min-w-0 break-words`}>
             {isUser ? (
+              // 用户消息: 高亮 @名字
               <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
-                {message.content}
+                {message.content.split(/(@[^\s@，。,.!?？！:：;；]+)/g).map((part, i) =>
+                  /^@[^\s@，。,.!?？！:：;；]+$/.test(part)
+                    ? <span key={i} className="text-gold font-medium">{part}</span>
+                    : <span key={i}>{part}</span>
+                )}
               </p>
             ) : (
               // 流中走纯文本路径(streaming=true);流结束后走完整 markdown
@@ -91,6 +113,27 @@ export function ChatMessage({ message, streaming = false }: ChatMessageProps) {
             <span className="inline-block w-2 h-4 bg-gold ml-1 align-text-bottom animate-pulse" />
           )}
         </div>
+
+        {/* @提及 chips(群聊道人消息) */}
+        {!isUser && message.mentions && (message.mentions.agents?.length || message.mentions.user) && (
+          <div className="flex items-center gap-1.5 mt-1.5 pl-1 flex-wrap">
+            <span className="text-[10px] text-muted-foreground">{tGroup('mentioned')}</span>
+            {message.mentions.user && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gold/10 text-gold/80">
+                @{tGroup('userLabel')}
+              </span>
+            )}
+            {(message.mentions.agents || []).map(uuid => {
+              const m = members?.find(x => x.agent_id === uuid)
+              if (!m) return null
+              return (
+                <span key={uuid} className="text-[10px] px-1.5 py-0.5 rounded-full bg-gold/10 text-gold/80">
+                  @{m.name}
+                </span>
+              )
+            })}
+          </div>
+        )}
 
         {/* 状态标记(仅 AI 消息) */}
         {!isUser && (message.incomplete || message.stopped) && (

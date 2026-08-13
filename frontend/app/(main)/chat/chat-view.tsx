@@ -8,6 +8,7 @@
  * SSE：fetch POST + ReadableStream；停止 = AbortController 中断连接
  */
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useTranslations } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import {
   MessageSquare,
@@ -27,12 +28,13 @@ import {
 import { useChat } from '@/contexts/ChatContext'
 import { useAgent } from '@/contexts/AgentContext'
 import { ChatMessage } from '@/components/chat-message'
+import { GroupMembersPanel } from '@/components/group-members-panel'
 import { TopTabs } from '@/components/interaction/top-tabs'
 
 export function ChatView({ sessionId }: { sessionId?: string }) {
   const router = useRouter()
 
-  const { state: chatState, dispatch, fetchSessions, loadMessages, streamMessage, createSession, stopStream } = useChat()
+  const { state: chatState, dispatch, fetchSessions, loadMessages, streamMessage, createSession, createGroupSession, renameSession, stopStream } = useChat()
   const { state: agentState, fetchAgents } = useAgent()
 
   const [input, setInput] = useState('')
@@ -98,6 +100,12 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
     await streamMessage(currentSession.id, content)
   }
 
+  const tGroup = useTranslations('groupChat')
+  const [membersPanelOpen, setMembersPanelOpen] = useState(false)
+  const [editingTitle, setEditingTitle] = useState(false)
+  const [titleDraft, setTitleDraft] = useState('')
+  const isGroup = currentSession?.type === 'group'
+
   // 发送去重锁: 某些 IME/浏览器组合下,Enter 可能触发 onKeyDown 与 blur 双事件,
   // 或 React 严格模式双重触发。150ms 内只发一次。
   const sendingLockRef = useRef(false)
@@ -140,12 +148,27 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [])
 
-  /** 创建会话并跳转 */
+  /** 创建会话并跳转(单聊,title 留空由后端首问答自动命名) */
   const handleCreateSession = async (agentId: string) => {
-    const agent = agents.find(a => a.id === agentId)
-    const session = await createSession(agentId, `与${agent?.name || '未知道人'}的论道`)
+    const session = await createSession(agentId)
     setShowAgentSelect(false)
     if (session) router.push(`/chat/${session.id}`)
+  }
+
+  /** 建群并跳转 */
+  const handleCreateGroup = async (agentIds: string[]) => {
+    const session = await createGroupSession(agentIds)
+    setShowAgentSelect(false)
+    if (session) router.push(`/chat/${session.id}`)
+  }
+
+  /** 改名 */
+  const handleRenameTitle = async () => {
+    if (!currentSession) return
+    const v = titleDraft.trim()
+    setEditingTitle(false)
+    if (!v || v === currentSession.title) return
+    await renameSession(currentSession.id, v)
   }
 
   /** 选择会话 */
