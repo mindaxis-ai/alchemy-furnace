@@ -1,7 +1,7 @@
 // cmd/desktop/app.go - Wails 绑定对象(任务 11 扩展)
 // 注意: webview 重定向到 http origin 后 Wails Bind 不可达,仅作兜底
 // 版本/更新等正式接口走 HTTP 端点(/api/v1/version 全模式;update 三端点仅 desktop,Guard 保护)
-package main
+package desktop
 
 import (
 	"context"
