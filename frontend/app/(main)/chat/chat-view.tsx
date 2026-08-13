@@ -27,6 +27,8 @@ import { useChat } from '@/contexts/ChatContext'
 import { useAgent } from '@/contexts/AgentContext'
 import { ChatMessage } from '@/components/chat-message'
 import { TopTabs } from '@/components/interaction/top-tabs'
+import { OnboardingCard } from '@/components/onboarding-card'
+import { listProviders } from '@/services/modelService'
 
 export function ChatView({ sessionId }: { sessionId?: string }) {
   const router = useRouter()
@@ -38,6 +40,7 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [showAgentSelect, setShowAgentSelect] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const [providersEmpty, setProvidersEmpty] = useState<boolean | null>(null)
 
   const currentSession = chatState.currentSession
   const messages = chatState.messages
@@ -49,6 +52,16 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
     fetchSessions()
     fetchAgents()
   }, [fetchSessions, fetchAgents])
+
+  // 首启引导: 拉供应商列表,空 → 显示 OnboardingCard
+  // null = 加载中(防闪烁),true = 空, false = 已有
+  useEffect(() => {
+    let cancelled = false
+    listProviders({ page: 1, page_size: 1 })
+      .then((res) => { if (!cancelled) setProvidersEmpty((res?.list?.length ?? 0) === 0) })
+      .catch(() => { if (!cancelled) setProvidersEmpty(false) })
+    return () => { cancelled = true }
+  }, [])
 
   // 根据 URL 参数加载会话
   useEffect(() => {
@@ -97,8 +110,17 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
     return name.charAt(0)
   }
 
-  // 如果没有选择会话，显示选择界面
+  // 如果没有选择会话: 先看是否需要首启引导(无供应商)
   if (!currentSession) {
+    if (providersEmpty === true) {
+      return (
+        <div className="mx-auto max-w-6xl px-4 sm:px-6">
+          <div className="flex flex-col items-center justify-center h-[60vh]">
+            <OnboardingCard />
+          </div>
+        </div>
+      )
+    }
     return (
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
         <div className="flex flex-col items-center justify-center h-[60vh] text-center">

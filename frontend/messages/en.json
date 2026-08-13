@@ -10,33 +10,62 @@
     "closeMenu": "Close menu",
     "startCta": "Light the furnace",
     "items": {
-      "home": { "label": "Furnace" },
+      "home": {
+        "label": "Furnace"
+      },
       "pills": {
         "label": "Pills",
         "children": {
-          "all": { "title": "All pills", "description": "Browse every pill forged so far — a thousand language modes" },
-          "new": { "title": "Refine a new pill", "description": "Strike the flint, forge a fresh language-mode pill" },
-          "recipes": { "title": "Recipe canon", "description": "Consult the ancient recipes, learn the craft" }
+          "all": {
+            "title": "All pills",
+            "description": "Browse every pill forged so far — a thousand language modes"
+          },
+          "new": {
+            "title": "Refine a new pill",
+            "description": "Strike the flint, forge a fresh language-mode pill"
+          },
+          "recipes": {
+            "title": "Recipe canon",
+            "description": "Consult the ancient recipes, learn the craft"
+          }
         }
       },
       "agents": {
         "label": "Agents",
         "children": {
-          "all": { "title": "All daoists", "description": "The roster — every agent in the hall" },
-          "invite": { "title": "Recruit a daoist", "description": "Welcome a new agent into the hall and grant a pill" },
-          "bind": { "title": "Bestow a pill", "description": "Bind a pill to a daoist, transform their nature" }
+          "all": {
+            "title": "All daoists",
+            "description": "The roster — every agent in the hall"
+          },
+          "invite": {
+            "title": "Recruit a daoist",
+            "description": "Welcome a new agent into the hall and grant a pill"
+          },
+          "bind": {
+            "title": "Bestow a pill",
+            "description": "Bind a pill to a daoist, transform their nature"
+          }
         }
       },
       "chat": {
         "label": "Discourse",
         "children": {
-          "new": { "title": "New discourse", "description": "Open a new conversation, debate the subtle Way" },
-          "history": { "title": "Past discourses", "description": "Review past sessions, pick up an unfinished thread" }
+          "new": {
+            "title": "New discourse",
+            "description": "Open a new conversation, debate the subtle Way"
+          },
+          "history": {
+            "title": "Past discourses",
+            "description": "Review past sessions, pick up an unfinished thread"
+          }
         }
       },
-      "fusion": { "label": "Fusion" },
-      "fusion": { "label": "Fusion" },
-      "settings": { "label": "Settings" }
+      "fusion": {
+        "label": "Fusion"
+      },
+      "settings": {
+        "label": "Settings"
+      }
     }
   },
   "settings": {
@@ -53,14 +82,38 @@
       "smokeLabel": "Smoke density",
       "smokeHint": "0% = no smoke, 100% = heavy",
       "options": {
-        "plume": { "label": "Plume", "desc": "Tapered tongue, sharpens upward, like a real hearth" },
-        "ember": { "label": "Ember", "desc": "Slow orange, quiet and low-key" },
-        "flicker": { "label": "Flicker", "desc": "Short bursts, ritual flair" },
-        "veil": { "label": "Veil", "desc": "Multi-layered haze, grand ceremonial flame" },
-        "classic": { "label": "Classic", "desc": "Original water-mist particles, cream-white blend, retro" },
-        "sanmei": { "label": "Sanmei", "desc": "Ice-blue core + cinnabar outer, alchemy fantasy" },
-        "spark": { "label": "Spark", "desc": "Gold/cinnabar embers shooting up, lantern-rise feel" },
-        "dragon": { "label": "Dragon", "desc": "Long ribbon flame, elegant commanding fire" }
+        "plume": {
+          "label": "Plume",
+          "desc": "Tapered tongue, sharpens upward, like a real hearth"
+        },
+        "ember": {
+          "label": "Ember",
+          "desc": "Slow orange, quiet and low-key"
+        },
+        "flicker": {
+          "label": "Flicker",
+          "desc": "Short bursts, ritual flair"
+        },
+        "veil": {
+          "label": "Veil",
+          "desc": "Multi-layered haze, grand ceremonial flame"
+        },
+        "classic": {
+          "label": "Classic",
+          "desc": "Original water-mist particles, cream-white blend, retro"
+        },
+        "sanmei": {
+          "label": "Sanmei",
+          "desc": "Ice-blue core + cinnabar outer, alchemy fantasy"
+        },
+        "spark": {
+          "label": "Spark",
+          "desc": "Gold/cinnabar embers shooting up, lantern-rise feel"
+        },
+        "dragon": {
+          "label": "Dragon",
+          "desc": "Long ribbon flame, elegant commanding fire"
+        }
       }
     }
   },
@@ -77,10 +130,26 @@
     },
     "stats": {
       "ariaLabel": "Furnace overview",
-      "pills": { "label": "Pills in store", "unit": "", "caption": "Language modes in the pill vault" },
-      "agents": { "label": "Daoists in hall", "unit": "", "caption": "Agents registered in the daoist hall" },
-      "sessions": { "label": "Discourses held", "unit": "", "caption": "Both concluded and ongoing" },
-      "builtins": { "label": "Built-in recipes", "unit": "", "caption": "Pills pre-shipped with the system" }
+      "pills": {
+        "label": "Pills in store",
+        "unit": "",
+        "caption": "Language modes in the pill vault"
+      },
+      "agents": {
+        "label": "Daoists in hall",
+        "unit": "",
+        "caption": "Agents registered in the daoist hall"
+      },
+      "sessions": {
+        "label": "Discourses held",
+        "unit": "",
+        "caption": "Both concluded and ongoing"
+      },
+      "builtins": {
+        "label": "Built-in recipes",
+        "unit": "",
+        "caption": "Pills pre-shipped with the system"
+      }
     },
     "spotlight": {
       "badge": "Freshly forged",
@@ -586,5 +655,10 @@
     "success": "Bestowed",
     "errorLoadAgents": "Failed to load daoist list",
     "errorBind": "Binding failed"
+  },
+  "onboarding": {
+    "title": "Welcome to Alchemy Furnace",
+    "description": "Configure a model provider and API key to get started.",
+    "action": "Configure"
   }
 }
