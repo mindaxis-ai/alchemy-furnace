@@ -6,6 +6,35 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '/api/v1'
 
 /**
+ * 桌面端 token: Wails 重定向 URL 注入一次,存 sessionStorage 后清除 URL 痕迹
+ * 桌面模式: cmd/desktop 随机生成 32B token,webview 重定向时挂到 ?token=
+ * web 模式: 无 token 注入,authHeaders() 返回空,行为零变化
+ */
+const DESKTOP_TOKEN_KEY = 'alchemy_desktop_token'
+
+function initDesktopToken(): void {
+  if (typeof window === 'undefined') return
+  const url = new URL(window.location.href)
+  const token = url.searchParams.get('token')
+  if (token) {
+    sessionStorage.setItem(DESKTOP_TOKEN_KEY, token)
+    url.searchParams.delete('token')
+    window.history.replaceState(null, '', url.toString())
+  }
+}
+initDesktopToken()
+
+/**
+ * 桌面端 API 防护头;web 模式(无 token)返回空对象,零侵入
+ * 出口: api.request() 与 chatService.streamChatMessage 的 fetch 均合并此头
+ */
+export function authHeaders(): Record<string, string> {
+  if (typeof window === 'undefined') return {}
+  const token = sessionStorage.getItem(DESKTOP_TOKEN_KEY)
+  return token ? { 'X-Alchemy-Token': token } : {}
+}
+
+/**
  * 统一 API 响应信封
  */
 export interface ApiEnvelope<T> {
@@ -54,10 +83,11 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   const { params, ...fetchOptions } = options
   const url = buildUrl(path, params)
 
-  // 默认请求头
+  // 默认请求头(自动合并桌面端 token,web 模式无侵入)
   const headers: Record<string, string> = {
     'Accept': 'application/json',
     'Content-Type': 'application/json',
+    ...authHeaders(),
     ...((fetchOptions.headers as Record<string, string>) || {}),
   }
 

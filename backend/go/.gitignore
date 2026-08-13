@@ -4,3 +4,23 @@ vendor/
 *.test
 *.out
 uploads/
+
+# webui: 真实前端产物不入库(打包脚本覆盖),占位入
+backend/go/internal/webui/out/*
+!backend/go/internal/webui/out/index.html
+!backend/go/internal/webui/out/404.html
+
+# 防二进制混入: 'go build' 不带 -o 会在 cwd 生成 main
+main
+*.exe
+*.dll
+*.so
+*.dylib
+
+# 桌面: wails build 输出
+/desktop
+/desktop.exe
+/AlchemyFurnace.app
+
+# Wails build 目录(白名单抵消根 .gitignore 的 build/)
+!/build

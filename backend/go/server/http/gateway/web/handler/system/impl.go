@@ -31,10 +31,10 @@ type HealthResponse struct {
 
 // ConfigResponse 系统配置响应 DTO(前端可见模型清单 + 实际配置的融合模型)
 type ConfigResponse struct {
-	Version          string                      `json:"version"`           // 版本号
-	Models           []string                    `json:"models"`            // 可用模型列表
-	DefaultModel     string                      `json:"default_model"`     // 默认对话模型(env 兜底名)
-	SynthesisModel   string                      `json:"synthesis_model"`   // 语言模式合成模型(env 兜底名)
-	FusionModel      string                      `json:"fusion_model"`      // 金丹融合专用模型(env 兜底名,无 is_fusion 时使用)
-	FusionModelInfo  *service.FusionModelConfig  `json:"fusion_model_info"` // 实际配置的融合模型(供 /fusion banner 展示)
+	Version         string                     `json:"version"`           // 版本号
+	Models          []string                   `json:"models"`            // 可用模型列表
+	DefaultModel    string                     `json:"default_model"`     // 默认对话模型(env 兜底名)
+	SynthesisModel  string                     `json:"synthesis_model"`   // 语言模式合成模型(env 兜底名)
+	FusionModel     string                     `json:"fusion_model"`      // 金丹融合专用模型(env 兜底名,无 is_fusion 时使用)
+	FusionModelInfo *service.FusionModelConfig `json:"fusion_model_info"` // 实际配置的融合模型(供 /fusion banner 展示)
 }

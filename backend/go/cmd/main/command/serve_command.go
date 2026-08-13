@@ -16,7 +16,6 @@ import (
 	"github.com/alchemy-furnace/server/internal/dao"
 	"github.com/alchemy-furnace/server/internal/logger"
 	"github.com/alchemy-furnace/server/server/http/gateway/web"
-	"github.com/alchemy-furnace/server/server/http/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/cobra"
 )
@@ -55,22 +54,12 @@ func runServe(cmd *cobra.Command) {
 	}
 	defer logger.Sync()
 
-	r := gin.New()
 
-	// 中间件: request_id 最先注入,保证响应包络与日志均可取到
-	r.Use(middleware.RequestID())
-	r.Use(middleware.ModeHeader()) // 007-demo-mode: 演示模式注入 X-Alchemy-Mode 头
-	r.Use(middleware.ErrorRecovery())
-	r.Use(middleware.GinLogger())
-	r.Use(middleware.CORS(cfg.Server.AllowOrigins))
-
-	// 新网关路由(集中注册)
-	if err := web.Register(r); err != nil {
-		log.Fatalf("[炼丹炉] 注册新网关路由失败: %v", err)
+	// 共用引擎装配(serve/desktop 都走 web.NewEngine;此处无 guards 保持固定端口行为)
+	r, err := web.NewEngine(false)
+	if err != nil {
+		log.Fatalf("[炼丹炉] 引擎装配失败: %v", err)
 	}
-
-	r.NoRoute(middleware.NoRouteHandler())
-	r.NoMethod(middleware.NoMethodHandler())
 
 	port := cfg.Server.Port
 	if port == "" {

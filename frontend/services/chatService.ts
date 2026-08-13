@@ -10,7 +10,7 @@
  * - 心跳为 SSE 注释行（: ping），解析器忽略
  * - 请求级生命周期，无长驻连接，无需重连
  */
-import { get, post, put, del, buildApiUrl } from './api'
+import { get, post, put, del, buildApiUrl, authHeaders } from './api'
 import type { ChatSession, ChatMessage, GroupMember, CreateSessionRequest, PagedList, ListParams } from './types'
 
 /**
@@ -125,6 +125,7 @@ export async function streamChatMessage(
       headers: {
         'Accept': 'text/event-stream',
         'Content-Type': 'application/json',
+        ...authHeaders(),
       },
       body: JSON.stringify({ content }),
       signal: controller.signal,
