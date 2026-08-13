@@ -17,10 +17,12 @@ type Agent interface {
 	GetAgentDetailByUUID(ctx context.Context, uid uuid.UUID) (*model.DaoAgent, errors.Error)
 
 	// CreateAgent 创建道人;model_name 非空时校验其引用已启用模型配置
-	CreateAgent(ctx context.Context, name string, avatar string, personality string, modelName string) (*model.DaoAgent, errors.Error)
+	// proactivity 为 nil 时取默认值 50;合法区间 0-100,越界返回 InvalidRequest
+	CreateAgent(ctx context.Context, name string, avatar string, personality string, modelName string, proactivity *int) (*model.DaoAgent, errors.Error)
 
 	// UpdateAgent 按 UUID 部分更新道人(nil 字段不更新);性格变化时失效语言模式缓存
-	UpdateAgent(ctx context.Context, uid uuid.UUID, name *string, avatar *string, personality *string, modelName *string, status *string) (*model.DaoAgent, errors.Error)
+	// proactivity 合法区间 0-100;nil=不更新
+	UpdateAgent(ctx context.Context, uid uuid.UUID, name *string, avatar *string, personality *string, modelName *string, status *string, proactivity *int) (*model.DaoAgent, errors.Error)
 
 	// DeleteAgent 按 UUID 删除道人
 	DeleteAgent(ctx context.Context, uid uuid.UUID) errors.Error

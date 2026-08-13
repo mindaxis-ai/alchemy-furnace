@@ -14,6 +14,7 @@ type UpdateRequest struct {
 	Personality *string `json:"personality"`
 	ModelName   *string `json:"model_name" binding:"omitempty,max=50"`
 	Status      *string `json:"status" binding:"omitempty,oneof=active inactive"`
+	Proactivity *int    `json:"proactivity" binding:"omitempty,gte=0,lte=100"`
 }
 
 // Update 更新道人
@@ -30,7 +31,7 @@ func (cls *Agent) Update(c *gin.Context) (response.Code, any, error) {
 	}
 
 	agent, serr := cls.agent.UpdateAgent(contextutil.NewContextWithGin(c), uid,
-		body.Name, body.Avatar, body.Personality, body.ModelName, body.Status)
+		body.Name, body.Avatar, body.Personality, body.ModelName, body.Status, body.Proactivity)
 	if serr != nil {
 		return 0, nil, serr
 	}
