@@ -24,6 +24,8 @@ interface ChatState {
   loading: boolean
   streaming: boolean // 是否正在流式输出
   error: string | null
+  /** 群聊: 当前正在发言的道人(用于 typing 指示器显示名字/头像) */
+  currentSpeaker: { agent_id: string; agent_name: string; agent_avatar?: string } | null
 }
 
 /** 操作类型 */
@@ -38,6 +40,10 @@ type ChatAction =
   | { type: 'STOP_STREAM' } // 流式输出被停止(保留部分内容)
   | { type: 'MARK_LAST_INCOMPLETE' } // 标记最后一条助手回复「可能不完整」
   | { type: 'ADD_ERROR_MESSAGE'; payload: string } // 内联错误气泡
+  | { type: 'SPEAKER_START'; payload: { agent_id: string; agent_name: string; agent_avatar?: string } }
+  | { type: 'SPEAKER_DONE' }
+  | { type: 'SET_SESSION_TITLE'; payload: { sessionId: string; title: string } }
+  | { type: 'UPDATE_SESSION_MEMBERS'; payload: { sessionId: string; members: import('@/services/types').GroupMember[] } }
   | { type: 'ADD_SESSION'; payload: ChatSession }
   | { type: 'SET_LOADING'; payload: boolean }
   | { type: 'SET_STREAMING'; payload: boolean }
@@ -52,6 +58,7 @@ const initialState: ChatState = {
   loading: false,
   streaming: false,
   error: null,
+  currentSpeaker: null,
 }
 
 /** 将流式临时消息转换为正式消息 */
@@ -129,6 +136,35 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
         is_error: true,
       }
       return { ...state, messages: [...state.messages, errorMessage], streaming: false }
+    }
+    case 'SPEAKER_START': {
+      // 群聊: 某道人开始发言,先把可能的 -1 临时消息 finalize,再开新气泡
+      const messages = finalizeStreamMessage(state.messages)
+      messages.push({
+        id: '-1',
+        session_id: state.currentSession?.id || '',
+        role: 'assistant',
+        content: '',
+        agent_id: action.payload.agent_id,
+        agent_name: action.payload.agent_name,
+        created_at: new Date().toISOString(),
+      })
+      return { ...state, messages, currentSpeaker: { agent_id: action.payload.agent_id, agent_name: action.payload.agent_name } }
+    }
+    case 'SPEAKER_DONE':
+      // 群聊: 当前发言人 finalize,清空 currentSpeaker
+      return { ...state, messages: finalizeStreamMessage(state.messages), currentSpeaker: null }
+    case 'SET_SESSION_TITLE': {
+      const { sessionId, title } = action.payload
+      const sessions = state.sessions.map(s => s.id === sessionId ? { ...s, title } : s)
+      const currentSession = state.currentSession?.id === sessionId ? { ...state.currentSession, title } : state.currentSession
+      return { ...state, sessions, currentSession }
+    }
+    case 'UPDATE_SESSION_MEMBERS': {
+      const { sessionId, members } = action.payload
+      const sessions = state.sessions.map(s => s.id === sessionId ? { ...s, members } : s)
+      const currentSession = state.currentSession?.id === sessionId ? { ...state.currentSession, members } : state.currentSession
+      return { ...state, sessions, currentSession }
     }
     case 'ADD_SESSION':
       return { ...state, sessions: [action.payload, ...state.sessions], currentSession: action.payload, loading: false }
@@ -269,16 +305,61 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  /** 创建会话 */
+  /** 创建 1v1 会话 */
   const createSession = useCallback(async (agentId: string, title?: string): Promise<ChatSession | null> => {
     dispatch({ type: 'SET_LOADING', payload: true })
     try {
+      // title 参数保留但忽略(后端自动命名)
       const session = await chatService.createSession({ agent_id: agentId, title })
       dispatch({ type: 'ADD_SESSION', payload: session })
       return session
     } catch (error) {
       dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '创建会话失败' })
       return null
+    }
+  }, [])
+
+  /** 建群(≥2 位道人;首问答自动命名) */
+  const createGroupSession = useCallback(async (memberAgentIds: string[]): Promise<ChatSession | null> => {
+    try {
+      const session = await chatService.createGroupSession(memberAgentIds)
+      dispatch({ type: 'ADD_SESSION', payload: session })
+      return session
+    } catch (error) {
+      dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '建群失败' })
+      return null
+    }
+  }, [])
+
+  /** 重命名会话 */
+  const renameSession = useCallback(async (sessionId: string, title: string): Promise<ChatSession | null> => {
+    try {
+      const session = await chatService.renameSession(sessionId, title)
+      dispatch({ type: 'SET_SESSION_TITLE', payload: { sessionId, title: session.title || title } })
+      return session
+    } catch (error) {
+      dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '改名失败' })
+      return null
+    }
+  }, [])
+
+  /** 邀请入群(已在群静默跳过);更新本地 members */
+  const inviteMembers = useCallback(async (sessionId: string, agentIds: string[]) => {
+    try {
+      const { members } = await chatService.addMembers(sessionId, agentIds)
+      dispatch({ type: 'UPDATE_SESSION_MEMBERS', payload: { sessionId, members } })
+    } catch (error) {
+      dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '邀请失败' })
+    }
+  }, [])
+
+  /** 移出群成员;更新本地 members */
+  const kickMember = useCallback(async (sessionId: string, agentId: string) => {
+    try {
+      const { members } = await chatService.removeMember(sessionId, agentId)
+      dispatch({ type: 'UPDATE_SESSION_MEMBERS', payload: { sessionId, members } })
+    } catch (error) {
+      dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '踢人失败' })
     }
   }, [])
 
