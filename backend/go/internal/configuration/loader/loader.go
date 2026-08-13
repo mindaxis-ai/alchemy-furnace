@@ -9,7 +9,9 @@ import (
 	"strings"
 
 	"github.com/alchemy-furnace/server/internal/configuration"
+	"github.com/alchemy-furnace/server/internal/paths"
 	"github.com/spf13/viper"
+	"path/filepath"
 )
 
 // legacyEnv 历史裸环境变量名 → 配置键 的兼容映射(保证既有 .env / docker-compose 零修改可用)
@@ -81,6 +83,11 @@ func LoadConfig(dir string) error {
 	// 多数据库支持: 智能补全 Driver(向后兼容 + 零配置降级)
 	resolveDriver(&configuration.Configuration.Database)
 
+	// desktop 模式 MODEL_KEY_SECRET 兜底(已配置则跳过;否则读 secret.key 或首启生成)
+	if err := resolveModelKeySecret(&configuration.Configuration); err != nil {
+		return fmt.Errorf("初始化 MODEL_KEY_SECRET 失败: %w", err)
+	}
+
 	return nil
 }
 
@@ -108,5 +115,19 @@ func resolveDriver(d *configuration.DatabaseConfig) {
 
 	if d.Driver == configuration.DriverSQLite && strings.TrimSpace(d.SQLitePath) == "" {
 		d.SQLitePath = "./data/alchemy.db"
+	}
+
+	// desktop 模式: SQLite 相对路径重定向到 DataDir(desktop 二进制 cwd 不固定)
+	// 显式绝对路径 / serve 模式保持原值
+	if d.Driver == configuration.DriverSQLite && paths.IsDesktop() && !filepath.IsAbs(d.SQLitePath) {
+		dir, err := paths.EnsureDataDir()
+		if err == nil {
+			abs, _ := filepath.Abs(d.SQLitePath)
+			rel, rerr := filepath.Rel(dir, abs)
+			// 仅当相对 cwd 解析的路径在 DataDir 之外时才搬移,避免每次启动漂移
+			if rerr != nil || strings.HasPrefix(rel, "..") {
+				d.SQLitePath = filepath.Join(dir, "alchemy.db")
+			}
+		}
 	}
 }

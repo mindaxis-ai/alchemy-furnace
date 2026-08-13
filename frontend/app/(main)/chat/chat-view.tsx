@@ -41,6 +41,8 @@ import { ChatMessage } from '@/components/chat-message'
 import { GroupMembersPanel } from '@/components/group-members-panel'
 import { TopTabs } from '@/components/interaction/top-tabs'
 import { MentionSuggest } from '@/components/mention-suggest'
+import { OnboardingCard } from '@/components/onboarding-card'
+import { listProviders } from '@/services/modelService'
 import type { Agent } from '@/services/types'
 
 type ChatMode = 'single' | 'group'
@@ -63,6 +65,8 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
   const [showJumpToBottom, setShowJumpToBottom] = useState(false)
   /** 离底多少 px 算粘底(给用户一点容差,避免边界值抖动) */
   const STICKY_THRESHOLD_PX = 80
+  /** 供应商列表是否为空(用于显示首启引导) */
+  const [providersEmpty, setProvidersEmpty] = useState<boolean | null>(null)
 
   const currentSession = chatState.currentSession
   const messages = chatState.messages
@@ -74,6 +78,16 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
     fetchSessions()
     fetchAgents()
   }, [fetchSessions, fetchAgents])
+
+  // 首启引导: 拉供应商列表,空 → 显示 OnboardingCard
+  // null = 加载中(防闪烁),true = 空, false = 已有
+  useEffect(() => {
+    let cancelled = false
+    listProviders({ page: 1, page_size: 1 })
+      .then((res) => { if (!cancelled) setProvidersEmpty((res?.list?.length ?? 0) === 0) })
+      .catch(() => { if (!cancelled) setProvidersEmpty(false) })
+    return () => { cancelled = true }
+  }, [])
 
   // 根据 URL 参数加载会话
   useEffect(() => {
@@ -164,7 +178,17 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }
 
+  // 如果没有选择会话: 先看是否需要首启引导(无供应商)
   if (!currentSession) {
+    if (providersEmpty === true) {
+      return (
+        <div className="mx-auto max-w-6xl px-4 sm:px-6">
+          <div className="flex flex-col items-center justify-center h-[60vh]">
+            <OnboardingCard />
+          </div>
+        </div>
+      )
+    }
     return (
       <div className="mx-auto flex h-[calc(100vh-4rem)] max-w-6xl px-4 sm:px-6 relative">
         <div className="flex-1 flex flex-col items-center justify-center text-center px-4">

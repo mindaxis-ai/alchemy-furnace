@@ -1,0 +1,11 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "AlchemyFurnace",
+  "outputfilename": "AlchemyFurnace",
+  "frontend:dir": "build/stub",
+  "frontend:install": "",
+  "frontend:build": "",
+  "author": {
+    "name": "alchemy-furnace"
+  }
+}

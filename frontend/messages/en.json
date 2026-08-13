@@ -512,7 +512,13 @@
       "Go API",
       "Python language engine",
       "PostgreSQL"
-    ]
+    ],
+    "version": "Version",
+    "commit": "Commit",
+    "buildDate": "Build date",
+    "mode": "Mode",
+    "checkUpdate": "Check for updates",
+    "checking": "Checking..."
   },
   "pillCard": {
     "builtInBadge": "Built-in",
@@ -732,5 +738,25 @@
     "placeholder": "Pick an agent to mention...",
     "noMatches": "No matching agents",
     "allMembers": "All members"
+  },
+  "onboarding": {
+    "title": "Welcome to Alchemy Furnace",
+    "description": "Configure a model provider and API key to get started.",
+    "action": "Configure"
+  },
+  "update": {
+    "latest": "You're up to date",
+    "found": "Update available",
+    "foundDesc": "v{latest} ready, ~{size}",
+    "downloading": "Downloading",
+    "downloadingPct": "Downloading {pct}%",
+    "restart": "Restarting to complete update",
+    "failed": "Update failed",
+    "manual": "Manual download",
+    "disabled": "Update disabled in dev build",
+    "releaseNotes": "Release notes",
+    "changelog": "Changelog",
+    "later": "Later",
+    "update": "Update now"
   }
 }

@@ -7,7 +7,10 @@
  */
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { Info, Flame, ExternalLink, Heart } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Info, Flame, ExternalLink, Heart, Download } from 'lucide-react'
+import { getVersion, type VersionInfo } from '@/services/systemService'
+import { UpdateDialog } from '@/components/update-dialog'
 import { TopTabs } from '@/components/interaction/top-tabs'
 import { ModelsPanel } from '@/components/models/models-panel'
 import { FireEffectPanel } from '@/components/settings/fire-effect-panel'
@@ -65,6 +68,13 @@ export function SettingsTabs() {
 /** 关于区：从旧 settings/page.tsx 平移（关于炼丹炉 + 技术栈卡片），补标准页头与 models tab 同宽 */
 function AboutPanel() {
   const tAbout = useTranslations('about')
+  const [version, setVersion] = useState<VersionInfo | null>(null)
+  const [showUpdate, setShowUpdate] = useState(false)
+
+  useEffect(() => {
+    getVersion().then(setVersion).catch(() => setVersion(null))
+  }, [])
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
       {/* 页面头部（与道人府/ModelsPanel 同款版式） */}
@@ -88,7 +98,42 @@ function AboutPanel() {
               <Flame className="w-8 h-8 text-primary" />
             </div>
             <h3 className="text-lg font-serif font-bold text-gold mb-1">{tAbout('productName')}</h3>
-            <p className="text-xs text-muted-foreground mb-4">v1.0.0</p>
+            {version && (
+              <p className="text-xs text-muted-foreground mb-4 font-mono">v{version.version}</p>
+            )}
+
+            {/* 版本四字段(全模式: serve + desktop 都显示) */}
+            {version && (
+              <div className="w-full text-left space-y-1.5 text-xs mb-4 px-2">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">{tAbout('version')}</span>
+                  <span className="font-mono text-foreground">{version.version}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">{tAbout('commit')}</span>
+                  <span className="font-mono text-foreground">{version.commit || '-'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">{tAbout('buildDate')}</span>
+                  <span className="font-mono text-foreground">{version.buildDate || '-'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">{tAbout('mode')}</span>
+                  <span className="font-mono text-foreground">{version.mode}</span>
+                </div>
+              </div>
+            )}
+
+            {/* 检查更新(desktop 模式 UpdateRepo 配置后才有效;serve 模式点开 → 提示开发构建) */}
+            {version && (
+              <button
+                onClick={() => setShowUpdate(true)}
+                className="dao-btn-primary mb-4"
+              >
+                <Download className="w-4 h-4" />
+                {tAbout('checkUpdate')}
+              </button>
+            )}
 
             <p className="text-sm text-muted-foreground leading-relaxed mb-4 max-w-md">
               {tAbout('productBody1')}
@@ -127,6 +172,8 @@ function AboutPanel() {
           </div>
         </section>
       </div>
+
+      {showUpdate && <UpdateDialog onClose={() => setShowUpdate(false)} />}
     </div>
   )
 }

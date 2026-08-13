@@ -57,6 +57,31 @@
 
 ---
 
+## 桌面端下载
+
+提供 macOS (arm64 / x64) 与 Windows (amd64) 单文件安装包，免 Python / 免 Node / 免 Docker。  
+前往 [Releases](https://github.com/yusanwen-code/alchemy-furnace/releases) 下载 `AlchemyFurnace-*` 文件。
+
+**macOS 安装**：双击 `.dmg`，把 `AlchemyFurnace` 拖入 `Applications`。首次启动需要绕行未签名：
+
+```bash
+# 方式一:右键 AlchemyFurnace → 打开 → "打开"
+# 方式二:清除隔离属性
+xattr -dr com.apple.quarantine /Applications/AlchemyFurnace.app
+```
+
+**Windows 安装**：双击 `AlchemyFurnace-Setup.exe` 走 NSIS 向导。首次启动 SmartScreen 拦截时点「更多信息」→「仍要运行」。
+
+**校验 SHA256**：`checksums.txt` 列出每个产物的校验和：
+
+```bash
+sha256sum -c checksums.txt
+```
+
+**更新**：关于页 → 「检查更新」→ 进度条 → 自动重启完成。dev 构建会提示「未启用更新」。
+
+---
+
 ## 快速开始
 
 ### 一、Docker 一键部署
