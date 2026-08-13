@@ -22,6 +22,7 @@ import { MarkdownRenderer } from '@/components/markdown-renderer'
 import { ProfilePopover } from '@/components/profile-popover'
 import { useUser } from '@/contexts/UserContext'
 import { useAgent } from '@/contexts/AgentContext'
+import { useChat } from '@/contexts/ChatContext'
 
 interface ChatMessageProps {
   message: ChatMessageType
@@ -52,19 +53,45 @@ export function ChatMessage({ message, streaming = false, members }: ChatMessage
 
   const isUser = message.role === 'user'
 
-  // 用户消息 popover 数据
+  // 头像 popover 数据
   const { profile: userProfile } = useUser()
-  // 群聊中查找发言道人
   const { state: agentState } = useAgent()
+  const { state: chatState } = useChat()
+
+  /**
+   * 查找消息对应道人的完整档案(用于 popover 展示 personality / model_name / proactivity)
+   * - 群聊:message.agent_id 是该条消息的发言道人
+   * - 单聊:消息无 agent_id,需从 currentSession.agent_id 查
+   * 找不到时降级:用 message.agent_name + agents 中按 name 模糊匹配
+   */
   const agentProfile: Agent | null = useMemo(() => {
     if (isUser) return null
+    const all = agentState.agents
+    // 1) 群聊:用 message.agent_id
     if (message.agent_id) {
-      const found = agentState.agents.find(a => a.id === message.agent_id)
+      const found = all.find(a => a.id === message.agent_id)
       if (found) return found
     }
-    // 单聊:从 currentSession.agent_id 查
+    // 2) 单聊 / 群聊回退:用 message.agent_name 匹配
+    if (message.agent_name) {
+      const byName = all.find(a => a.name === message.agent_name)
+      if (byName) return byName
+    }
+    // 3) 单聊:用 currentSession.agent_id
+    const sessionAgentId = chatState.currentSession?.agent_id
+    if (sessionAgentId) {
+      const fromSession = all.find(a => a.id === sessionAgentId)
+      if (fromSession) return fromSession
+    }
+    // 4) 群聊 members 中也存了 agent_id/name,做最后兜底
+    if (members && message.agent_id) {
+      const m = members.find(x => x.agent_id === message.agent_id)
+      if (m) {
+        return all.find(a => a.id === m.agent_id) || null
+      }
+    }
     return null
-  }, [isUser, message.agent_id, agentState.agents])
+  }, [isUser, message.agent_id, message.agent_name, agentState.agents, chatState.currentSession?.agent_id, members])
 
   return (
     <div className={`
@@ -231,15 +258,40 @@ function MentionChip({
   variant: 'user' | 'agent'
 }) {
   const { state: agentState } = useAgent()
-  // 群聊:用 members 查找;单聊:用 agents 列表
+  const { state: chatState } = useChat()
+  /**
+   * @ 提及目标查找 - 兜底链:
+   *  1) 群聊 members 按 name 找 → agent_id
+   *  2) agents 按 name 精确匹配
+   *  3) agents 按 name includes 模糊匹配(用户可能输入简写)
+   *  4) 单聊 currentSession.agent_id 兜底(只有一个道人,任意 @ 都指向它)
+   *  variant='user' 永远返回 null(用户没有 popover)
+   */
   const target = useMemo(() => {
     if (variant === 'user') return null
-    const fromGroup = members?.find(m => m.name === name)
-    if (fromGroup) {
-      return agentState.agents.find(a => a.id === fromGroup.agent_id) || null
+    const all = agentState.agents
+    // 1) 群聊 members
+    if (members) {
+      const m = members.find(x => x.name === name)
+      if (m) {
+        return all.find(a => a.id === m.agent_id) || null
+      }
     }
-    return agentState.agents.find(a => a.name === name) || null
-  }, [name, members, variant, agentState.agents])
+    // 2) agents 精确
+    const exact = all.find(a => a.name === name)
+    if (exact) return exact
+    // 3) agents 模糊(单聊场景下用户输入简写)
+    if (all.length > 0) {
+      const fuzzy = all.find(a => a.name.includes(name) || name.includes(a.name))
+      if (fuzzy) return fuzzy
+    }
+    // 4) 单聊兜底:任何 @ 都指向 currentSession 那个道人
+    const sessionAgentId = chatState.currentSession?.agent_id
+    if (sessionAgentId) {
+      return all.find(a => a.id === sessionAgentId) || null
+    }
+    return null
+  }, [name, members, variant, agentState.agents, chatState.currentSession?.agent_id])
 
   const popoverAnchorRef = useRef<HTMLButtonElement>(null)
   const [popoverOpen, setPopoverOpen] = useState(false)

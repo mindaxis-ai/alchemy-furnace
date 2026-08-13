@@ -10,6 +10,7 @@
  * 避免父容器的 overflow:hidden / transform 把浮窗裁掉。
  */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { Settings, X, Bot, User, Sparkles, Cpu, Flame } from 'lucide-react'
@@ -133,7 +134,7 @@ export function ProfilePopover({
 
   if (!open) return null
 
-  return (
+  const popover = (
     <div
       ref={popRef}
       role="dialog"
@@ -243,6 +244,8 @@ export function ProfilePopover({
       )}
     </div>
   )
+
+  return typeof document !== 'undefined' ? createPortal(popover, document.body) : popover
 }
 
 /* ========== 内部小组件 ========== */

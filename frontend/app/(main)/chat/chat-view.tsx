@@ -428,6 +428,7 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
                 key={message.id}
                 message={message}
                 streaming={chatState.streaming && message.role === 'assistant' && message.id === '-1'}
+                members={currentSession.members}
               />
             )
           ))}
