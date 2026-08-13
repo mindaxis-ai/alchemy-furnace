@@ -27,6 +27,7 @@ type Store struct {
 	agents    map[string]*model.DaoAgent       // key: uuid.String()
 	sessions  map[string]*model.ChatSession    // key: uuid.String()
 	messages  map[uint][]*model.ChatMessage    // key: sessionID,内按时间正序
+	members   map[uint][]*model.SessionMember  // key: sessionID,内按 SortOrder 正序
 	providers map[string]*model.LLMProvider    // key: uuid.String()
 	models    map[string]*model.LLMModel       // key: uuid.String()
 	patterns  map[uint]*model.LanguagePattern  // key: agentID
@@ -36,6 +37,7 @@ type Store struct {
 	nextAgentID    uint
 	nextSessionID  uint
 	nextMessageID  uint
+	nextMemberID   uint
 	nextProviderID uint
 	nextModelID    uint
 	nextPatternID  uint
@@ -49,6 +51,7 @@ func NewStore() *Store {
 		agents:    map[string]*model.DaoAgent{},
 		sessions:  map[string]*model.ChatSession{},
 		messages:  map[uint][]*model.ChatMessage{},
+		members:   map[uint][]*model.SessionMember{},
 		providers: map[string]*model.LLMProvider{},
 		models:    map[string]*model.LLMModel{},
 		patterns:  map[uint]*model.LanguagePattern{},
