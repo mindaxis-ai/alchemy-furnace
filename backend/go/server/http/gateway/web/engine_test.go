@@ -120,10 +120,14 @@ func TestNewEngine_NoRoute(t *testing.T) {
 	require.Equal(t, 404, rec.Code)
 	require.Contains(t, rec.Body.String(), `"message":`, "API 路径应回 JSON 信封")
 
-	// / 走 webui(embed 占位 index.html)
+	// / 走 webui: 应返 200(SPA fallback) + body 含真实 webui 内容
 	rec = httptest.NewRecorder()
 	r.ServeHTTP(rec, newReq(t, "GET", "/", "", ""))
-	// gin NoRoute 包装下 webui index.html 可能返 200 或 404(SPA fallback),
-	// 关键断言: body 含占位 webui 内容
-	require.Contains(t, rec.Body.String(), "炼丹炉 webui 占位", "根路径应回 webui 内容")
+	require.Equal(t, http.StatusOK, rec.Code, "根路径必须 200(WKWebView 404 会显示错误页)")
+	require.Contains(t, rec.Body.String(), "<title>炼丹炉", "根路径应回 webui 内容")
+	// 任意子路径 SPA fallback: 也应 200,body 仍是首页(便于 client-side router 接管)
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, newReq(t, "GET", "/chat/abc", "", ""))
+	require.Equal(t, http.StatusOK, rec.Code, "子路径 SPA fallback 也应 200")
+	require.Contains(t, rec.Body.String(), "<title>炼丹炉", "SPA fallback body 应为 webui HTML")
 }

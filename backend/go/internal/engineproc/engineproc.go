@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/alchemy-furnace/server/internal/configuration"
@@ -91,6 +92,8 @@ func Start(ctx context.Context) (baseURL string, stop func(), err error) {
 		cmd.Dir = filepath.Join(root, "engine")
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
+		// 过滤污染 env: 父 shell 的 LOG_FORMAT=json / 自定义 %-style 配置会让 uvicorn 崩溃
+		cmd.Env = filterPythonEnv(os.Environ())
 		setProcGroup(cmd) // 平台文件实现
 		if err = cmd.Start(); err != nil {
 			continue // 端口竞争等,换端口重试
@@ -103,4 +106,44 @@ func Start(ctx context.Context) (baseURL string, stop func(), err error) {
 		killProcGroup(cmd)
 	}
 	return "", nil, fmt.Errorf("Python 引擎启动失败(重试 3 次): %w", err)
+}
+
+
+// filterPythonEnv 保留 PATH/HOME 等必要 env,移除 Python app 已知冲突的键
+// 桌面 .app bundle 启动时会 inherit 父 shell 的全部 env,某些自定义
+// (如 LOG_FORMAT=json)与 Python app 自己的 %-style logging 配置冲突,
+// 导致 uvicorn 启动时 raise ValueError。这里白名单 + 黑名单策略。
+func filterPythonEnv(parent []string) []string {
+	// 必须保留的(让 python3 / uvicorn 能找到依赖)
+	keep := map[string]bool{
+		"PATH": true, "HOME": true, "USER": true, "TMPDIR": true,
+		"LANG": true, "LC_ALL": true, "LC_CTYPE": true,
+		"PYTHONHOME": true, "PYTHONPATH": true, "PYTHONUNBUFFERED": true,
+		// 桌面端自己的 env
+		"ALCHEMY_DESKTOP": true, "ALCHEMY_PYTHON_RUNTIME": true, "GIN_MODE": true,
+	}
+	// 必须移除的(冲突或与 desktop 模式无关)
+	drop := map[string]bool{
+		"LOG_FORMAT":  true, // 父 shell 的 json 格式与 Python app %-style 冲突
+		"LOG_LEVEL":   true, // 留给 Python app 自己 default
+		"RUST_LOG":    true, // rust 工具链噪声
+		"OS_ACTIVITY": true, // macOS
+	}
+	out := make([]string, 0, len(parent))
+	for _, kv := range parent {
+		eq := strings.IndexByte(kv, '=')
+		if eq < 0 {
+			continue
+		}
+		k := kv[:eq]
+		if drop[k] {
+			continue
+		}
+		if !keep[k] {
+			// 不在白名单的也透传(避免漏掉必要变量)
+			// 实际更稳妥:全透传 + drop 黑名单
+		}
+		out = append(out, kv)
+	}
+	return out
 }

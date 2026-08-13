@@ -2,6 +2,8 @@
 package web
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 
 	"github.com/alchemy-furnace/server/internal/configuration"
@@ -32,6 +34,9 @@ func NewEngine(isDesktop bool, extraAPIGuards ...gin.HandlerFunc) (*gin.Engine, 
 			middleware.NoRouteHandler()(c)
 			return
 		}
+		// gin 在命中 NoRoute 前已把 status 标记为 404,这里先重置为 200,
+		// 否则 webui.Handler 即使成功 serve 也会保留 404(WKWebView 显示错误页)
+		c.Status(http.StatusOK)
 		webui.Handler().ServeHTTP(c.Writer, c.Request)
 	})
 	r.NoMethod(middleware.NoMethodHandler())

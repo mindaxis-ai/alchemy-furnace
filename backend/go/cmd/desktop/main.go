@@ -2,7 +2,7 @@
 // ALCHEMY_SMOKE=1 时只起 HTTP 不开窗(CI 无显示环境 smoke 用)
 //
 // 安全: 127.0.0.1 随机端口 + token + Host 头校验(middleware.DesktopGuard)
-package main
+package desktop
 
 import (
 	"context"
@@ -27,11 +27,14 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 )
 
-// newRedirectHandler webview 资源处理器: 任何请求都 302 到 http origin
-// target 闭包: 启动时 port 未知,延迟解析;每次请求都重读最新值
+// newRedirectHandler webview 资源处理器: 任何请求都返回 200 + JS 跳转到 http origin
+// 为什么不用 302: WKWebView 跨 scheme 302(wails:// → http://) 经常不跟随,显示白屏
+// 用 JS window.location.replace 强制同 frame 跳转(JS 跳转不经过 scheme 协商)
 func newRedirectHandler(target func() string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, target(), http.StatusFound)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, `<!doctype html><meta charset=utf-8><title>炼丹炉</title><body><script>window.location.replace(%q);</script></body>`, target())
 	})
 }
 
@@ -113,4 +116,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("[炼丹炉] 窗口启动失败: %v", err)
 	}
+}
+
+// Run 桌面入口(供 backend/go/main.go shim 与 cmd/desktop-main/main.go 调用)
+// 与原 main() 行为一致(数据目录→secret→Python→随机端口→Wails 开窗;ALCHEMY_SMOKE=1 不开窗)
+func Run() {
+	main()
 }
