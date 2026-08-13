@@ -8,8 +8,8 @@ import (
 	"bytes"
 	"context"
 	stderrors "errors"
-	"encoding/json"
 	"fmt"
+	"encoding/json"
 	"io"
 	"net"
 	"net/http"
@@ -41,20 +41,19 @@ func New(chat dao.Chat, agent dao.Agent, pattern service.LanguagePatternProvider
 	return &Chat{chat: chat, agent: agent, pattern: pattern, creds: creds, engineBaseURL: engineBaseURL}
 }
 
-// CreateSession 创建会话;agentUID 为道人对外 UUID,title 为空时按道人名生成默认标题
-func (s *Chat) CreateSession(ctx context.Context, agentUID uuid.UUID, title string) (*model.ChatSession, ierr.Error) {
+// CreateSession 创建 1v1 会话;agentUID 为道人对外 UUID
+// 标题一律留空,由首个问答自动命名(群聊/单聊统一);group 会话改由 GroupService 路径另建
+func (s *Chat) CreateSession(ctx context.Context, agentUID uuid.UUID) (*model.ChatSession, ierr.Error) {
 	agent, err := s.agent.TakeAgentByUUID(ctx, agentUID)
 	if err != nil {
 		return nil, err.Relation(ierr.ErrorRecordNotFound("service.chat.create_take_agent"))
 	}
 
-	if title == "" {
-		title = fmt.Sprintf("与 %s 的论道", agent.Name)
-	}
-
+	agentID := agent.ID
 	session := &model.ChatSession{
-		AgentID: agent.ID,
-		Title:   title,
+		Type:    model.SessionTypeSingle,
+		AgentID: &agentID,
+		Title:   "", // 标题一律留空,由首个问答自动命名
 	}
 	if err := s.chat.SaveSession(ctx, session); err != nil {
 		return nil, err.Relation(ierr.ErrorServerInternalError("service.chat.create_save"))
@@ -64,7 +63,7 @@ func (s *Chat) CreateSession(ctx context.Context, agentUID uuid.UUID, title stri
 
 	zap.L().Info("[炼丹炉] 新的论道会话开启",
 		zap.String("session_uuid", session.UUID.String()),
-		zap.String("title", session.Title),
+		zap.String("type", session.Type),
 		zap.String("agent", agent.Name))
 	return session, nil
 }

@@ -197,10 +197,12 @@ func loadSeed(s *Store) {
 
 	// ---------- 9 sessions(每道人一个) ----------
 	for i := 0; i < 9; i++ {
+		agentID := uint(i + 1)
 		sess := &model.ChatSession{
 			ID:        uint(i + 1),
 			UUID:      sessionUUID[i],
-			AgentID:   uint(i + 1),
+			Type:      model.SessionTypeSingle,
+			AgentID:   &agentID,
 			Title:     "与" + agentData[i].Name + "的对话",
 			CreatedAt: now,
 			UpdatedAt: now,

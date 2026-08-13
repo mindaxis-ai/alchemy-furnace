@@ -31,6 +31,7 @@ func New(chat service.Chat) *Chat {
 // SessionResponse 会话响应 DTO:id/agent_id 输出 UUID 字符串,不泄露数字主键
 type SessionResponse struct {
 	ID        string    `json:"id"`
+	Type      string    `json:"type"` // single | group
 	AgentID   string    `json:"agent_id"`
 	Title     string    `json:"title"`
 	CreatedAt time.Time `json:"created_at"`
@@ -46,10 +47,20 @@ type MessageResponse struct {
 }
 
 // toSessionResponse 内部模型 -> 对外 DTO(agent 需预加载以取 UUID)
+// 群聊 AgentID 可能为 nil(单聊字段未使用),需空值安全
 func toSessionResponse(s *model.ChatSession) *SessionResponse {
+	agentID := ""
+	if s.AgentID != nil {
+		agentID = s.Agent.UUID.String()
+	}
+	typeStr := s.Type
+	if typeStr == "" {
+		typeStr = model.SessionTypeSingle
+	}
 	return &SessionResponse{
 		ID:        s.UUID.String(),
-		AgentID:   s.Agent.UUID.String(),
+		Type:      typeStr,
+		AgentID:   agentID,
 		Title:     s.Title,
 		CreatedAt: s.CreatedAt,
 		UpdatedAt: s.UpdatedAt,

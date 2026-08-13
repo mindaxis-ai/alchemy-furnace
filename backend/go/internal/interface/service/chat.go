@@ -20,8 +20,9 @@ type LanguagePatternProvider interface {
 // Chat 对话域业务逻辑接口(会话/消息/SSE 流式对话)
 // 对外以 UUID 标识会话;内部联结仍用自增 ID。SSE 入口按 session UUID 解析
 type Chat interface {
-	// CreateSession 创建会话;agentUID 为道人对外 UUID,title 为空时按道人名生成默认标题
-	CreateSession(ctx context.Context, agentUID uuid.UUID, title string) (*model.ChatSession, errors.Error)
+	// CreateSession 创建 1v1 会话;agentUID 为道人对外 UUID
+	// 标题一律留空,由首个问答自动命名;group 会话走 Service 扩展入口
+	CreateSession(ctx context.Context, agentUID uuid.UUID) (*model.ChatSession, errors.Error)
 
 	// ListSessions 分页查询会话列表(agentUID 非零时按道人过滤),按更新时间倒序
 	ListSessions(ctx context.Context, agentUID uuid.UUID, page int, size int) (int64, []*model.ChatSession, errors.Error)

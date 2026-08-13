@@ -66,7 +66,13 @@ func (cls *Chat) SSEChat(c *gin.Context) {
 		sseWriteEvent(w, flusher, "error", ssePayload{Content: "获取会话信息失败"})
 		return
 	}
-	agentID := session.AgentID
+	// 群聊(Type=group)Session.AgentID=nil,单聊走 AgentID;
+	// 入口已在 router 层按 session.Type 分流(见 Task 8),此处仅做防御性兜底
+	if session.AgentID == nil {
+		sseWriteEvent(w, flusher, "error", ssePayload{Content: "该会话不支持单聊通道"})
+		return
+	}
+	agentID := *session.AgentID
 	sessionID := session.ID
 	modelName := session.Agent.ModelName
 

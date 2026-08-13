@@ -450,7 +450,7 @@ func (d *ChatDao) TakeSessionByUUID(ctx context.Context, uid uuid.UUID) (*model.
 	// 预加载道人(按 AgentID 反查)
 	d.store.muAgent.RLock()
 	for _, a := range d.store.agents {
-		if a.ID == s.AgentID {
+		if s.AgentID != nil && a.ID == *s.AgentID {
 			out.Agent = *cloneAgent(a)
 			break
 		}
@@ -464,7 +464,7 @@ func (d *ChatDao) FindSessions(ctx context.Context, agentID uint, page int, size
 	defer d.store.muChat.RUnlock()
 	all := make([]*model.ChatSession, 0, len(d.store.sessions))
 	for _, s := range d.store.sessions {
-		if agentID > 0 && s.AgentID != agentID {
+		if agentID > 0 && (s.AgentID == nil || *s.AgentID != agentID) {
 			continue
 		}
 		all = append(all, cloneSession(s))

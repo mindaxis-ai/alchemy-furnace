@@ -28,6 +28,7 @@ CREATE TABLE dao_agents (
     personality TEXT,
     model_name  VARCHAR(50) DEFAULT 'gpt-4o',
     status      VARCHAR(20) DEFAULT 'active',
+    proactivity INTEGER DEFAULT 50,
     created_at  TIMESTAMPTZ DEFAULT now()
 );
 CREATE UNIQUE INDEX idx_dao_agents_uuid ON dao_agents(uuid);
@@ -63,13 +64,15 @@ CREATE UNIQUE INDEX idx_language_patterns_agent_id ON language_patterns(agent_id
 CREATE TABLE chat_sessions (
     id          BIGSERIAL PRIMARY KEY,
     uuid        UUID NOT NULL DEFAULT gen_random_uuid(),
-    agent_id    BIGINT NOT NULL REFERENCES dao_agents(id) ON DELETE CASCADE,
+    type        VARCHAR(10) DEFAULT 'single',
+    agent_id    BIGINT REFERENCES dao_agents(id) ON DELETE CASCADE,
     title       VARCHAR(200),
     created_at  TIMESTAMPTZ DEFAULT now(),
     updated_at  TIMESTAMPTZ DEFAULT now()
 );
 CREATE UNIQUE INDEX idx_chat_sessions_uuid ON chat_sessions(uuid);
 CREATE INDEX idx_chat_sessions_agent_id ON chat_sessions(agent_id);
+CREATE INDEX idx_chat_sessions_type ON chat_sessions(type);
 
 -- 对话消息(uuid 供消息历史响应安全序列化)
 CREATE TABLE chat_messages (
@@ -79,10 +82,24 @@ CREATE TABLE chat_messages (
     role        VARCHAR(20) NOT NULL,
     content     TEXT NOT NULL,
     sources     JSONB,
+    agent_id    BIGINT REFERENCES dao_agents(id) ON DELETE SET NULL,
+    mentions    JSONB,
     created_at  TIMESTAMPTZ DEFAULT now()
 );
 CREATE UNIQUE INDEX idx_chat_messages_uuid ON chat_messages(uuid);
 CREATE INDEX idx_chat_messages_session_id ON chat_messages(session_id);
+CREATE INDEX idx_chat_messages_agent_id ON chat_messages(agent_id);
+
+-- 群聊成员(仅 group 会话)
+CREATE TABLE session_members (
+    id          BIGSERIAL PRIMARY KEY,
+    session_id  BIGINT NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+    agent_id    BIGINT NOT NULL REFERENCES dao_agents(id) ON DELETE CASCADE,
+    sort_order  INTEGER DEFAULT 0,
+    joined_at   TIMESTAMPTZ DEFAULT now()
+);
+CREATE UNIQUE INDEX idx_session_agent ON session_members(session_id, agent_id);
+CREATE INDEX idx_session_members_session_id ON session_members(session_id);
 
 -- LLM 供应商配置
 CREATE TABLE llm_providers (
@@ -115,6 +132,7 @@ CREATE TABLE llm_models (
     is_enabled   BOOLEAN DEFAULT TRUE,
     is_default   BOOLEAN DEFAULT FALSE,
     is_synthesis BOOLEAN DEFAULT FALSE,
+    is_fusion      BOOLEAN DEFAULT FALSE,
     sort_order   INTEGER DEFAULT 0,
     created_at   TIMESTAMPTZ DEFAULT now(),
     updated_at   TIMESTAMPTZ DEFAULT now()

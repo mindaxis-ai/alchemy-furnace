@@ -28,7 +28,8 @@ func (cls *Chat) CreateSession(c *gin.Context) (response.Code, any, error) {
 		return response.InvalidParams, nil, errors.New(errors.ErrorTypeInvalidRequest, "handler.chat.create_agent_uuid", "道人ID格式不正确")
 	}
 
-	session, err := cls.chat.CreateSession(contextutil.NewContextWithGin(c), agentUID, body.Title)
+	// Title 字段本任务保留(忽略),Task 8 才扩展群创建入参
+	session, err := cls.chat.CreateSession(contextutil.NewContextWithGin(c), agentUID)
 	if err != nil {
 		return 0, nil, err
 	}
