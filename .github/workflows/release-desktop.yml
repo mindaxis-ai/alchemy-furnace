@@ -1,0 +1,181 @@
+name: release-desktop
+
+# tag 触发桌面分发打包 + GitHub Release
+# 产物: AlchemyFurnace-mac-{arm64,x64}.{dmg,zip} / AlchemyFurnace-Setup.exe / checksums.txt
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '手动发布时使用的 tag(空=用 short SHA)'
+        required: false
+        default: ''
+
+# tag 触发的发布不能并发
+concurrency:
+  group: release-desktop-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write  # 创建 release 需要
+
+jobs:
+  # ───────────────────── 1. 前端构建 ─────────────────────
+  frontend:
+    name: frontend build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - run: cd frontend && pnpm install --frozen-lockfile
+      - run: cd frontend && pnpm build
+      # 前端 out/ 拷到 webui 占位,供 desktop job 嵌入二进制
+      - run: rm -rf backend/go/internal/webui/out && cp -R frontend/out backend/go/internal/webui/out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: webui-out
+          path: backend/go/internal/webui/out
+
+  # ───────────────────── 2. Python 运行时 matrix ─────────────────────
+  runtime:
+    name: python-runtime (${{ matrix.platform }})
+    needs: frontend
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-14,    platform: darwin-arm64 }
+          - { os: macos-13,    platform: darwin-amd64 }
+          - { os: windows-latest, platform: windows-amd64 }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: build runtime
+        run: ./scripts/build-python-runtime.sh ${{ matrix.platform }} dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runtime-${{ matrix.platform }}
+          path: dist/python-runtime
+          if-no-files-found: error
+
+  # ───────────────────── 3. 桌面应用 matrix ─────────────────────
+  desktop:
+    name: desktop (${{ matrix.platform }})
+    needs: [frontend, runtime]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-14,       platform: darwin-arm64,   wailsPlatform: darwin/arm64 }
+          - { os: macos-13,       platform: darwin-amd64,   wailsPlatform: darwin/amd64 }
+          - { os: windows-latest, platform: windows-amd64,  wailsPlatform: windows/amd64 }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      # 取前端产物(嵌入)
+      - uses: actions/download-artifact@v4
+        with:
+          name: webui-out
+          path: backend/go/internal/webui/out
+
+      # 取 python 运行时(后续 ci-assemble 装入包内)
+      - uses: actions/download-artifact@v4
+        with:
+          name: runtime-${{ matrix.platform }}
+          path: backend/go/dist-runtime
+
+      - name: install wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.10.2
+
+      - name: wails build
+        working-directory: backend/go
+        env:
+          VERSION: ${{ github.ref_name || inputs.tag || github.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          mkdir -p build/bin
+          wails build -platform ${{ matrix.wailsPlatform }} \
+            -ldflags "-X github.com/alchemy-furnace/server/internal/buildinfo.Version=${VERSION} -X github.com/alchemy-furnace/server/internal/buildinfo.Commit=${{ github.sha }} -X github.com/alchemy-furnace/server/internal/buildinfo.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ) -X github.com/alchemy-furnace/server/internal/buildinfo.UpdateRepo=${REPO}" \
+            -skipbindings -tags webkit2_41
+
+      - name: assemble package
+        run: ./scripts/ci-assemble.sh ${{ matrix.platform }}
+
+      # smoke: ALCHEMY_SMOKE=1 起二进制 → curl /api/v1/version == tag
+      - name: smoke test (no window)
+        shell: bash
+        run: |
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            # windows 用 start /B + sleep,简化仅校验产物存在
+            echo "[smoke] windows: skip headless run(无 display)"
+          else
+            ALCHEMY_SMOKE=1 ./backend/go/build/bin/AlchemyFurnace.app/Contents/MacOS/AlchemyFurnace &
+            SMOKE_PID=$!
+            sleep 4
+            PORT=$(lsof -nP -iTCP -sTCP:LISTEN -a -p $SMOKE_PID 2>/dev/null | tail -1 | awk '{print $9}' | cut -d: -f2)
+            if [ -z "$PORT" ]; then echo "[smoke] ❌ 未监听端口"; kill $SMOKE_PID; exit 1; fi
+            echo "[smoke] 端口: $PORT"
+            HTTP_CODE=$(curl -s -o /tmp/smoke.json -w "%{http_code}" "http://127.0.0.1:${PORT}/api/v1/version" || true)
+            if [ "$HTTP_CODE" != "401" ]; then echo "[smoke] ❌ 期望 401(无 token 被 Guard 拒绝),得到 $HTTP_CODE"; kill $SMOKE_PID; exit 1; fi
+            echo "[smoke] ✅ 401 Guard 生效"
+            kill $SMOKE_PID 2>/dev/null
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg-${{ matrix.platform }}
+          path: backend/go/build/dist/*
+          if-no-files-found: error
+
+  # ───────────────────── 4. 汇总发布到 GitHub Release ─────────────────────
+  release:
+    name: publish GitHub Release
+    needs: [desktop]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: pkg-*
+          merge-multiple: true
+          path: dist
+
+      - name: checksums
+        working-directory: dist
+        run: |
+          sha256sum * > checksums.txt
+          cat checksums.txt
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          body: |
+            ## 桌面端安装
+
+            - **macOS**：`dmg` 拖入 `Applications`；首次启动右键 → 打开（未签名）
+              或运行 `xattr -dr com.apple.quarantine /Applications/AlchemyFurnace.app`
+            - **Windows**：`Setup.exe` 安装向导（NSIS）；SmartScreen 选「仍要运行」（未签名）
+
+            ## 校验
+            `checksums.txt` 提供 SHA256：
+            ```bash
+            sha256sum -c checksums.txt
+            ```
