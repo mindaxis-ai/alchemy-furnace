@@ -22,18 +22,18 @@ PBS_VER="3.12.11"
 case "$PLATFORM" in
   darwin-arm64)
     PBS_TARGET="aarch64-apple-darwin"
-    # TODO: 实施时填实 SHA256(到 release 页面 copy)
-    PBS_SHA256="${PBS_SHA256_DARWIN_ARM64:-deadbeef00000000000000000000000000000000000000000000000000000000}"
+    # 20250712 release 实测 SHA256(可被 PBS_SHA256_DARWIN_ARM64 等 env 覆盖)
+    PBS_SHA256="${PBS_SHA256_DARWIN_ARM64:-8e8c0c478feefefdfb851d834f87fddb155f9eaf90694cd5a370399e6a8572aa}"
     PYBIN_BIN="bin/python3"
     ;;
   darwin-amd64)
     PBS_TARGET="x86_64-apple-darwin"
-    PBS_SHA256="${PBS_SHA256_DARWIN_AMD64:-deadbeef00000000000000000000000000000000000000000000000000000000}"
+    PBS_SHA256="${PBS_SHA256_DARWIN_AMD64:-ec64e598489e59aa8fee5601a1fbca7c3abf6be854fddb5905c7a1488147daa7}"
     PYBIN_BIN="bin/python3"
     ;;
   windows-amd64)
     PBS_TARGET="x86_64-pc-windows-msvc"
-    PBS_SHA256="${PBS_SHA256_WINDOWS_AMD64:-deadbeef00000000000000000000000000000000000000000000000000000000}"
+    PBS_SHA256="${PBS_SHA256_WINDOWS_AMD64:-1ec21ef425f7eb596aae46143720ba91fe080d97fcff56a7fec81b9fb97d0024}"
     PYBIN_BIN="python.exe"
     ;;
   *) printf '未知平台: %s\n(支持: darwin-arm64|darwin-amd64|windows-amd64)\n' "$PLATFORM" >&2; exit 1 ;;
