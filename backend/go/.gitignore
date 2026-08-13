@@ -16,3 +16,11 @@ main
 *.dll
 *.so
 *.dylib
+
+# 桌面: wails build 输出
+/desktop
+/desktop.exe
+/AlchemyFurnace.app
+
+# Wails build 目录(白名单抵消根 .gitignore 的 build/)
+!/build
