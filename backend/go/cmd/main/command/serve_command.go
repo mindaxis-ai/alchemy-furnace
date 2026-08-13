@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"os"
 	"os/signal"
 	"syscall"
@@ -16,6 +17,7 @@ import (
 	"github.com/alchemy-furnace/server/internal/dao"
 	"github.com/alchemy-furnace/server/internal/logger"
 	"github.com/alchemy-furnace/server/server/http/gateway/web"
+	"github.com/alchemy-furnace/server/internal/webui"
 	"github.com/alchemy-furnace/server/server/http/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/cobra"
@@ -69,7 +71,13 @@ func runServe(cmd *cobra.Command) {
 		log.Fatalf("[炼丹炉] 注册新网关路由失败: %v", err)
 	}
 
-	r.NoRoute(middleware.NoRouteHandler())
+	r.NoRoute(func(c *gin.Context) {
+		if strings.HasPrefix(c.Request.URL.Path, "/api/") {
+			middleware.NoRouteHandler()(c)
+			return
+		}
+		webui.Handler().ServeHTTP(c.Writer, c.Request)
+	})
 	r.NoMethod(middleware.NoMethodHandler())
 
 	port := cfg.Server.Port

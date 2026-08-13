@@ -4,3 +4,8 @@ vendor/
 *.test
 *.out
 uploads/
+
+# webui: 真实前端产物不入库(打包脚本覆盖),占位入
+backend/go/internal/webui/out/*
+!backend/go/internal/webui/out/index.html
+!backend/go/internal/webui/out/404.html
