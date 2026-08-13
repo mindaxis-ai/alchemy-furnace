@@ -12,6 +12,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
+	"github.com/alchemy-furnace/server/model"
+
 	"github.com/google/uuid"
 )
 
@@ -68,8 +70,12 @@ func (cls *Chat) SSEChat(c *gin.Context) {
 		sseWriteEvent(w, flusher, "error", ssePayload{Content: "获取会话信息失败"})
 		return
 	}
-	// 群聊(Type=group)Session.AgentID=nil,单聊走 AgentID;
-	// 入口已在 router 层按 session.Type 分流(见 Task 8),此处仅做防御性兜底
+	// 群聊 Type=group 走专门通道(编排器驱动,带心跳保活)
+	if session.Type == model.SessionTypeGroup {
+		cls.runGroupSSE(c, sessionUID, content)
+		return
+	}
+	// 群聊 AgentID=nil 走单聊入口视为错误(防御性兜底)
 	if session.AgentID == nil {
 		sseWriteEvent(w, flusher, "error", ssePayload{Content: "该会话不支持单聊通道"})
 		return

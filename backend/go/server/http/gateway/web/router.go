@@ -64,7 +64,10 @@ func Register(r *gin.Engine) error {
 		chatGroup.POST("/sessions", router.Wrapper(chatHandler.CreateSession))
 		chatGroup.GET("/sessions", router.WrapperPage(chatHandler.ListSessions))
 		chatGroup.GET("/sessions/:uuid/messages", router.WrapperPage(chatHandler.GetMessages))
-		chatGroup.POST("/sse/:uuid", chatHandler.SSEChat) // RAW: 自行写出标准 SSE 事件
+		chatGroup.PUT("/sessions/:uuid", router.Wrapper(chatHandler.UpdateSession))
+		chatGroup.POST("/sessions/:uuid/members", router.Wrapper(chatHandler.AddMembers))
+		chatGroup.DELETE("/sessions/:uuid/members/:agent_uuid", router.Wrapper(chatHandler.RemoveMember))
+		chatGroup.POST("/sse/:uuid", chatHandler.SSEChat) // RAW: 自行写出标准 SSE 事件(单/群分流)
 	}
 
 	// 试丹(临时组合「基础性格 + 金丹」预览,无需创建道人)

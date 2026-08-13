@@ -69,4 +69,8 @@ type Chat interface {
 
 	// GenerateSessionTitle 单聊自动命名入口:title 已非空(用户手改)放弃;失败返回 ""
 	GenerateSessionTitle(ctx context.Context, sessionUID uuid.UUID, userContent string, firstReply string) string
+
+	// RunGroupTurn 群聊回合编排:落用户消息→≤3轮逐道人发言→自动命名→turn_done
+	// emit 由 handler 提供(带锁 + 心跳)
+	RunGroupTurn(ctx context.Context, sessionUID uuid.UUID, content string, emit func(event string, payload any))
 }
