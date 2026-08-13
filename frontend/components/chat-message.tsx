@@ -186,7 +186,7 @@ export function ChatMessage({ message, streaming = false, members }: ChatMessage
               <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
                 {message.content.split(/(@[^\s@，。,.!?？！:：;；]+)/g).map((part, i) =>
                   /^@[^\s@，。,.!?？！:：;；]+$/.test(part)
-                    ? <MentionChip key={i} name={part.slice(1)} members={members} variant="user" />
+                    ? <MentionChip key={i} name={part.slice(1)} members={members} variant="agent" />
                     : <span key={i}>{part}</span>
                 )}
               </p>
