@@ -5,15 +5,25 @@ package web
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 
+	"github.com/alchemy-furnace/server/internal/configuration"
 	"github.com/alchemy-furnace/server/internal/paths"
 	"github.com/alchemy-furnace/server/server/http/middleware"
 )
+
+// TestMain 统一开 DEMO_MODE 让 handler 装配走 mock DAO,
+// 避免 NewEngine 注册 user handler 时调 dao.GetDB() 触发 log.Fatal
+func TestMain(m *testing.M) {
+	os.Setenv("DEMO_MODE", "1")
+	configuration.LoadDemoConfig()
+	os.Exit(m.Run())
+}
 
 func newReq(t *testing.T, method, path, host, token string) *http.Request {
 	t.Helper()
