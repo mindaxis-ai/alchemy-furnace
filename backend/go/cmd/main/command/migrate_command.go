@@ -30,7 +30,8 @@ func initDBForCommand() error {
 }
 
 func newMigrateUpCommand() *cobra.Command {
-	return &cobra.Command{
+	var force bool
+	command := &cobra.Command{
 		Use:  "up",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -39,22 +40,29 @@ func newMigrateUpCommand() *cobra.Command {
 			}
 			defer dao.CloseDatabase()
 
-			has, err := dao.HasSchema()
-			if err != nil {
-				return err
-			}
-			if has {
-				fmt.Println("[炼丹炉] schema 已存在,AutoMigrate 幂等跳过(可手动 down+up 重建)")
-				return nil
+			// --force:跳过 HasSchema 短路,补齐新列/索引(新老 schema 漂移修复场景)
+			if !force {
+				has, err := dao.HasSchema()
+				if err != nil {
+					return err
+				}
+				if has {
+					fmt.Println("[炼丹炉] schema 已存在,AutoMigrate 幂等跳过(可手动 down+up 重建,或加 --force 强制补齐)")
+					return nil
+				}
+			} else {
+				fmt.Println("[炼丹炉] --force 模式:跳过 HasSchema 短路,直接 AutoMigrate 补齐新列/索引")
 			}
 
 			if err := dao.MigrateUp(); err != nil {
 				return err
 			}
-			fmt.Println("[炼丹炉] AutoMigrate 完成,8 张业务表已就位")
+			fmt.Println("[炼丹炉] AutoMigrate 完成,业务表已对齐最新 model")
 			return nil
 		},
 	}
+	command.Flags().BoolVarP(&force, "force", "f", false, "跳过 HasSchema 短路,强制补齐新增列/索引(用于新老 schema 漂移修复)")
+	return command
 }
 
 func newMigrateDownCommand() *cobra.Command {

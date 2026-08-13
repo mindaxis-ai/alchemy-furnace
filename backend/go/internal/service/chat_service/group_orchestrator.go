@@ -278,6 +278,9 @@ func (s *Chat) generateSessionTitle(ctx context.Context, session *model.ChatSess
 	if rerr != nil {
 		return ""
 	}
+	if creds == nil {
+		return ""
+	}
 	reply := firstReply
 	if utf8.RuneCountInString(reply) > 200 {
 		reply = string([]rune(reply)[:200])

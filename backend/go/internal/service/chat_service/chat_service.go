@@ -282,13 +282,16 @@ func (s *Chat) callChatCompletion(ctx context.Context, messages []map[string]str
 		body, _ := io.ReadAll(resp.Body)
 		return "", &engine.EngineError{Op: "语言引擎对话接口", StatusCode: resp.StatusCode, Body: string(body)}
 	}
-	var result struct {
-		Content string `json:"content"`
+	// Python 端走统一 BaseResponse 包络:{code, message, data:{content, model, usage}}
+	var wrapper struct {
+		Data struct {
+			Content string `json:"content"`
+		} `json:"data"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&wrapper); err != nil {
 		return "", fmt.Errorf("解析对话响应失败: %w", err)
 	}
-	return result.Content, nil
+	return wrapper.Data.Content, nil
 }
 
 // callChatStream 调用 Python 语言引擎的流式对话接口(SSE),返回响应流

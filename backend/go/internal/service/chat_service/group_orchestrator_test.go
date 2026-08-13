@@ -41,13 +41,13 @@ func newScriptEngine(replies []string) *scriptEngine {
 			fmt.Fprint(w, "data: [DONE]\n\n")
 			return
 		}
-		// 非流式 /chat/completions
+		// 非流式 /chat/completions(模拟 Python 端 BaseResponse 包络)
 		if e.completionReply == "" {
 			http.Error(w, `{"error":"no completion reply configured"}`, http.StatusInternalServerError)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"content": %q, "model": "test", "usage": {}}`, e.completionReply)
+		fmt.Fprintf(w, `{"code":0,"message":"ok","data":{"content": %q, "model": "test", "usage": {}}}`, e.completionReply)
 	}))
 	return e
 }
