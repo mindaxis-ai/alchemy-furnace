@@ -65,10 +65,11 @@ func (f *fakeAgentDao) SaveLanguagePattern(ctx context.Context, p *model.Languag
 }
 
 type fakeChatDao struct {
-	sessions map[string]*model.ChatSession
-	members  map[uint][]*model.SessionMember
-	messages []*model.ChatMessage
-	nextID   uint
+	sessions  map[string]*model.ChatSession
+	members   map[uint][]*model.SessionMember
+	messages  []*model.ChatMessage
+	nextID    uint
+	agentByID map[uint]*model.DaoAgent // 模拟 GORM Preload("Agent")
 }
 
 func (f *fakeChatDao) TakeSessionByUUID(ctx context.Context, uid uuid.UUID) (*model.ChatSession, errors.Error) {
@@ -103,12 +104,27 @@ func (f *fakeChatDao) UpdateSession(ctx context.Context, s *model.ChatSession, u
 	}
 	return nil
 }
+
+func (f *fakeChatDao) FindMessages(ctx context.Context, sessionID uint, page, size int) (int64, []*model.ChatMessage, errors.Error) {
+	// 简易实现:按写入顺序返回,fake 不分页(测试单轮历史 < 20 条)
+	out := make([]*model.ChatMessage, 0, len(f.messages))
+	for _, m := range f.messages {
+		if m.SessionID == sessionID {
+			cp := *m
+			if cp.AgentID != nil {
+			if a, ok := f.agentByID[*cp.AgentID]; ok {
+				agent := *a
+				cp.Agent = &agent
+			}
+		}
+			out = append(out, &cp)
+		}
+	}
+	return int64(len(out)), out, nil
+}
 func (f *fakeChatDao) DeleteSession(ctx context.Context, s *model.ChatSession) errors.Error {
 	delete(f.sessions, s.UUID.String())
 	return nil
-}
-func (f *fakeChatDao) FindMessages(ctx context.Context, sessionID uint, page, size int) (int64, []*model.ChatMessage, errors.Error) {
-	panic("unused")
 }
 func (f *fakeChatDao) SaveMessage(ctx context.Context, msg *model.ChatMessage) errors.Error {
 	f.messages = append(f.messages, msg)
@@ -121,7 +137,18 @@ func (f *fakeChatDao) SaveMembers(ctx context.Context, ms []*model.SessionMember
 	return nil
 }
 func (f *fakeChatDao) FindMembers(ctx context.Context, sessionID uint) ([]*model.SessionMember, errors.Error) {
-	return f.members[sessionID], nil
+	// 填充 Agent(模拟 GORM Preload)
+	src := f.members[sessionID]
+	out := make([]*model.SessionMember, 0, len(src))
+	for _, m := range src {
+		cp := *m
+		if a, ok := f.agentByID[cp.AgentID]; ok {
+			agent := *a
+			cp.Agent = agent
+		}
+		out = append(out, &cp)
+	}
+	return out, nil
 }
 func (f *fakeChatDao) DeleteMember(ctx context.Context, sessionID uint, agentID uint) errors.Error {
 	src := f.members[sessionID]
@@ -141,7 +168,15 @@ func newGroupTestSvc() (*Chat, *fakeChatDao, uuid.UUID, uuid.UUID, uuid.UUID) {
 		u2.String(): {ID: 2, UUID: u2, Name: "孙悟空", Status: "active"},
 		u3.String(): {ID: 3, UUID: u3, Name: "睡道人", Status: "inactive"},
 	}}
-	chats := &fakeChatDao{sessions: map[string]*model.ChatSession{}, members: map[uint][]*model.SessionMember{}}
+	agentByID := map[uint]*model.DaoAgent{
+		1: agents.agents[u1.String()],
+		2: agents.agents[u2.String()],
+	}
+	chats := &fakeChatDao{
+		sessions:  map[string]*model.ChatSession{},
+		members:   map[uint][]*model.SessionMember{},
+		agentByID: agentByID,
+	}
 	svc := New(chats, agents, nil, nil, "http://unused")
 	return svc, chats, u1, u2, u3
 }
