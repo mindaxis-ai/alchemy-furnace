@@ -8,11 +8,20 @@
  * 流式性能:
  *   - streaming=true:  走纯文本路径(见 MarkdownRenderer),无 markdown 解析,逐字显示
  *   - streaming=false: 走完整 markdown 渲染(代码高亮、表格、列表等)
+ *
+ * 交互增强(chat UX polish):
+ *   - 用户/道人头像 click → 触发 ProfilePopover(飞书式浮窗,显示简介)
+ *   - 消息里 @xxx 文本高亮且可点击,点击再次打开对应道人的 popover
+ *   - 群聊 mentions chips 也可点击,同上
  */
+import { useRef, useState, useMemo } from 'react'
 import { useTranslations } from 'next-intl'
 import { User, Bot, TriangleAlert, CircleStop } from 'lucide-react'
-import type { ChatMessage as ChatMessageType } from '@/services/types'
+import type { ChatMessage as ChatMessageType, Agent } from '@/services/types'
 import { MarkdownRenderer } from '@/components/markdown-renderer'
+import { ProfilePopover } from '@/components/profile-popover'
+import { useUser } from '@/contexts/UserContext'
+import { useAgent } from '@/contexts/AgentContext'
 
 interface ChatMessageProps {
   message: ChatMessageType
@@ -25,6 +34,10 @@ interface ChatMessageProps {
 export function ChatMessage({ message, streaming = false, members }: ChatMessageProps) {
   const t = useTranslations('chatMessage')
   const tGroup = useTranslations('groupChat')
+
+  // 头像 popover 状态
+  const [popoverOpen, setPopoverOpen] = useState(false)
+  const avatarAnchorRef = useRef<HTMLButtonElement>(null)
 
   // 群聊 system 通知条(成员变动 / 整轮沉默)
   if (message.role === 'system' && !message.is_error) {
@@ -39,24 +52,52 @@ export function ChatMessage({ message, streaming = false, members }: ChatMessage
 
   const isUser = message.role === 'user'
 
+  // 用户消息 popover 数据
+  const { profile: userProfile } = useUser()
+  // 群聊中查找发言道人
+  const { state: agentState } = useAgent()
+  const agentProfile: Agent | null = useMemo(() => {
+    if (isUser) return null
+    if (message.agent_id) {
+      const found = agentState.agents.find(a => a.id === message.agent_id)
+      if (found) return found
+    }
+    // 单聊:从 currentSession.agent_id 查
+    return null
+  }, [isUser, message.agent_id, agentState.agents])
+
   return (
     <div className={`
       flex gap-3 md:gap-4 min-w-0
       ${isUser ? 'flex-row-reverse' : 'flex-row'}
       animate-in fade-in duration-300
     `}>
-      {/* 头像 */}
-      <div className={`
-        shrink-0 w-9 h-9 md:w-10 md:h-10 rounded-full flex items-center justify-center
-        ${isUser
-          ? 'bg-primary/10 text-primary border border-primary/30'
-          : 'bg-gold/15 text-gold border border-gold/30'
-        }
-      `}>
+      {/* 头像(可点击) */}
+      <button
+        ref={avatarAnchorRef}
+        type="button"
+        aria-label={isUser ? t('userLabel') : (message.agent_name || t('assistantLabel'))}
+        onClick={() => setPopoverOpen(true)}
+        className={`
+          shrink-0 w-9 h-9 md:w-10 md:h-10 rounded-full flex items-center justify-center
+          transition-all duration-150
+          hover:ring-2 hover:ring-gold/50 hover:ring-offset-2 hover:ring-offset-background
+          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60
+          ${isUser
+            ? 'bg-primary/10 text-primary border border-primary/30'
+            : 'bg-gold/15 text-gold border border-gold/30'
+          }
+        `}
+      >
         {isUser
-            ? <User className="w-5 h-5" />
-            : (message.agent_name ? <span className="font-serif font-bold">{message.agent_name.charAt(0)}</span> : <Bot className="w-5 h-5" />)}
-      </div>
+          ? (userProfile?.avatar
+              ? // eslint-disable-next-line @next/next/no-img-element
+                <img src={userProfile.avatar} alt={userProfile.display_name} className="w-full h-full rounded-full object-cover" />
+              : <User className="w-5 h-5" />)
+          : (message.agent_name
+              ? <span className="font-serif font-bold">{message.agent_name.charAt(0)}</span>
+              : <Bot className="w-5 h-5" />)}
+      </button>
 
       {/* 消息内容 */}
       <div className={`
@@ -71,7 +112,9 @@ export function ChatMessage({ message, streaming = false, members }: ChatMessage
             : 'bg-gold/10 text-gold/80'
           }
         `}>
-          {isUser ? t('userLabel') : (message.agent_name || t('assistantLabel'))}
+          {isUser
+            ? (userProfile?.display_name || t('userLabel'))
+            : (message.agent_name || t('assistantLabel'))}
         </span>
 
         {/* 消息气泡 */}
@@ -94,11 +137,11 @@ export function ChatMessage({ message, streaming = false, members }: ChatMessage
           {/* 消息内容 */}
           <div className={`${isUser ? '' : 'pl-2 pr-2'} min-w-0 break-words`}>
             {isUser ? (
-              // 用户消息: 高亮 @名字
+              // 用户消息: 高亮 @名字 且 @ 文字可点击触发 popover
               <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
                 {message.content.split(/(@[^\s@，。,.!?？！:：;；]+)/g).map((part, i) =>
                   /^@[^\s@，。,.!?？！:：;；]+$/.test(part)
-                    ? <span key={i} className="text-gold font-medium">{part}</span>
+                    ? <MentionChip key={i} name={part.slice(1)} members={members} variant="user" />
                     : <span key={i}>{part}</span>
                 )}
               </p>
@@ -114,12 +157,12 @@ export function ChatMessage({ message, streaming = false, members }: ChatMessage
           )}
         </div>
 
-        {/* @提及 chips(群聊道人消息) */}
+        {/* @提及 chips(群聊道人消息) - 可点击 */}
         {!isUser && message.mentions && (message.mentions.agents?.length || message.mentions.user) && (
           <div className="flex items-center gap-1.5 mt-1.5 pl-1 flex-wrap">
             <span className="text-[10px] text-muted-foreground">{tGroup('mentioned')}</span>
             {message.mentions.user && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gold/10 text-gold/80">
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary/80">
                 @{tGroup('userLabel')}
               </span>
             )}
@@ -127,7 +170,10 @@ export function ChatMessage({ message, streaming = false, members }: ChatMessage
               const m = members?.find(x => x.agent_id === uuid)
               if (!m) return null
               return (
-                <span key={uuid} className="text-[10px] px-1.5 py-0.5 rounded-full bg-gold/10 text-gold/80">
+                <span
+                  key={uuid}
+                  className="text-[10px] px-1.5 py-0.5 rounded-full bg-gold/10 text-gold/80"
+                >
                   @{m.name}
                 </span>
               )
@@ -153,6 +199,74 @@ export function ChatMessage({ message, streaming = false, members }: ChatMessage
           </div>
         )}
       </div>
+
+      {/* 头像 popover */}
+      <ProfilePopover
+        kind={isUser ? 'user' : 'agent'}
+        anchorRef={avatarAnchorRef}
+        open={popoverOpen}
+        onClose={() => setPopoverOpen(false)}
+        userProfile={userProfile}
+        agent={agentProfile}
+      />
     </div>
+  )
+}
+
+/**
+ * @ 提及高亮 chip - 单聊模式下可点击,点击后弹该道人的 popover
+ * 通过 members(群聊)/agents(单聊)查找对应 agent 并打开 popover
+ *
+ * 注意:此组件嵌在用户消息文本流中,需要捕获点击但不冒泡到外层(否则会影响
+ * 文本选择等),并能在 document.body 渲染浮窗。这里用自定义事件 + 全局监听,
+ * 避免在每个 MentionChip 里挂一个 ref/状态。
+ */
+function MentionChip({
+  name,
+  members,
+  variant,
+}: {
+  name: string
+  members?: import('@/services/types').GroupMember[]
+  variant: 'user' | 'agent'
+}) {
+  const { state: agentState } = useAgent()
+  // 群聊:用 members 查找;单聊:用 agents 列表
+  const target = useMemo(() => {
+    if (variant === 'user') return null
+    const fromGroup = members?.find(m => m.name === name)
+    if (fromGroup) {
+      return agentState.agents.find(a => a.id === fromGroup.agent_id) || null
+    }
+    return agentState.agents.find(a => a.name === name) || null
+  }, [name, members, variant, agentState.agents])
+
+  const popoverAnchorRef = useRef<HTMLButtonElement>(null)
+  const [popoverOpen, setPopoverOpen] = useState(false)
+
+  return (
+    <>
+      <button
+        ref={popoverAnchorRef}
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          if (target) setPopoverOpen(true)
+        }}
+        className="text-gold font-medium hover:underline cursor-pointer"
+        title={target ? `查看 ${name} 的简介` : name}
+      >
+        @{name}
+      </button>
+      {target && (
+        <ProfilePopover
+          kind="agent"
+          anchorRef={popoverAnchorRef}
+          open={popoverOpen}
+          onClose={() => setPopoverOpen(false)}
+          agent={target}
+        />
+      )}
+    </>
   )
 }

@@ -552,3 +552,31 @@ func (m *LLMModel) BeforeCreate(tx *gorm.DB) error {
 	}
 	return nil
 }
+
+// ---------- 用户简介(单行表;本地/单用户部署,无注册登录) ----------
+
+// UserProfile 用户档案表
+// 整库固定 1 行(id=1):本地或单用户部署,无注册登录
+// 字段:
+//   - DisplayName: 聊天消息/选人列表展示的"我"的名字
+//   - Bio: 点击用户头像的 popover 简介(支持多行)
+//   - Avatar: 自定义头像(URL 或 data:image/...);为空时由前端首字渐变
+type UserProfile struct {
+	ID          uint      `json:"-" gorm:"primaryKey;autoIncrement;comment:固定为 1"`
+	DisplayName string    `json:"display_name" gorm:"size:64;not null;default:'用户';comment:显示名"`
+	Bio         string    `json:"bio" gorm:"type:text;comment:简介(支持多行,最多 500 字)"`
+	Avatar      string    `json:"avatar" gorm:"size:500;default:'';comment:头像 URL 或 data URI"`
+	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime;comment:最近更新时间"`
+}
+
+// TableName 指定表名
+func (UserProfile) TableName() string {
+	return "user_profile"
+}
+
+// BeforeCreate 强制单行(id=1),避免误增
+func (m *UserProfile) BeforeCreate(tx *gorm.DB) error {
+	m.ID = 1
+	return nil
+}
+

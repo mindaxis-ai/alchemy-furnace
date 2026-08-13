@@ -26,6 +26,7 @@ func Register(r *gin.Engine) error {
 	modelService := model_service.New(daoModel, provider)
 	systemHandler := system.New(modelService)
 	modelHandler := handler.NewModel()
+	userHandler := handler.NewUser()
 
 	// 金丹管理(UUID 对外标识)
 	pills := v1.Group("/pills")
@@ -103,6 +104,13 @@ func Register(r *gin.Engine) error {
 		models.GET("/:uuid", router.Wrapper(modelHandler.GetModel))
 		models.PUT("/:uuid", router.Wrapper(modelHandler.UpdateModel))
 		models.DELETE("/:uuid", router.Wrapper(modelHandler.DeleteModel))
+	}
+
+	// 用户档案(本地/单用户部署,整库固定 id=1)
+	userGroup := v1.Group("/user")
+	{
+		userGroup.GET("/profile", router.Wrapper(userHandler.Get))
+		userGroup.PUT("/profile", router.Wrapper(userHandler.Update))
 	}
 
 	return nil

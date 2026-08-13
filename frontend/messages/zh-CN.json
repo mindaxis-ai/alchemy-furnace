@@ -72,7 +72,8 @@
     "tabs": {
       "models": "模型管理",
       "fire": "炉火",
-      "about": "关于"
+      "about": "关于",
+      "profile": "我的简介"
     },
     "fire": {
       "title": "炉火",
@@ -687,5 +688,48 @@
       "proactivity": "主动性",
       "proactivityHint": "群聊中的发言欲(0-100,越高越健谈)"
     }
+  },
+  "profile": {
+    "userTitle": "用户简介",
+    "agentTitle": "道人简介",
+    "userSubtitle": "本地炉主",
+    "defaultUser": "用户",
+    "noBio": "这位道友还没有写简介。",
+    "noPersonality": "这位道人尚未立下心法。",
+    "editInSettings": "在设置中编辑",
+    "settingsTitle": "我的简介",
+    "settingsSubtitle": "道友们会看到这些信息",
+    "displayName": "显示名",
+    "displayNamePlaceholder": "给自己起个名号",
+    "bio": "个人简介",
+    "bioPlaceholder": "聊聊你的爱好、追求、或想从道人那里得到什么...",
+    "bioHint": "1-500 字。Markdown 暂不支持。",
+    "save": "保存",
+    "saved": "已保存",
+    "saving": "保存中...",
+    "saveError": "保存失败,请重试",
+    "loadError": "加载简介失败",
+    "required": "显示名不能为空",
+    "tooLong": "不能超过 {max} 个字符"
+  },
+  "chatView": {
+    "newSession": "新建对话",
+    "mode": {
+      "single": "对谈",
+      "group": "围炉论道",
+      "singleHint": "与一位道人对坐而谈",
+      "groupHint": "邀两位以上道人围炉论道",
+      "selectAgent": "选择道人",
+      "selectAgents": "邀道人入座",
+      "selectAtLeast": "请至少选择 {n} 位道人",
+      "noAgents": "道人府尚无道人,先去招募一位",
+      "confirm": "开坛",
+      "backToList": "返回"
+    }
+  },
+  "mention": {
+    "placeholder": "选择道人来提及...",
+    "noMatches": "没有匹配的道人",
+    "allMembers": "全部群成员"
   }
 }

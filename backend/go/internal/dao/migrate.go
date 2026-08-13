@@ -28,6 +28,7 @@ var allMigratableModels = []any{
 	&model.SessionMember{},
 	&model.LLMProvider{},
 	&model.LLMModel{},
+	&model.UserProfile{},
 }
 
 // nullableAlterations 新老 schema 漂移:GORM AutoMigrate 不会把已存在的 NOT NULL 列改为可空

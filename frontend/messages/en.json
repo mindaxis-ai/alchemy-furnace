@@ -72,7 +72,8 @@
     "tabs": {
       "models": "Model Management",
       "fire": "Furnace",
-      "about": "About"
+      "about": "About",
+      "profile": "My Profile"
     },
     "fire": {
       "title": "Furnace",
@@ -688,5 +689,48 @@
       "proactivity": "Proactivity",
       "proactivityHint": "Willingness to speak in group chats (0-100)"
     }
+  },
+  "profile": {
+    "userTitle": "User Profile",
+    "agentTitle": "Agent Profile",
+    "userSubtitle": "Local Furnace Master",
+    "defaultUser": "User",
+    "noBio": "This fellow has not written a bio yet.",
+    "noPersonality": "This agent has not declared a doctrine yet.",
+    "editInSettings": "Edit in Settings",
+    "settingsTitle": "My Profile",
+    "settingsSubtitle": "Agents will see this info",
+    "displayName": "Display Name",
+    "displayNamePlaceholder": "Give yourself a title",
+    "bio": "Bio",
+    "bioPlaceholder": "Your hobbies, pursuits, or what you hope to gain from the agents...",
+    "bioHint": "1-500 chars. Markdown not supported yet.",
+    "save": "Save",
+    "saved": "Saved",
+    "saving": "Saving...",
+    "saveError": "Save failed, please retry",
+    "loadError": "Failed to load profile",
+    "required": "Display name cannot be empty",
+    "tooLong": "Cannot exceed {max} characters"
+  },
+  "chatView": {
+    "newSession": "New Session",
+    "mode": {
+      "single": "Solo Talk",
+      "group": "Group Discussion",
+      "singleHint": "Sit down with one agent",
+      "groupHint": "Invite 2+ agents to the furnace",
+      "selectAgent": "Select an agent",
+      "selectAgents": "Invite agents to the table",
+      "selectAtLeast": "Select at least {n} agents",
+      "noAgents": "No agents yet. Recruit one first.",
+      "confirm": "Open",
+      "backToList": "Back"
+    }
+  },
+  "mention": {
+    "placeholder": "Pick an agent to mention...",
+    "noMatches": "No matching agents",
+    "allMembers": "All members"
   }
 }
