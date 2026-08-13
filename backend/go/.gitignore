@@ -9,3 +9,10 @@ uploads/
 backend/go/internal/webui/out/*
 !backend/go/internal/webui/out/index.html
 !backend/go/internal/webui/out/404.html
+
+# 防二进制混入: 'go build' 不带 -o 会在 cwd 生成 main
+main
+*.exe
+*.dll
+*.so
+*.dylib
