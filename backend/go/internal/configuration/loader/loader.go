@@ -81,6 +81,11 @@ func LoadConfig(dir string) error {
 	// 多数据库支持: 智能补全 Driver(向后兼容 + 零配置降级)
 	resolveDriver(&configuration.Configuration.Database)
 
+	// desktop 模式 MODEL_KEY_SECRET 兜底(已配置则跳过;否则读 secret.key 或首启生成)
+	if err := resolveModelKeySecret(&configuration.Configuration); err != nil {
+		return fmt.Errorf("初始化 MODEL_KEY_SECRET 失败: %w", err)
+	}
+
 	return nil
 }
 
