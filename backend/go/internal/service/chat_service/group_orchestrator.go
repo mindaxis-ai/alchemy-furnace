@@ -197,12 +197,41 @@ func (s *Chat) letAgentSpeak(ctx context.Context, session *model.ChatSession, m 
 	passed := false
 	started := false
 	chunkForward := func(chunk string) { emit("chunk", GroupSpeakerPayload{Content: chunk}) }
+
+	// 实时剥前缀:把 LLM 误加的【name】prefix 在 streaming 阶段就丢弃,前端无需重渲染
+	// 实现:累计到一个完整「【xxx】」或判定非 prefix 后再决定
+	prefixBuf := strings.Builder{}
+	prefixDecided := false
+	strippedForward := func(chunk string) {
+		if prefixDecided {
+			chunkForward(chunk)
+			return
+		}
+		prefixBuf.WriteString(chunk)
+		cur := prefixBuf.String()
+		// 尝试匹配 prefix 模式;若还没匹配完,继续攒
+		m := speakerPrefixPattern.FindString(cur)
+		if m != "" && len(m) == len(cur) {
+			// 整个 buffer 都是 prefix(可能多次重复如【name】【name】),继续攒,看看是否还有更多
+			// 当下一个 chunk 来时,若继续匹配 prefix,继续丢弃;若不匹配,转为 forward
+			return
+		}
+		// 不再是纯 prefix(出现了正常字符):把 prefix 段丢弃,正常段开始 forward
+		prefixDecided = true
+		rest := cur
+		if m != "" {
+			rest = cur[len(m):]
+		}
+		if rest != "" {
+			chunkForward(rest)
+		}
+	}
 	fullContent, canceled, streamErr := s.StreamChat(ctx, messages, creds, func(chunk string) {
 		if passed {
 			return // 已判沉默,后续内容全部丢弃
 		}
 		if decided {
-			chunkForward(chunk)
+			strippedForward(chunk)
 			return
 		}
 		probe.WriteString(chunk)
@@ -213,7 +242,7 @@ func (s *Chat) letAgentSpeak(ctx context.Context, session *model.ChatSession, m 
 			} else {
 				started = true
 				emit("speaker_start", GroupSpeakerPayload{AgentID: m.Agent.UUID.String(), AgentName: m.Agent.Name, AgentAvatar: m.Agent.Avatar})
-				chunkForward(probe.String())
+				strippedForward(probe.String())
 			}
 		}
 	})
@@ -226,7 +255,7 @@ func (s *Chat) letAgentSpeak(ctx context.Context, session *model.ChatSession, m 
 		} else if probe.Len() > 0 {
 			started = true
 			emit("speaker_start", GroupSpeakerPayload{AgentID: m.Agent.UUID.String(), AgentName: m.Agent.Name, AgentAvatar: m.Agent.Avatar})
-			chunkForward(probe.String())
+			strippedForward(probe.String())
 		}
 	}
 
@@ -234,6 +263,7 @@ func (s *Chat) letAgentSpeak(ctx context.Context, session *model.ChatSession, m 
 	case canceled:
 		// 用户叫停:已开气泡的半截内容尽力落库
 		if started && fullContent != "" {
+			fullContent = StripSpeakerPrefix(fullContent)
 			if _, err := s.SaveAgentMessage(context.WithoutCancel(ctx), session.ID, m.AgentID, "assistant", fullContent, nil); err != nil {
 				zap.L().Warn("[炼丹炉] 群聊半截发言落库失败", zap.Error(err))
 			}
@@ -246,6 +276,7 @@ func (s *Chat) letAgentSpeak(ctx context.Context, session *model.ChatSession, m 
 		return false, "", nil, false // 沉默/空内容:零痕迹
 	}
 
+	fullContent = StripSpeakerPrefix(fullContent)
 	mentionedNames, pingedUser = ParseMentions(fullContent, memberNames)
 	mentions := buildMentionsJSON(members, mentionedNames, pingedUser)
 	msg, err := s.SaveAgentMessage(ctx, session.ID, m.AgentID, "assistant", fullContent, mentions)

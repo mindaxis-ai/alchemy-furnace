@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/alchemy-furnace/server/model"
 )
@@ -54,6 +55,31 @@ func IsPass(content string) bool {
 	return passPattern.MatchString(content)
 }
 
+// speakerPrefixPattern 匹配开头的「【任意名字】」(全角或半角括号都可,中间可有空白)
+// 用于清理 LLM 在回复开头误加的「自报家门」前缀(如「【测试道人2】...」或「【测试道人2】【测试道人2】...」)。
+// 不限制名字是否在群成员中:LLM 的 prompt 训练倾向加「【自己】」,但偶尔也会写其他人的名字。
+var speakerPrefixPattern = regexp.MustCompile(`^(?:\s*(?:\[[^\]\n]+]|【[^】\n]+】)\s*)+`)
+
+// StripSpeakerPrefix 剥掉 LLM 回复开头的所有「【名字】」前缀(可多个)。
+// 仅在开头操作,正文中的「【…】」保留(避免误伤引用等)。
+// 空格也算消耗,避免 LLM 写成「【name】 【name】」也清理干净。
+func StripSpeakerPrefix(content string) string {
+	if content == "" {
+		return content
+	}
+	m := speakerPrefixPattern.FindString(content)
+	if m == "" {
+		return content
+	}
+	rest := content[len(m):]
+	// 防御:剥完后若整条都只剩空白/PASS,返回原值(保护沉默标记检测)
+	trimmed := strings.TrimSpace(rest)
+	if trimmed == "" || IsPass(trimmed) || utf8.RuneCountInString(trimmed) < 2 {
+		return content
+	}
+	return rest
+}
+
 // BuildGroupSystemPrompt 在道人自己的系统提示词后拼接群规则补丁
 // mustAnswer 为 true(被@必答)时追加禁 PASS 行
 func BuildGroupSystemPrompt(basePrompt string, selfName string, proactivity int, memberNames []string, mustAnswer bool) string {
@@ -62,6 +88,8 @@ func BuildGroupSystemPrompt(basePrompt string, selfName string, proactivity int,
 	b.WriteString("\n\n【群聊规则】\n")
 	fmt.Fprintf(&b, "你正在群聊中与多人交谈。成员:%s、用户「%s」。\n", strings.Join(memberNames, "、"), UserLabel)
 	b.WriteString("- 历史消息格式:【发言者】内容;你只代表「" + selfName + "」发言\n")
+	b.WriteString("- 严禁在回复开头加【" + selfName + "】或[name]等自报家门;发言者标识由系统展示\n")
+	b.WriteString("- 想@其他成员直接写 @名字(不加【】),如 @秃秃 / @" + UserLabel + "\n")
 	fmt.Fprintf(&b, "- 你的表达欲:%d/100(越高越健谈)。结合性格和对话题的兴趣决定说不说\n", proactivity)
 	b.WriteString("- 无话可说时只输出:[PASS]\n")
 	b.WriteString("- 可 @成员名 邀请对方接话(被@的道人下一轮必回应),也可 @" + UserLabel + " 向用户提问\n")

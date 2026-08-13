@@ -82,3 +82,37 @@ func TestBuildGroupMessages(t *testing.T) {
 		t.Fatalf("道人消息标签不对: %+v", msgs[2])
 	}
 }
+
+func TestStripSpeakerPrefix(t *testing.T) {
+	for _, tc := range []struct {
+		in, want string
+	}{
+		// 单重 prefix
+		{"【测试道人2】贫道已用过斋饭。", "贫道已用过斋饭。"},
+		// 双重 prefix(LLM 偶尔会重复)
+		{"【测试道人2】【测试道人2】善。", "善。"},
+		// 半角 []
+		{"[Test]hello world", "hello world"},
+		// 半角 + 全角混合
+		{"[Test]【Test】body", "body"},
+		// prefix 后紧跟 @
+		{"【秃秃】@测试道人2 道友。", "@测试道人2 道友。"},
+		// 无 prefix
+		{"普通回复,无自报家门。", "普通回复,无自报家门。"},
+		// 整条只有 prefix(应保留原值,避免误伤)
+		{"【测试道人2】", "【测试道人2】"},
+		// prefix 后仅空白
+		{"【测试道人2】  ", "【测试道人2】  "},
+		// 正文中含【...】(不应被剥)
+		{"回复中含【引用】的内容不应动。", "回复中含【引用】的内容不应动。"},
+		// 空字符串
+		{"", ""},
+		// 前导空白 + prefix
+		{"  【测试道人2】你好", "你好"},
+	} {
+		got := StripSpeakerPrefix(tc.in)
+		if got != tc.want {
+			t.Errorf("StripSpeakerPrefix(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
