@@ -5,6 +5,20 @@
  * 用户消息: 右侧，朱砂红边框
  * AI 消息: 左侧，金色边框，卷轴风格
  *
+ * 版式（飞书/微信 金刚位）:
+ *   ┌─────────────────────────────────────────────┐
+ *   │ [头像]  [名字]                              │  ← 头像固定顶端
+ *   │          ┌──────────────────────────────┐  │
+ *   │          │ 气泡(可换行,可很长)            │  │
+ *   │          │                              │  │
+ *   │          └──────────────────────────────┘  │
+ *   │          [状态/mentions chips]              │
+ *   └─────────────────────────────────────────────┘
+ *
+ *   - items-start: 头像始终对齐到本行顶端(不被气泡高度拉长)
+ *   - 名字 block: 与气泡竖直堆叠,不挤在一行
+ *   - 气泡 block: 宽由 max-w 限制,长内容自然换行
+ *
  * 流式性能:
  *   - streaming=true:  走纯文本路径(见 MarkdownRenderer),无 markdown 解析,逐字显示
  *   - streaming=false: 走完整 markdown 渲染(代码高亮、表格、列表等)
@@ -95,18 +109,20 @@ export function ChatMessage({ message, streaming = false, members }: ChatMessage
 
   return (
     <div className={`
-      flex gap-3 md:gap-4 min-w-0
+      flex items-start gap-3 md:gap-4 min-w-0
       ${isUser ? 'flex-row-reverse' : 'flex-row'}
       animate-in fade-in duration-300
     `}>
-      {/* 头像(可点击) */}
+      {/* 头像(金刚位):固定顶端,不被气泡高度拉长 */}
       <button
         ref={avatarAnchorRef}
         type="button"
         aria-label={isUser ? t('userLabel') : (message.agent_name || t('assistantLabel'))}
         onClick={() => setPopoverOpen(true)}
         className={`
-          shrink-0 w-9 h-9 md:w-10 md:h-10 rounded-full flex items-center justify-center
+          shrink-0 self-start
+          w-9 h-9 md:w-10 md:h-10 rounded-full
+          flex items-center justify-center
           transition-all duration-150
           hover:ring-2 hover:ring-gold/50 hover:ring-offset-2 hover:ring-offset-background
           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60
@@ -126,14 +142,15 @@ export function ChatMessage({ message, streaming = false, members }: ChatMessage
               : <Bot className="w-5 h-5" />)}
       </button>
 
-      {/* 消息内容 */}
+      {/* 名字 + 气泡(竖直堆叠,与头像独立列) */}
       <div className={`
-        flex-1 max-w-[85%] md:max-w-[75%] min-w-0
-        ${isUser ? 'text-right' : 'text-left'}
+        flex-1 min-w-0 flex flex-col
+        ${isUser ? 'items-end' : 'items-start'}
       `}>
-        {/* 角色标签 */}
+        {/* 角色标签:单行,block,与气泡独立行 */}
         <span className={`
-          inline-block text-[10px] mb-1.5 px-2 py-0.5 rounded-full whitespace-nowrap
+          block text-[10px] mb-1.5 px-2 py-0.5 rounded-full whitespace-nowrap
+          ${isUser ? 'self-end' : 'self-start'}
           ${isUser
             ? 'bg-primary/10 text-primary/70'
             : 'bg-gold/10 text-gold/80'
@@ -144,10 +161,11 @@ export function ChatMessage({ message, streaming = false, members }: ChatMessage
             : (message.agent_name || t('assistantLabel'))}
         </span>
 
-        {/* 消息气泡 */}
+        {/* 消息气泡:block,宽由 max-w 控制,长内容自然换行 */}
         <div className={`
-          relative inline-block text-left max-w-full
-          px-4 py-3 rounded-2xl
+          relative block text-left
+          max-w-[88%] sm:max-w-[78%] md:max-w-[68%] lg:max-w-[60%]
+          px-4 py-3 rounded-2xl break-words
           ${isUser
             ? 'bg-primary/5 border border-primary/30 rounded-tr-sm'
             : 'bg-card/90 border border-gold/30 rounded-tl-sm'
@@ -243,10 +261,6 @@ export function ChatMessage({ message, streaming = false, members }: ChatMessage
 /**
  * @ 提及高亮 chip - 单聊模式下可点击,点击后弹该道人的 popover
  * 通过 members(群聊)/agents(单聊)查找对应 agent 并打开 popover
- *
- * 注意:此组件嵌在用户消息文本流中,需要捕获点击但不冒泡到外层(否则会影响
- * 文本选择等),并能在 document.body 渲染浮窗。这里用自定义事件 + 全局监听,
- * 避免在每个 MentionChip 里挂一个 ref/状态。
  */
 function MentionChip({
   name,
