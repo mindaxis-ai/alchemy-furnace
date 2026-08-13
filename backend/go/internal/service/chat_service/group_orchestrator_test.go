@@ -15,27 +15,39 @@ import (
 )
 
 // scriptEngine 按调用次序回放预设 SSE 响应;"|" 分隔 chunk
+// completionReply 为非流式 /completions 端点返回的 content(为空时该端点返回 500)
 type scriptEngine struct {
-	server  *httptest.Server
-	replies []string
-	calls   int
+	server         *httptest.Server
+	replies        []string
+	calls          int
+	completionReply string
 }
 
 func newScriptEngine(replies []string) *scriptEngine {
 	e := &scriptEngine{replies: replies}
 	e.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		reply := ""
-		if e.calls < len(e.replies) {
-			reply = e.replies[e.calls]
-		}
-		e.calls++
-		w.Header().Set("Content-Type", "text/event-stream")
-		if reply != "" {
-			for _, ch := range strings.Split(reply, "|") {
-				fmt.Fprintf(w, "data: {\"content\": %q}\n\n", ch)
+		if strings.HasSuffix(r.URL.Path, "/chat/completions/stream") {
+			reply := ""
+			if e.calls < len(e.replies) {
+				reply = e.replies[e.calls]
 			}
+			e.calls++
+			w.Header().Set("Content-Type", "text/event-stream")
+			if reply != "" {
+				for _, ch := range strings.Split(reply, "|") {
+					fmt.Fprintf(w, "data: {\"content\": %q}\n\n", ch)
+				}
+			}
+			fmt.Fprint(w, "data: [DONE]\n\n")
+			return
 		}
-		fmt.Fprint(w, "data: [DONE]\n\n")
+		// 非流式 /chat/completions
+		if e.completionReply == "" {
+			http.Error(w, `{"error":"no completion reply configured"}`, http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"content": %q, "model": "test", "usage": {}}`, e.completionReply)
 	}))
 	return e
 }
@@ -59,8 +71,13 @@ func (fakeResolver) ResolveFusionCredentials(ctx context.Context) (*credential.M
 }
 
 func newGroupSvc(t *testing.T, replies []string) (*Chat, *fakeChatDao, *scriptEngine, *model.ChatSession) {
+	return newGroupSvcWithCompletion(t, replies, "")
+}
+
+func newGroupSvcWithCompletion(t *testing.T, replies []string, completionReply string) (*Chat, *fakeChatDao, *scriptEngine, *model.ChatSession) {
 	t.Helper()
 	engine := newScriptEngine(replies)
+	engine.completionReply = completionReply
 	t.Cleanup(engine.server.Close)
 	u1, u2 := uuid.New(), uuid.New()
 	agents := &fakeAgentDao{agents: map[string]*model.DaoAgent{
@@ -166,5 +183,29 @@ func TestGroupTurnMaxThreeRounds(t *testing.T) {
 	}
 	if countEvent(log, "speaker_done") != 6 {
 		t.Fatalf("应有6条发言: %v", log.events)
+	}
+}
+
+
+func TestGroupTurnAutoTitle(t *testing.T) {
+	svc, chats, _, s := newGroupSvcWithCompletion(t, []string{"金丹妙不可言", "[PASS]"}, "丹道夜话")
+	log := &eventLog{}
+	svc.RunGroupTurn(context.Background(), s.UUID, "什么是金丹?", log.emit)
+
+	if countEvent(log, "title") != 1 {
+		t.Fatalf("应触发一次 title 事件: %v", log.events)
+	}
+	if chats.sessions[s.UUID.String()].Title != "丹道夜话" {
+		t.Fatalf("标题未落库: %q", chats.sessions[s.UUID.String()].Title)
+	}
+}
+
+func TestGroupTurnAutoTitleSkipsWhenRenamed(t *testing.T) {
+	svc, chats, _, s := newGroupSvcWithCompletion(t, []string{"金丹妙不可言", "[PASS]"}, "丹道夜话")
+	chats.sessions[s.UUID.String()].Title = "用户改的名"
+	log := &eventLog{}
+	svc.RunGroupTurn(context.Background(), s.UUID, "什么是金丹?", log.emit)
+	if countEvent(log, "title") != 0 || chats.sessions[s.UUID.String()].Title != "用户改的名" {
+		t.Fatal("已手动改名不应被覆盖")
 	}
 }

@@ -66,4 +66,7 @@ type Chat interface {
 
 	// SaveAgentMessage 写带道人归属与提及的消息(群聊编排器用)
 	SaveAgentMessage(ctx context.Context, sessionID uint, agentID uint, role string, content string, mentions model.JSONMap) (*model.ChatMessage, errors.Error)
+
+	// GenerateSessionTitle 单聊自动命名入口:title 已非空(用户手改)放弃;失败返回 ""
+	GenerateSessionTitle(ctx context.Context, sessionUID uuid.UUID, userContent string, firstReply string) string
 }

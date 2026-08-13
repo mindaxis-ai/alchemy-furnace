@@ -246,6 +246,51 @@ func (s *Chat) StreamChat(ctx context.Context, messages []map[string]string, cre
 	}
 }
 
+// callChatCompletion 调用 Python 非流式对话接口(标题生成等短任务)
+// 返回 content 字段;错误经 engine.MapEngineError 映射
+func (s *Chat) callChatCompletion(ctx context.Context, messages []map[string]string, creds *credential.ModelCredentials) (string, error) {
+	url := fmt.Sprintf("%s/api/v1/chat/completions", s.engineBaseURL)
+	modelName := configuration.Configuration.LLM.DefaultModel
+	if creds != nil && creds.Model != "" {
+		modelName = creds.Model
+	}
+	reqBody := map[string]interface{}{"messages": messages, "model": modelName}
+	if creds != nil {
+		if creds.BaseURL != "" {
+			reqBody["base_url"] = creds.BaseURL
+		}
+		if creds.APIKey != "" {
+			reqBody["api_key"] = creds.APIKey
+		}
+	}
+	jsonBody, _ := json.Marshal(reqBody)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return "", fmt.Errorf("构建对话请求失败: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		return "", &engine.EngineError{Op: "语言引擎对话接口", StatusCode: 0, Body: err.Error()}
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", &engine.EngineError{Op: "语言引擎对话接口", StatusCode: resp.StatusCode, Body: string(body)}
+	}
+	var result struct {
+		Content string `json:"content"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("解析对话响应失败: %w", err)
+	}
+	return result.Content, nil
+}
+
 // callChatStream 调用 Python 语言引擎的流式对话接口(SSE),返回响应流
 // messages 应已包含合成后的 system 消息;ctx 取消时上游 HTTP 请求随之中断(停止指令贯穿取消链)
 // creds 为按请求传递的模型凭证;base_url/api_key 为空时 Python 回退自身环境变量(向后兼容)

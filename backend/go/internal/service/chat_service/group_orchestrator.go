@@ -4,6 +4,7 @@ package chat_service
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"unicode/utf8"
 
@@ -259,9 +260,58 @@ func (s *Chat) letAgentSpeak(ctx context.Context, session *model.ChatSession, m 
 	return true, fullContent, mentionedNames, pingedUser
 }
 
-// generateSessionTitle 自动生成会话标题 — Task 7 实装
-// 当前为占位,Task 7 替换为非流式调用 + prompt
+// generateSessionTitle 生成会话标题并落库;title 已非空(用户手改)放弃;任何失败返回 ""
+// 单聊: members 传 nil,取 session.Agent.ModelName;群聊:取首成员 ModelName
 func (s *Chat) generateSessionTitle(ctx context.Context, session *model.ChatSession, members []*model.SessionMember, userContent, firstReply string) string {
-	// 占位:由 Task 7 替换
-	return ""
+	// 重读再判空,防覆盖用户手动改名
+	fresh, err := s.chat.TakeSessionByUUID(ctx, session.UUID)
+	if err != nil || fresh.Title != "" {
+		return ""
+	}
+	modelName := ""
+	if len(members) > 0 {
+		modelName = members[0].Agent.ModelName
+	} else if fresh.AgentID != nil {
+		modelName = fresh.Agent.ModelName
+	}
+	creds, rerr := s.ResolveCredentials(ctx, modelName)
+	if rerr != nil {
+		return ""
+	}
+	reply := firstReply
+	if utf8.RuneCountInString(reply) > 200 {
+		reply = string([]rune(reply)[:200])
+	}
+	messages := []map[string]string{{"role": "user", "content": fmt.Sprintf(
+		"根据对话开头生成不超过15个字的标题,只输出标题本身,无引号无结尾标点。\n用户:%s\n回复:%s", userContent, reply)}}
+	title, cerr := s.callChatCompletion(ctx, messages, creds)
+	if cerr != nil {
+		zap.L().Warn("[炼丹炉] 自动命名失败", zap.Error(cerr))
+		return ""
+	}
+	if err != nil {
+		zap.L().Warn("[炼丹炉] 自动命名失败", zap.Error(err))
+		return ""
+	}
+	title = strings.TrimSpace(title)
+	title = strings.Trim(title, "\"'「」『』。,.，!！?？")
+	if title == "" {
+		return ""
+	}
+	if utf8.RuneCountInString(title) > 30 {
+		title = string([]rune(title)[:30])
+	}
+	if err := s.chat.UpdateSession(ctx, fresh, map[string]any{"title": title}); err != nil {
+		return ""
+	}
+	return title
+}
+
+// GenerateSessionTitle 单聊自动命名入口(公共方法)
+func (s *Chat) GenerateSessionTitle(ctx context.Context, sessionUID uuid.UUID, userContent, firstReply string) string {
+	session, err := s.chat.TakeSessionByUUID(ctx, sessionUID)
+	if err != nil {
+		return ""
+	}
+	return s.generateSessionTitle(ctx, session, nil, userContent, firstReply)
 }
