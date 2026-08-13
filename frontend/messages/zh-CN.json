@@ -10,32 +10,62 @@
     "closeMenu": "关闭菜单",
     "startCta": "开炉论道",
     "items": {
-      "home": { "label": "丹房" },
+      "home": {
+        "label": "丹房"
+      },
       "pills": {
         "label": "金丹阁",
         "children": {
-          "all": { "title": "全部金丹", "description": "浏览阁中已成之丹，观语言模式万千" },
-          "new": { "title": "开炉炼制", "description": "以火为引，炼一枚新的语言模式金丹" },
-          "recipes": { "title": "丹方典籍", "description": "查阅历代丹方，悟炼制之理" }
+          "all": {
+            "title": "全部金丹",
+            "description": "浏览阁中已成之丹，观语言模式万千"
+          },
+          "new": {
+            "title": "开炉炼制",
+            "description": "以火为引，炼一枚新的语言模式金丹"
+          },
+          "recipes": {
+            "title": "丹方典籍",
+            "description": "查阅历代丹方，悟炼制之理"
+          }
         }
       },
       "agents": {
         "label": "道人府",
         "children": {
-          "all": { "title": "全部道人", "description": "府中道人名录，各司其职" },
-          "invite": { "title": "延请道人", "description": "新请一位道人入府，授其金丹" },
-          "bind": { "title": "服用金丹", "description": "为道人绑定金丹，化性转型" }
+          "all": {
+            "title": "全部道人",
+            "description": "府中道人名录，各司其职"
+          },
+          "invite": {
+            "title": "延请道人",
+            "description": "新请一位道人入府，授其金丹"
+          },
+          "bind": {
+            "title": "服用金丹",
+            "description": "为道人绑定金丹，化性转型"
+          }
         }
       },
       "chat": {
         "label": "论道",
         "children": {
-          "new": { "title": "新的论道", "description": "开一场新对话，与道人参详玄理" },
-          "history": { "title": "论道旧录", "description": "翻检历史会话，续当日未完之缘" }
+          "new": {
+            "title": "新的论道",
+            "description": "开一场新对话，与道人参详玄理"
+          },
+          "history": {
+            "title": "论道旧录",
+            "description": "翻检历史会话，续当日未完之缘"
+          }
         }
       },
-      "fusion": { "label": "融合" },
-      "settings": { "label": "设置" }
+      "fusion": {
+        "label": "融合"
+      },
+      "settings": {
+        "label": "设置"
+      }
     }
   },
   "settings": {
@@ -52,14 +82,38 @@
       "smokeLabel": "烟雾浓度",
       "smokeHint": "0% = 无烟，100% = 浓烟",
       "options": {
-        "plume": { "label": "火舌", "desc": "锥形火苗，向上收尖，最像炉膛火" },
-        "ember": { "label": "余烬", "desc": "慢速橙红，安静低耗" },
-        "flicker": { "label": "灵火", "desc": "短促爆闪，仪式感强" },
-        "veil": { "label": "帐火", "desc": "多层薄纱，大焰御火" },
-        "classic": { "label": "经典", "desc": "原版水雾粒子，米白叠光，怀旧风格" },
-        "sanmei": { "label": "三昧真火", "desc": "冰蓝内焰 + 朱砂外焰，炼丹奇幻" },
-        "spark": { "label": "火花", "desc": "金朱砂火星上窜，孔明灯升空感" },
-        "dragon": { "label": "龙形火", "desc": "长拖尾丝带火苗，御火优雅" }
+        "plume": {
+          "label": "火舌",
+          "desc": "锥形火苗，向上收尖，最像炉膛火"
+        },
+        "ember": {
+          "label": "余烬",
+          "desc": "慢速橙红，安静低耗"
+        },
+        "flicker": {
+          "label": "灵火",
+          "desc": "短促爆闪，仪式感强"
+        },
+        "veil": {
+          "label": "帐火",
+          "desc": "多层薄纱，大焰御火"
+        },
+        "classic": {
+          "label": "经典",
+          "desc": "原版水雾粒子，米白叠光，怀旧风格"
+        },
+        "sanmei": {
+          "label": "三昧真火",
+          "desc": "冰蓝内焰 + 朱砂外焰，炼丹奇幻"
+        },
+        "spark": {
+          "label": "火花",
+          "desc": "金朱砂火星上窜，孔明灯升空感"
+        },
+        "dragon": {
+          "label": "龙形火",
+          "desc": "长拖尾丝带火苗，御火优雅"
+        }
       }
     }
   },
@@ -76,10 +130,26 @@
     },
     "stats": {
       "ariaLabel": "炉房概览",
-      "pills": { "label": "阁中藏丹", "unit": "枚", "caption": "金丹阁所藏语言模式" },
-      "agents": { "label": "府中道人", "unit": "位", "caption": "道人府在册 Agent" },
-      "sessions": { "label": "论道场次", "unit": "场", "caption": "已结与未结之缘" },
-      "builtins": { "label": "内置丹方", "unit": "味", "caption": "系统预置的金丹" }
+      "pills": {
+        "label": "阁中藏丹",
+        "unit": "枚",
+        "caption": "金丹阁所藏语言模式"
+      },
+      "agents": {
+        "label": "府中道人",
+        "unit": "位",
+        "caption": "道人府在册 Agent"
+      },
+      "sessions": {
+        "label": "论道场次",
+        "unit": "场",
+        "caption": "已结与未结之缘"
+      },
+      "builtins": {
+        "label": "内置丹方",
+        "unit": "味",
+        "caption": "系统预置的金丹"
+      }
     },
     "spotlight": {
       "badge": "新成之丹",
@@ -584,5 +654,38 @@
     "success": "已赠予",
     "errorLoadAgents": "获取道人列表失败",
     "errorBind": "绑定失败"
+  },
+  "groupChat": {
+    "create": "开坛群聊",
+    "single": "单人论道",
+    "selectMembers": "选择道人(至少 2 位)",
+    "confirmCreate": "开坛",
+    "members": "群成员",
+    "membersTitle": "群成员",
+    "invite": "邀请",
+    "kick": "移出",
+    "kickConfirm": "确定将 {name} 移出群聊?",
+    "untitledGroup": "新群聊",
+    "untitledSession": "新的论道",
+    "userLabel": "用户",
+    "speaking": "{name} 正在说话…",
+    "allSilent": "众人沉默不语…",
+    "mentioned": "提及",
+    "rename": "重命名",
+    "renameHint": "点击重命名",
+    "renamePlaceholder": "输入会话名",
+    "cancel": "取消",
+    "selectCandidates": "选择要邀请的道人",
+    "noCandidates": "暂无可邀请道人",
+    "confirmInvite": "确认邀请 ({count})",
+    "noMembers": "暂无群成员",
+    "close": "关闭",
+    "proactivity": "表达欲"
+  },
+  "agentDetail": {
+    "editor": {
+      "proactivity": "主动性",
+      "proactivityHint": "群聊中的发言欲(0-100,越高越健谈)"
+    }
   }
 }

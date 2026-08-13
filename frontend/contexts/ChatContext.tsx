@@ -188,8 +188,12 @@ interface ChatContextType {
   // 异步操作
   fetchSessions: () => Promise<void>
   createSession: (agentId: string, title?: string) => Promise<ChatSession | null>
+  createGroupSession: (memberAgentIds: string[]) => Promise<ChatSession | null>
+  renameSession: (sessionId: string, title: string) => Promise<ChatSession | null>
+  inviteMembers: (sessionId: string, agentIds: string[]) => Promise<void>
+  kickMember: (sessionId: string, agentId: string) => Promise<void>
   loadMessages: (sessionId: string) => Promise<void>
-  streamMessage: (sessionId: string, content: string) => Promise<void>
+  streamMessage: (sessionId: string, content: string, opts?: { allSilentText?: string }) => Promise<void>
   /** 停止当前流式生成(中断 SSE 连接,部分内容落定为「已停止」) */
   stopStream: () => void
 }
@@ -452,6 +456,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         dispatch,
         fetchSessions,
         createSession,
+        createGroupSession,
+        renameSession,
+        inviteMembers,
+        kickMember,
         loadMessages,
         streamMessage,
         stopStream,

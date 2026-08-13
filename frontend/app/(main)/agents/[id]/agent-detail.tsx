@@ -194,6 +194,7 @@ function AgentPillRow({
 export default function AgentDetailPage() {
   const t = useTranslations('agent')
   const tStatus = useTranslations('agentCard.status')
+  const tEditor = useTranslations('agentDetail.editor')
   const tSev = useTranslations('agent.severity')
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
@@ -208,6 +209,7 @@ export default function AgentDetailPage() {
   const [editName, setEditName] = useState('')
   const [editPersonality, setEditPersonality] = useState('')
   const [editModel, setEditModel] = useState('')
+  const [editProactivity, setEditProactivity] = useState(50)
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([])
   const [isCreatingSession, setIsCreatingSession] = useState(false)
   const [dragIndex, setDragIndex] = useState<number | null>(null)
@@ -241,6 +243,7 @@ export default function AgentDetailPage() {
     setEditName(agent.name)
     setEditPersonality(agent.personality || '')
     setEditModel(agent.model_name)
+    setEditProactivity(agent.proactivity ?? 50)
   }
 
   /** 保存编辑 */
@@ -250,6 +253,7 @@ export default function AgentDetailPage() {
       name: editName.trim(),
       personality: editPersonality.trim(),
       model_name: editModel,
+      proactivity: editProactivity,
     })
     if (updated) setIsEditing(false)
   }
@@ -433,6 +437,28 @@ export default function AgentDetailPage() {
                     </select>
                   )}
                 </div>
+                <div>
+                  <label className="dao-label flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    {tEditor('proactivity')}
+                    <span className="ml-auto font-mono text-xs text-sage">
+                      {editProactivity}
+                    </span>
+                  </label>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={editProactivity}
+                    onChange={e => setEditProactivity(Number(e.target.value))}
+                    aria-label={tEditor('proactivity')}
+                    className="w-full accent-gold mt-1.5"
+                  />
+                  <p className="mt-1.5 text-[11px] text-sage">
+                    {tEditor('proactivityHint')}
+                  </p>
+                </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <button onClick={handleSaveEdit} className="dao-btn-primary text-sm whitespace-nowrap">
                     <Check className="w-4 h-4" /> {t('saveCta')}
@@ -473,6 +499,13 @@ export default function AgentDetailPage() {
                   <span className="flex items-center gap-1">
                     <Pill className="w-3.5 h-3.5" />
                     {t('pillsCount', { count: agentPills.length })}
+                  </span>
+                  <span
+                    className="flex items-center gap-1"
+                    title={tEditor('proactivityHint')}
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    {tEditor('proactivity')}: {agent.proactivity}
                   </span>
                 </div>
 
