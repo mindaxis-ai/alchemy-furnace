@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 	"time"
 
 	"github.com/alchemy-furnace/server/internal/configuration"
@@ -161,6 +162,10 @@ func (s *Chat) DeleteSession(ctx context.Context, sessionUID uuid.UUID) ierr.Err
 
 // UpdateSessionTitle 更新会话标题
 func (s *Chat) UpdateSessionTitle(ctx context.Context, sessionUID uuid.UUID, title string) ierr.Error {
+	title = strings.TrimSpace(title)
+	if title == "" || utf8.RuneCountInString(title) > 30 {
+		return ierr.New(ierr.ErrorTypeInvalidRequest, "service.chat.title_invalid", "标题需为 1-30 个字符")
+	}
 	session, err := s.chat.TakeSessionByUUID(ctx, sessionUID)
 	if err != nil {
 		return err.Relation(ierr.ErrorRecordNotFound("service.chat.update_title_take"))
@@ -285,4 +290,138 @@ func (s *Chat) callChatStream(ctx context.Context, messages []map[string]string,
 	}
 
 	return resp.Body, nil
+}
+
+
+// CreateGroupSession 建群:成员≥2、去重、全部 active;title 置空待自动命名
+func (s *Chat) CreateGroupSession(ctx context.Context, agentUIDs []uuid.UUID) (*model.ChatSession, ierr.Error) {
+	// 去重(保序)
+	seen := map[uuid.UUID]bool{}
+	uids := make([]uuid.UUID, 0, len(agentUIDs))
+	for _, u := range agentUIDs {
+		if !seen[u] {
+			seen[u] = true
+			uids = append(uids, u)
+		}
+	}
+	if len(uids) < 2 {
+		return nil, ierr.New(ierr.ErrorTypeInvalidRequest, "service.chat.group_min_members", "群聊至少需要 2 位道人")
+	}
+
+	agents := make([]*model.DaoAgent, 0, len(uids))
+	for _, u := range uids {
+		a, err := s.agent.TakeAgentByUUID(ctx, u)
+		if err != nil || a.Status != "active" {
+			return nil, ierr.New(ierr.ErrorTypeInvalidRequest, "service.chat.group_member_invalid", "成员不存在或已停用")
+		}
+		agents = append(agents, a)
+	}
+
+	session := &model.ChatSession{Type: model.SessionTypeGroup, Title: ""}
+	if err := s.chat.SaveSession(ctx, session); err != nil {
+		return nil, err.Relation(ierr.ErrorServerInternalError("service.chat.group_save"))
+	}
+	members := make([]*model.SessionMember, 0, len(agents))
+	for i, a := range agents {
+		members = append(members, &model.SessionMember{SessionID: session.ID, AgentID: a.ID, SortOrder: i})
+	}
+	if err := s.chat.SaveMembers(ctx, members); err != nil {
+		return nil, err.Relation(ierr.ErrorServerInternalError("service.chat.group_save_members"))
+	}
+	zap.L().Info("[炼丹炉] 群聊开坛", zap.String("session_uuid", session.UUID.String()), zap.Int("members", len(members)))
+	return session, nil
+}
+
+// ListMembers 列群成员(按发言顺序)
+func (s *Chat) ListMembers(ctx context.Context, sessionUID uuid.UUID) ([]*model.SessionMember, ierr.Error) {
+	session, err := s.chat.TakeSessionByUUID(ctx, sessionUID)
+	if err != nil {
+		return nil, err.Relation(ierr.ErrorRecordNotFound("service.chat.members_take"))
+	}
+	return s.chat.FindMembers(ctx, session.ID)
+}
+
+// AddMembers 邀请入群(已在群的静默跳过),落系统通知消息
+func (s *Chat) AddMembers(ctx context.Context, sessionUID uuid.UUID, agentUIDs []uuid.UUID) ierr.Error {
+	session, err := s.chat.TakeSessionByUUID(ctx, sessionUID)
+	if err != nil {
+		return err.Relation(ierr.ErrorRecordNotFound("service.chat.invite_take"))
+	}
+	if session.Type != model.SessionTypeGroup {
+		return ierr.New(ierr.ErrorTypeInvalidRequest, "service.chat.invite_not_group", "仅群聊会话支持邀请成员")
+	}
+	existing, ferr := s.chat.FindMembers(ctx, session.ID)
+	if ferr != nil {
+		return ferr.Relation(ierr.ErrorServerInternalError("service.chat.invite_find"))
+	}
+	inGroup := map[uint]bool{}
+	maxSort := -1
+	for _, m := range existing {
+		inGroup[m.AgentID] = true
+		if m.SortOrder > maxSort {
+			maxSort = m.SortOrder
+		}
+	}
+
+	var newMembers []*model.SessionMember
+	var names []string
+	for _, u := range agentUIDs {
+		a, aerr := s.agent.TakeAgentByUUID(ctx, u)
+		if aerr != nil || a.Status != "active" {
+			return ierr.New(ierr.ErrorTypeInvalidRequest, "service.chat.invite_member_invalid", "邀请的道人不存在或已停用")
+		}
+		if inGroup[a.ID] {
+			continue
+		}
+		maxSort++
+		newMembers = append(newMembers, &model.SessionMember{SessionID: session.ID, AgentID: a.ID, SortOrder: maxSort})
+		names = append(names, a.Name)
+		inGroup[a.ID] = true
+	}
+	if len(newMembers) == 0 {
+		return nil
+	}
+	if err := s.chat.SaveMembers(ctx, newMembers); err != nil {
+		return err.Relation(ierr.ErrorServerInternalError("service.chat.invite_save"))
+	}
+	// 系统通知(role=system,不进 LLM 历史,前端居中灰条)
+	if _, serr := s.SaveMessage(ctx, session.ID, "system", fmt.Sprintf("你邀请了 %s 入群", strings.Join(names, "、"))); serr != nil {
+		zap.L().Warn("[炼丹炉] 写入群通知失败", zap.Error(serr))
+	}
+	return nil
+}
+
+// RemoveMember 踢出群,落系统通知消息
+func (s *Chat) RemoveMember(ctx context.Context, sessionUID uuid.UUID, agentUID uuid.UUID) ierr.Error {
+	session, err := s.chat.TakeSessionByUUID(ctx, sessionUID)
+	if err != nil {
+		return err.Relation(ierr.ErrorRecordNotFound("service.chat.kick_take"))
+	}
+	agent, aerr := s.agent.TakeAgentByUUID(ctx, agentUID)
+	if aerr != nil {
+		return aerr.Relation(ierr.ErrorRecordNotFound("service.chat.kick_agent"))
+	}
+	if err := s.chat.DeleteMember(ctx, session.ID, agent.ID); err != nil {
+		return err // DAO 已区分 not-found / internal
+	}
+	if _, serr := s.SaveMessage(ctx, session.ID, "system", fmt.Sprintf("%s 被移出群", agent.Name)); serr != nil {
+		zap.L().Warn("[炼丹炉] 写入群通知失败", zap.Error(serr))
+	}
+	return nil
+}
+
+// SaveAgentMessage 写带道人归属与提及的消息(群聊编排器用)
+func (s *Chat) SaveAgentMessage(ctx context.Context, sessionID uint, agentID uint, role string, content string, mentions model.JSONMap) (*model.ChatMessage, ierr.Error) {
+	aid := agentID
+	msg := &model.ChatMessage{
+		SessionID: sessionID,
+		Role:      role,
+		Content:   content,
+		AgentID:   &aid,
+		Mentions:  mentions,
+	}
+	if err := s.chat.SaveMessage(ctx, msg); err != nil {
+		return nil, err.Relation(ierr.ErrorServerInternalError("service.chat.save_agent_message"))
+	}
+	return msg, nil
 }
