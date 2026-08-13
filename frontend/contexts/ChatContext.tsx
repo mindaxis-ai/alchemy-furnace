@@ -42,6 +42,8 @@ type ChatAction =
   | { type: 'ADD_ERROR_MESSAGE'; payload: string } // 内联错误气泡
   | { type: 'SPEAKER_START'; payload: { agent_id: string; agent_name: string; agent_avatar?: string } }
   | { type: 'SPEAKER_DONE' }
+  /** 群聊:用服务端真实 message_id 替换临时 id='-1',可附 mentions */
+  | { type: 'FINALIZE_STREAM_WITH_ID'; payload: { message_id: string; mentions?: import('@/services/types').ChatMessage['mentions'] } }
   | { type: 'SET_SESSION_TITLE'; payload: { sessionId: string; title: string } }
   | { type: 'UPDATE_SESSION_MEMBERS'; payload: { sessionId: string; members: import('@/services/types').GroupMember[] } }
   | { type: 'ADD_SESSION'; payload: ChatSession }
@@ -154,6 +156,19 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case 'SPEAKER_DONE':
       // 群聊: 当前发言人 finalize,清空 currentSpeaker
       return { ...state, messages: finalizeStreamMessage(state.messages), currentSpeaker: null }
+    case 'FINALIZE_STREAM_WITH_ID': {
+      // 群聊: 服务端已返回真实 message_id,直接用该 id 替换 -1(同时携带 mentions)
+      const messages = [...state.messages]
+      const lastIdx = messages.length - 1
+      if (lastIdx >= 0 && messages[lastIdx].role === 'assistant' && messages[lastIdx].id === '-1') {
+        messages[lastIdx] = {
+          ...messages[lastIdx],
+          id: action.payload.message_id,
+          mentions: action.payload.mentions || messages[lastIdx].mentions,
+        }
+      }
+      return { ...state, messages, currentSpeaker: null }
+    }
     case 'SET_SESSION_TITLE': {
       const { sessionId, title } = action.payload
       const sessions = state.sessions.map(s => s.id === sessionId ? { ...s, title } : s)
@@ -440,6 +455,34 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         partialReceivedRef.current = false
         dispatch({ type: 'FINISH_STREAM' })
         dispatch({ type: 'MARK_LAST_INCOMPLETE' })
+      },
+      // ========== 群聊回调(修复多道人只显示一个的重大 bug) ==========
+      // 修复前:群聊时服务端发 speaker_start/speaker_done/turn_done/title 事件,
+      // 但前端没注册回调 → 这些事件被吞掉。所有 chunk 都被加到第一条 -1 临时消息里,
+      // 多个道人的回复被挤在同一气泡,刷新后才能从 DB 加载出全部消息。
+      onSpeakerStart: (info) => {
+        // 关键:在切到新道人之前,先把当前 chunker queue 排空并 finalize 上一条 -1
+        // 否则新道人的 chunk 会先入队到旧的 -1,渲染顺序错乱
+        chunker.flushNow()
+        dispatch({ type: 'SPEAKER_START', payload: info })
+      },
+      onSpeakerDone: (info) => {
+        // 某道人发言完:立即 flush 残余 + finalize 临时消息 + 用真实 message_id 替换
+        chunker.flushNow()
+        if (info.message_id) {
+          dispatch({ type: 'FINALIZE_STREAM_WITH_ID', payload: { message_id: info.message_id, mentions: info.mentions } })
+        } else {
+          dispatch({ type: 'SPEAKER_DONE' })
+        }
+      },
+      onTurnDone: () => {
+        // 回合结束(所有道人发言完):清流式状态
+        partialReceivedRef.current = false
+        dispatch({ type: 'FINISH_STREAM' })
+      },
+      onTitle: (title) => {
+        // 自动命名(首问答命名)
+        dispatch({ type: 'SET_SESSION_TITLE', payload: { sessionId, title } })
       },
     })
   }, [])
