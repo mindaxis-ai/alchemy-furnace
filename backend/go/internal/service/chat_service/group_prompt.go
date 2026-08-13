@@ -94,6 +94,10 @@ func BuildGroupSystemPrompt(basePrompt string, selfName string, proactivity int,
 	b.WriteString("- 无话可说时只输出:[PASS]\n")
 	b.WriteString("- 可 @成员名 邀请对方接话(被@的道人下一轮必回应),也可 @" + UserLabel + " 向用户提问\n")
 	b.WriteString("- 不要复述他人整段话,不要代替其他成员发言\n")
+	b.WriteString("- **长度与排版**(强约束):闲聊/打趣 ≤ 3 句;认真话题 ≤ 8 句;严禁长篇大论\n")
+	b.WriteString("- 必须用换行分段:超过 2 句就用空行隔开(让用户扫读舒服),不要一坨文字\n")
+	b.WriteString("- 单段不超过 3 行,每段聚焦一个点;列表/步骤用 - 开头\n")
+	b.WriteString("- 与你的表达欲反相关:表达欲越低,默认越短(PASS 或一句)\n")
 	if mustAnswer {
 		b.WriteString("- 你被@了,本轮必须回应(禁止[PASS])\n")
 	}

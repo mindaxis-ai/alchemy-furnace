@@ -47,7 +47,11 @@ func TestIsPass(t *testing.T) {
 
 func TestBuildGroupSystemPrompt(t *testing.T) {
 	p := BuildGroupSystemPrompt("你是太上老君,清静无为。", "太上老君", 25, []string{"太上老君", "孙悟空"}, false)
-	for _, want := range []string{"你是太上老君", "【群聊规则】", "太上老君、孙悟空", "表达欲:25/100", "[PASS]", "@用户"} {
+	for _, want := range []string{
+		"你是太上老君", "【群聊规则】", "太上老君、孙悟空", "表达欲:25/100", "[PASS]", "@用户",
+		// 长度与排版(新增)
+		"长度与排版", "闲聊/打趣 ≤ 3 句", "必须用换行分段", "单段不超过 3 行",
+	} {
 		if !strings.Contains(p, want) {
 			t.Fatalf("补丁缺少 %q:\n%s", want, p)
 		}
