@@ -15,6 +15,7 @@
 import React, { createContext, useContext, useReducer, useCallback, useRef, useEffect } from 'react'
 import * as chatService from '@/services/chatService'
 import { createStreamDispatcher } from '@/services/streamDispatcher'
+import { notifyDesktop } from '@/services/api'
 import type { ChatSession, ChatMessage } from '@/services/types'
 
 /** 对话状态 */
@@ -386,6 +387,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         partialReceivedRef.current = false
         chunker.markDone()
         dispatch({ type: 'FINISH_STREAM' })
+        // T6: 回合完成提醒(窗口未聚焦时 Dock 弹跳)
+        notifyDesktop()
       },
       onStopped: () => {
         // 用户主动停止: 按序立即应用队列残余,STOP_STREAM 给 -1 临时消息打「已停止」
@@ -428,6 +431,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         groupActiveRef.current = false
         chunker.markDone()
         dispatch({ type: 'FINISH_STREAM' })
+        // T6: 群聊回合完成提醒
+        notifyDesktop()
       },
       onTitle: (title) => {
         // 自动命名(首问答命名)

@@ -211,3 +211,16 @@ export function isDesktop(): boolean {
   if (typeof document === 'undefined') return false
   return document.documentElement.classList.contains('is-desktop')
 }
+
+/**
+ * 桌面壳: 回合完成时若窗口未聚焦则请求 Dock 弹跳
+ * - isDesktop=false: 直接返回(web/H5 不打后端)
+ * - 窗口可见且聚焦: 返回(用户正在看,不需要提醒)
+ * - 否则: POST /desktop/notify(后端走 cgo NSApp.requestUserAttention,失败静默)
+ */
+export function notifyDesktop(): void {
+  if (!isDesktop()) return
+  if (typeof document === 'undefined') return
+  if (document.visibilityState === 'visible' && document.hasFocus()) return
+  post('/desktop/notify', {}).catch(() => {})
+}

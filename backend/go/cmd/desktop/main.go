@@ -12,6 +12,8 @@ import (
 	"log"
 	"net"
 	"net/http"
+
+	"github.com/gin-gonic/gin"
 	"os"
 	"sync"
 
@@ -88,6 +90,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("[炼丹炉] 装配路由失败: %v", err)
 	}
+	// T6: 桌面 Dock 弹跳端点(走同一 DesktopGuard)
+	engine.POST("/api/v1/desktop/notify", func(c *gin.Context) {
+		bounceDock()
+		c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": nil})
+	})
 	srv := &http.Server{Handler: engine}
 	go func() {
 		log.Printf("[炼丹炉] 桌面服务已就绪: http://%s", addr)
