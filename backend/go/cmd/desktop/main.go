@@ -56,19 +56,23 @@ func main() {
 		log.Fatalf("[炼丹炉] 初始化日志失败: %v", err)
 	}
 
-	// T3 重构: 先开窗,engineproc + DB 挪到 goroutine,AssetServer 走 splash 三态
-	// 就绪口径: engineproc.Start 成功 且(非 demo 时)DB 初始化 + 自动建表成功
+	// T3 重构: 先开窗,engineproc 走 goroutine,AssetServer 走 splash 三态
+	// 就绪口径: engineproc.Start 成功(DB 在主线程同步 init 几百毫秒,挪回避免 race
+	// 与 GetDB() log.Fatal 冲突;engineproc 3-5s 才是 splash 价值所在)
 	var readyMu sync.Mutex
 	var readyOK bool
 	var readyErr error
-	var stopEngine func() // 可能 nil (开窗后引擎未起完就关窗),OnShutdown 需判空
+	var stopEngine func()
+	if !configuration.IsDemo() {
+		if err := dao.InitDatabase(&configuration.Configuration.Database); err != nil {
+			log.Fatalf("[炼丹炉] 初始化数据库失败: %v", err)
+		}
+		if err := dao.MaybeAutoMigrate(); err != nil {
+			log.Fatalf("[炼丹炉] 自动建表失败: %v", err)
+		}
+	}
 	go func() {
 		_, stop, err := engineproc.Start(context.Background())
-		if err == nil && !configuration.IsDemo() {
-			if err = dao.InitDatabase(&configuration.Configuration.Database); err == nil {
-				err = dao.MaybeAutoMigrate()
-			}
-		}
 		readyMu.Lock()
 		stopEngine = stop
 		readyOK, readyErr = err == nil, err
