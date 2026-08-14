@@ -180,7 +180,7 @@ export function ChatMessage({ message, streaming = false, members }: ChatMessage
           )}
 
           {/* 消息内容 */}
-          <div className={`${isUser ? '' : 'pl-2 pr-2'} min-w-0 break-words`}>
+          <div className={`md-selectable ${isUser ? '' : 'pl-2 pr-2'} min-w-0 break-words`}>
             {isUser ? (
               // 用户消息: 高亮 @名字 且 @ 文字可点击触发 popover
               <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">

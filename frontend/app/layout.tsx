@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import type { Metadata } from 'next'
 import { Noto_Serif_SC, Noto_Sans_SC } from 'next/font/google'
 import { Providers } from '@/components/providers'
+import DesktopGuards from '@/components/desktop-guards'
 import './globals.css'
 
 const notoSerifSC = Noto_Serif_SC({
@@ -53,7 +54,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="zh-CN" className={`${notoSerifSC.variable} ${notoSansSC.variable}`}>
       <body className="flex min-h-screen flex-col">
-        <Providers>{children}</Providers>
+        <Providers>
+          <DesktopGuards />
+          {children}
+        </Providers>
       </body>
     </html>
   )

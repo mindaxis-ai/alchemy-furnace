@@ -21,8 +21,10 @@ function initDesktopToken(): void {
     url.searchParams.delete('token')
     window.history.replaceState(null, '', url.toString())
   }
+  applyDesktopClass()
 }
 initDesktopToken()
+applyDesktopClass()
 
 /**
  * 桌面端 API 防护头;web 模式(无 token)返回空对象,零侵入
@@ -181,4 +183,31 @@ export function put<T>(path: string, body?: unknown): Promise<T> {
  */
 export function del<T>(path: string): Promise<T> {
   return request<T>(path, { method: 'DELETE' })
+}
+
+/**
+ * 桌面壳打标: 有 desktop token 即桌面 webview;platform 来自后端 ?platform=darwin|windows
+ * - is-desktop: 有 token 即可(T1,无后端配合)
+ * - is-mac / is-win: T2 后端 redirect URL 注入 platform 参数;无参数时不打平台标(向前兼容 web)
+ * 同时落地到 <html> class 供 CSS 钩子,以及 sessionStorage 给后续消费
+ */
+function applyDesktopClass(): void {
+  if (typeof document === 'undefined') return
+  const token = sessionStorage.getItem(DESKTOP_TOKEN_KEY)
+  if (!token) return
+  document.documentElement.classList.add('is-desktop')
+  // 平台标记: 重定向 URL 带 ?platform=darwin|windows(后端 T2 补);持久化到 sessionStorage
+  const url = new URL(window.location.href)
+  const platform = url.searchParams.get('platform')
+  if (platform) sessionStorage.setItem('alchemy_desktop_platform', platform)
+  const p = sessionStorage.getItem('alchemy_desktop_platform')
+  if (p === 'darwin' || p === 'windows') {
+    document.documentElement.classList.add(p === 'windows' ? 'is-win' : 'is-mac')
+  }
+}
+
+/** 是否桌面壳环境(webview);SSR/无 token 返回 false */
+export function isDesktop(): boolean {
+  if (typeof document === 'undefined') return false
+  return document.documentElement.classList.contains('is-desktop')
 }
