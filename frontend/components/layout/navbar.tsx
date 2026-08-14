@@ -81,7 +81,7 @@ export function Navbar() {
     <header
       ref={rootRef}
       className={cn(
-        'sticky top-0 z-50 border-b transition-all duration-300',
+        'app-drag sticky top-0 z-50 border-b transition-all duration-300',
         scrolled || open
           ? 'border-border bg-card shadow-[0_10px_30px_-15px_rgba(60,40,20,0.15)]'
           : 'border-border/60 bg-card',

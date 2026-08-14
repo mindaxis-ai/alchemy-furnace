@@ -338,3 +338,9 @@
 .is-desktop .app-drag :where(a, button, input, select, textarea, [role='button'], .no-drag) {
   --wails-draggable: no-drag;
 }
+
+/* ========== T2: mac 红绿灯 inset 留白 ========== */
+/* 桌面壳 + mac 才生效;web 模式 app-drag 不会 drag,此 padding 不影响 */
+.is-desktop.is-mac .app-drag {
+  padding-left: 76px; /* 红绿灯 (~28px) + 间距; webview 通顶后内容从 76px 起 */
+}

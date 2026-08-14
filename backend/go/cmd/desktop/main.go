@@ -25,6 +25,9 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/mac"
+	"github.com/wailsapp/wails/v2/pkg/options/windows"
+	"runtime"
 )
 
 // newRedirectHandler webview 资源处理器: 任何请求都返回 200 + JS 跳转到 http origin
@@ -99,9 +102,22 @@ func main() {
 		Width:    1280,
 		Height:   800,
 		MinWidth: 960, MinHeight: 640,
+		// mac: 通顶内容,红绿灯 inset 悬浮(任务 T2)
+		Mac: &mac.Options{
+			TitleBar: mac.TitleBarHiddenInset(),
+			About:    &mac.AboutInfo{Title: "炼丹炉", Message: "Alchemy Furnace"},
+		},
+		// win: 深色标题栏(任务 T2);globals.css body 底色 #f7f3ed 浅色但 chrome 跟系统区分
+		Windows: &windows.Options{
+			Theme: windows.Dark,
+		},
+		// 防白闪: 与 frontend --background #f7f3ed 一致(plan R:9/G:9/B:11 是深色 zink-950,
+		// 与 body 浅色宣纸不一致会导致白闪更深;已按 plan 提示"执行时核对 body 底色"决策)
+		BackgroundColour: &options.RGBA{R: 0xf7, G: 0xf3, B: 0xed, A: 1},
 		AssetServer: &assetserver.Options{
 			Handler: newRedirectHandler(func() string {
-				return fmt.Sprintf("http://%s/?token=%s", addr, token)
+				// T2 透出 platform,前端 applyDesktopClass 据此打 is-mac/is-win 标
+				return fmt.Sprintf("http://%s/?token=%s&platform=%s", addr, token, runtime.GOOS)
 			}),
 		},
 		SingleInstanceLock: &options.SingleInstanceLock{UniqueId: "com.alchemyfurnace.desktop"},
