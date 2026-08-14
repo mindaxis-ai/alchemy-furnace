@@ -25,9 +25,22 @@ export default function DesktopGuards() {
     }
     window.addEventListener('contextmenu', onContextMenu)
     window.addEventListener('dragstart', onDragStart)
+    // T4 快捷键: ⌘, 进设置;⌘N 弹新建会话(由 chat-view 监听 alchemy:new-session 事件处理)
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return
+      if (e.key === ',') {
+        e.preventDefault()
+        window.location.href = '/settings'
+      } else if (e.key === 'n' || e.key === 'N') {
+        e.preventDefault()
+        window.dispatchEvent(new CustomEvent('alchemy:new-session'))
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
     return () => {
       window.removeEventListener('contextmenu', onContextMenu)
       window.removeEventListener('dragstart', onDragStart)
+      window.removeEventListener('keydown', onKeyDown)
     }
   }, [])
   return null

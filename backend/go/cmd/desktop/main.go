@@ -108,6 +108,8 @@ func main() {
 		Width:    1280,
 		Height:   800,
 		MinWidth: 960, MinHeight: 640,
+		// T4: macOS 原生菜单栏(关于/退出 + 剪贴板快捷键)
+		Menu:     buildAppMenu(),
 		// mac: 通顶内容,红绿灯 inset 悬浮(任务 T2)
 		Mac: &mac.Options{
 			TitleBar: mac.TitleBarHiddenInset(),

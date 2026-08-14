@@ -89,6 +89,13 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
     return () => { cancelled = true }
   }, [])
 
+  // T4 快捷键 ⌘N: desktop-guards 在 window 派发 alchemy:new-session → 此处复用现有 setShowAgentSelect
+  useEffect(() => {
+    const onNewSession = () => setShowAgentSelect(true)
+    window.addEventListener('alchemy:new-session', onNewSession)
+    return () => window.removeEventListener('alchemy:new-session', onNewSession)
+  }, [])
+
   // 根据 URL 参数加载会话
   useEffect(() => {
     if (sessionId) {
