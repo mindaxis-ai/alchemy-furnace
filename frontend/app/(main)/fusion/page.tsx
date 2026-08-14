@@ -6,12 +6,13 @@
  * - 右 dao-card: 融合槽(已选卡片可移除) + 炉火动画 + [开始融合]
  * - 融合中: 卡片飞入炉中 + 火焰爆燃(forceIntensity=1)
  * - 完成后: 弹出 FusionPreviewModal(算子徽标/血统/可编辑/换一炉/保存入库)
+ * - 保存入库: 源金丹入炉消耗(删除, 内置金丹受保护), 新丹入库
  */
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { FlaskConical, X, Search, Loader2, AlertCircle, AlertTriangle, Check } from 'lucide-react'
-import { listPills, createPill } from '@/services/pillService'
+import { listPills, createPill, deletePill } from '@/services/pillService'
 import { fusePills, withLineage, type FuseResult } from '@/services/fusionService'
 import { listProviders, listModels, updateModel } from '@/services/modelService'
 import type { Provider, LLMModel } from '@/services/modelService'
@@ -159,6 +160,19 @@ export default function FusionPage() {
         author: '融合炉',
         version: '1.0.0',
       })
+
+      // 消耗源金丹: 入炉化新丹, 原丹灰飞烟灭(内置金丹受保护不消耗)
+      const consumable = selected.filter(p => !p.is_builtin)
+      if (consumable.length > 0) {
+        const results = await Promise.allSettled(consumable.map(p => deletePill(p.id)))
+        const failed = results.filter(r => r.status === 'rejected')
+        if (failed.length > 0) {
+          console.warn(`[fusion] ${failed.length}/${consumable.length} 枚源金丹消耗失败`)
+        }
+        // 刷新金丹池(源丹已消耗, 新丹已入库)
+        listPills({ page_size: 100 }).then(d => setPool(d.list || [])).catch(() => {})
+      }
+
       if (goEdit) {
         router.push(`/pills/${created.id}`)
       } else {
