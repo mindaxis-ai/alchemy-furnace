@@ -482,11 +482,7 @@ export function ModelsPanel() {
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <Server className="w-12 h-12 text-sage/60 mb-3" />
           <h3 className="text-base font-medium text-muted-foreground mb-1">{t('emptyTitle')}</h3>
-          <p className="text-sm text-sage/70 mb-4">{t('emptyDesc')}</p>
-          <button onClick={openCreateProvider} className="dao-btn-primary whitespace-nowrap">
-            <Plus className="w-4 h-4" />
-            {t('createProvider')}
-          </button>
+          <p className="text-sm text-sage/70">{t('emptyDesc')}</p>
         </div>
       )}
 
