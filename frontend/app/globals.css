@@ -344,3 +344,15 @@
 .is-desktop.is-mac .app-drag {
   padding-left: 76px; /* 红绿灯 (~28px) + 间距; webview 通顶后内容从 76px 起 */
 }
+
+/* ========== T5a: mac 毛玻璃侧栏 ========== */
+.is-desktop.is-mac .frosted {
+  background: rgb(24 24 27 / 0.72);
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+}
+/* 毛玻璃 webview 透明时,主内容区需要不透明底色防透桌面 */
+.is-desktop.is-mac .frosted + .content-opaque,
+.is-desktop.is-mac:has(.frosted) main {
+  background: var(--background);
+}
