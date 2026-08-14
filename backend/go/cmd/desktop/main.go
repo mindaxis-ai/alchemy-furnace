@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sync"
 
 	"github.com/alchemy-furnace/server/internal/configuration"
 	"github.com/alchemy-furnace/server/internal/configuration/loader"
@@ -53,19 +54,24 @@ func main() {
 		log.Fatalf("[炼丹炉] 初始化日志失败: %v", err)
 	}
 
-	_, stopEngine, err := engineproc.Start(context.Background())
-	if err != nil {
-		log.Fatalf("[炼丹炉] Python 引擎启动失败: %v", err)
-	}
-
-	if !configuration.IsDemo() {
-		if err := dao.InitDatabase(&configuration.Configuration.Database); err != nil {
-			log.Fatalf("[炼丹炉] 初始化数据库失败: %v", err)
+	// T3 重构: 先开窗,engineproc + DB 挪到 goroutine,AssetServer 走 splash 三态
+	// 就绪口径: engineproc.Start 成功 且(非 demo 时)DB 初始化 + 自动建表成功
+	var readyMu sync.Mutex
+	var readyOK bool
+	var readyErr error
+	var stopEngine func() // 可能 nil (开窗后引擎未起完就关窗),OnShutdown 需判空
+	go func() {
+		_, stop, err := engineproc.Start(context.Background())
+		if err == nil && !configuration.IsDemo() {
+			if err = dao.InitDatabase(&configuration.Configuration.Database); err == nil {
+				err = dao.MaybeAutoMigrate()
+			}
 		}
-		if err := dao.MaybeAutoMigrate(); err != nil {
-			log.Fatalf("[炼丹炉] 自动建表失败: %v", err)
-		}
-	}
+		readyMu.Lock()
+		stopEngine = stop
+		readyOK, readyErr = err == nil, err
+		readyMu.Unlock()
+	}()
 
 	tok := make([]byte, 32)
 	if _, err := rand.Read(tok); err != nil {
@@ -115,17 +121,24 @@ func main() {
 		// 与 body 浅色宣纸不一致会导致白闪更深;已按 plan 提示"执行时核对 body 底色"决策)
 		BackgroundColour: &options.RGBA{R: 0xf7, G: 0xf3, B: 0xed, A: 1},
 		AssetServer: &assetserver.Options{
-			Handler: newRedirectHandler(func() string {
-				// T2 透出 platform,前端 applyDesktopClass 据此打 is-mac/is-win 标
-				return fmt.Sprintf("http://%s/?token=%s&platform=%s", addr, token, runtime.GOOS)
-			}),
+			Handler: newSplashHandler(
+				// ready 时跳到真 origin (T2 已加 platform 参数)
+				func() string { return fmt.Sprintf("http://%s/?token=%s&platform=%s", addr, token, runtime.GOOS) },
+				// readiness 读 goroutine 写出的共享状态
+				func() (bool, error) { readyMu.Lock(); defer readyMu.Unlock(); return readyOK, readyErr },
+			),
 		},
 		SingleInstanceLock: &options.SingleInstanceLock{UniqueId: "com.alchemyfurnace.desktop"},
 		Bind:               []interface{}{app},
 		OnStartup:          app.startup,
 		OnShutdown: func(ctx context.Context) {
 			_ = srv.Shutdown(ctx)
-			stopEngine()
+			readyMu.Lock()
+			stop := stopEngine
+			readyMu.Unlock()
+			if stop != nil {
+				stop()
+			}
 			dao.CloseDatabase()
 		},
 	})
