@@ -6,9 +6,13 @@ vendor/
 uploads/
 
 # webui: 真实前端产物不入库(打包脚本覆盖),占位入
-backend/go/internal/webui/out/*
-!backend/go/internal/webui/out/index.html
-!backend/go/internal/webui/out/404.html
+# (路径相对本文件所在目录 backend/go/)
+internal/webui/out/**
+!internal/webui/out/index.html
+!internal/webui/out/404.html
+
+# Wails dev 生成的 JS bindings(每次 dev 都重建,不入库)
+build/stub/wailsjs/
 
 # 防二进制混入: 'go build' 不带 -o 会在 cwd 生成 main
 main

@@ -65,3 +65,6 @@ reference/
 
 # 部署清单
 deploy/
+
+# Next.js 自动生成(每次 next dev/build 重写)
+frontend/next-env.d.ts
