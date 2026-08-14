@@ -7,13 +7,12 @@ import { useTranslations } from 'next-intl'
 import { ChevronDown, Flame, Menu, X } from 'lucide-react'
 import { navItems } from '@/components/layout/nav-config'
 import { NavDropdown } from '@/components/layout/nav-dropdown'
-import { LanguageSwitcher } from '@/components/i18n/language-switcher'
 import { cn } from '@/lib/utils'
 
 /**
  * Dify 式顶部导航栏 v2（参考 reference/导航栏v2.png）
  * - 通栏浅色底 + 底部细边框；导航项居左，圆角药丸 hover/激活态
- * - 右侧主行动按钮「开炉论道」（对应 Dify 的「开始使用」）+ 语言切换器
+ * - 右侧主行动按钮「开炉论道」（对应 Dify 的「开始使用」）
  * - 含子项的导航项 hover/focus/点击展开 mega-dropdown
  * - Esc / 点击外部 / 鼠标移出 / 路由变化关闭
  * - 移动端（<md）降级为汉堡抽屉，不渲染下拉面板
@@ -150,9 +149,8 @@ export function Navbar() {
           })}
         </nav>
 
-        {/* 右侧：语言切换器 + 主行动按钮 */}
+        {/* 右侧：主行动按钮 */}
         <div className="hidden items-center gap-3 md:flex">
-          <LanguageSwitcher />
           <Link
             href="/chat"
             className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-[15px] font-medium text-primary-foreground shadow-[0_10px_20px_-8px_rgba(181,74,63,0.5)] transition-all duration-300 hover:bg-cinnabar/90 hover:shadow-[0_14px_24px_-8px_rgba(181,74,63,0.55)]"
@@ -162,7 +160,7 @@ export function Navbar() {
           </Link>
         </div>
 
-        {/* 移动端：语言切换器 + 汉堡按钮 */}
+        {/* 移动端：汉堡按钮 */}
         <div className="flex items-center gap-2 md:hidden">
           <button
             type="button"
@@ -173,7 +171,6 @@ export function Navbar() {
           >
             {mobileOpen ? <X className="size-5" /> : <Menu className="size-5" />}
           </button>
-          <LanguageSwitcher />
         </div>
       </div>
 

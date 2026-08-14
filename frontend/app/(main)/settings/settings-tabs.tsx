@@ -8,19 +8,26 @@
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { useState, useEffect } from 'react'
-import { Info, Flame, ExternalLink, Heart, Download } from 'lucide-react'
+import { Info, Flame, ExternalLink, Heart, Download, Globe } from 'lucide-react'
 import { getVersion, type VersionInfo } from '@/services/systemService'
 import { UpdateDialog } from '@/components/update-dialog'
 import { TopTabs } from '@/components/interaction/top-tabs'
 import { ModelsPanel } from '@/components/models/models-panel'
 import { FireEffectPanel } from '@/components/settings/fire-effect-panel'
 import { ProfilePanel } from '@/components/settings/profile-panel'
+import { LanguagePanel } from '@/components/settings/language-panel'
 
-const TAB_KEYS = ['models', 'fire', 'profile', 'about'] as const
+const TAB_KEYS = ['models', 'fire', 'profile', 'language', 'about'] as const
 type TabKey = (typeof TAB_KEYS)[number]
 
 function isTabKey(v: string | null): v is TabKey {
-  return v === 'models' || v === 'fire' || v === 'profile' || v === 'about'
+  return (
+    v === 'models' ||
+    v === 'fire' ||
+    v === 'profile' ||
+    v === 'language' ||
+    v === 'about'
+  )
 }
 
 export function SettingsTabs() {
@@ -46,6 +53,7 @@ export function SettingsTabs() {
             { key: 'models', label: t('models') },
             { key: 'fire', label: t('fire') },
             { key: 'profile', label: t('profile') },
+            { key: 'language', label: t('language') },
             { key: 'about', label: t('about') },
           ]}
           activeKey={active}
@@ -58,6 +66,8 @@ export function SettingsTabs() {
         <FireEffectPanel />
       ) : active === 'profile' ? (
         <ProfilePanel />
+      ) : active === 'language' ? (
+        <LanguagePanel />
       ) : (
         <AboutPanel />
       )}

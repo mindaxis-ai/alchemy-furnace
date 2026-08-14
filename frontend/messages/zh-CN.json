@@ -73,7 +73,8 @@
       "models": "模型管理",
       "fire": "炉火",
       "about": "关于",
-      "profile": "我的简介"
+      "profile": "我的简介",
+      "language": "语言"
     },
     "fire": {
       "title": "炉火",
@@ -116,6 +117,13 @@
           "desc": "长拖尾丝带火苗，御火优雅"
         }
       }
+    },
+    "language": {
+      "pageTitle": "界面语言",
+      "pageSubtitle": "切换中文 / English 后会刷新当前页",
+      "sectionTitle": "界面语言",
+      "description": "炼丹炉目前提供中文（简体）与英文两种界面。切换后新选择会记住，下次打开仍然生效。",
+      "hint": "点击按钮选择语言"
     }
   },
   "footer": {

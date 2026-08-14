@@ -73,7 +73,8 @@
       "models": "Model Management",
       "fire": "Furnace",
       "about": "About",
-      "profile": "My Profile"
+      "profile": "My Profile",
+      "language": "Language"
     },
     "fire": {
       "title": "Furnace",
@@ -116,6 +117,13 @@
           "desc": "Long ribbon flame, elegant commanding fire"
         }
       }
+    },
+    "language": {
+      "pageTitle": "Interface Language",
+      "pageSubtitle": "Switching language reloads the current page",
+      "sectionTitle": "Interface Language",
+      "description": "Alchemy Furnace ships with Simplified Chinese and English. Your choice is remembered across sessions.",
+      "hint": "Click to pick a language"
     }
   },
   "footer": {
