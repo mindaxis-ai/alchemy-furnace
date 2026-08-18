@@ -3,7 +3,7 @@
 # Alchemy Furnace Skill-Persona System
 # ═══════════════════════════════════════════
 
-.PHONY: help init build up down logs ps clean dev dev-front dev-go dev-python test
+.PHONY: help init build up down logs ps clean dev dev-front dev-go dev-python test desktop-package
 
 # 默认目标
 help:
@@ -38,6 +38,7 @@ help:
 	@echo "    make migrate      执行数据库迁移"
 	@echo "    make seed         写入内置示例金丹"
 	@echo "    make format       格式化所有代码"
+	@echo "    make desktop-package PLATFORM=darwin-arm64 VERSION=v0.1.0"
 	@echo ""
 
 # ─── 系统管理 ───
@@ -140,6 +141,12 @@ format:
 	@echo "🎨 格式化代码..."
 	cd backend/go && gofmt -w .
 	cd frontend && npm run lint
+
+# 与 GitHub Actions 共用同一条桌面打包链路。
+# PLATFORM: darwin-arm64 | darwin-amd64 | windows-amd64
+desktop-package:
+	@test -n "$(PLATFORM)" || (echo "PLATFORM is required" && exit 1)
+	@./scripts/package-desktop.sh "$(PLATFORM)" "$(or $(VERSION),dev)"
 
 # ─── 一键部署 ───
 

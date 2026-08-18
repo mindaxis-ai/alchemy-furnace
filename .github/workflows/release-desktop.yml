@@ -1,181 +1,224 @@
-name: release-desktop
+name: Release desktop
 
-# tag 触发桌面分发打包 + GitHub Release
-# 产物: AlchemyFurnace-mac-{arm64,x64}.{dmg,zip} / AlchemyFurnace-Setup.exe / checksums.txt
 on:
   push:
-    tags: ['v*.*.*']
+    tags:
+      - "v*.*.*"
   workflow_dispatch:
     inputs:
       tag:
-        description: '手动发布时使用的 tag(空=用 short SHA)'
+        description: "Existing semantic-version tag to release (vX.Y.Z)"
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      tag:
+        description: "Existing semantic-version tag to release (vX.Y.Z)"
+        required: true
+        type: string
+    secrets:
+      MACOS_SIGN_IDENTITY:
+        description: "Optional signing identity already installed on each macOS runner"
         required: false
-        default: ''
 
-# tag 触发的发布不能并发
 concurrency:
-  group: release-desktop-${{ github.ref }}
+  group: release-desktop-${{ inputs.tag || github.ref }}
   cancel-in-progress: false
 
 permissions:
-  contents: write  # 创建 release 需要
+  contents: write
 
 jobs:
-  # ───────────────────── 1. 前端构建 ─────────────────────
+  prepare:
+    name: Validate release tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - id: release
+        name: Resolve semantic version
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          tag="${INPUT_TAG:-$REF_NAME}"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::'$tag' is not a semantic-version tag (vX.Y.Z)"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
   frontend:
-    name: frontend build
+    name: Build embedded frontend
+    needs: prepare
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
 
       - uses: pnpm/action-setup@v4
+        with:
+          version: 10.8.1
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
 
-      - run: cd frontend && pnpm install --frozen-lockfile
-      - run: cd frontend && pnpm build
-      # 前端 out/ 拷到 webui 占位,供 desktop job 嵌入二进制
-      - run: rm -rf backend/go/internal/webui/out && cp -R frontend/out backend/go/internal/webui/out
+      - name: Build static export
+        working-directory: frontend
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Stage embedded assets
+        run: |
+          rm -rf backend/go/internal/webui/out
+          cp -R frontend/out backend/go/internal/webui/out
+
       - uses: actions/upload-artifact@v4
         with:
-          name: webui-out
+          name: desktop-webui
           path: backend/go/internal/webui/out
-
-  # ───────────────────── 2. Python 运行时 matrix ─────────────────────
-  runtime:
-    name: python-runtime (${{ matrix.platform }})
-    needs: frontend
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { os: macos-14,    platform: darwin-arm64 }
-          - { os: macos-13,    platform: darwin-amd64 }
-          - { os: windows-latest, platform: windows-amd64 }
-    runs-on: ${{ matrix.os }}
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@v4
-      - name: build runtime
-        run: ./scripts/build-python-runtime.sh ${{ matrix.platform }} dist
-      - uses: actions/upload-artifact@v4
-        with:
-          name: runtime-${{ matrix.platform }}
-          path: dist/python-runtime
           if-no-files-found: error
+          retention-days: 1
 
-  # ───────────────────── 3. 桌面应用 matrix ─────────────────────
-  desktop:
-    name: desktop (${{ matrix.platform }})
-    needs: [frontend, runtime]
+  package:
+    name: Package ${{ matrix.platform }}
+    needs: [prepare, frontend]
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { os: macos-14,       platform: darwin-arm64,   wailsPlatform: darwin/arm64 }
-          - { os: macos-13,       platform: darwin-amd64,   wailsPlatform: darwin/amd64 }
-          - { os: windows-latest, platform: windows-amd64,  wailsPlatform: windows/amd64 }
+          - os: macos-15
+            platform: darwin-arm64
+            wails_platform: darwin/arm64
+          - os: macos-15-intel
+            platform: darwin-amd64
+            wails_platform: darwin/amd64
+          - os: windows-2022
+            platform: windows-amd64
+            wails_platform: windows/amd64
     runs-on: ${{ matrix.os }}
     defaults:
       run:
         shell: bash
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
 
       - uses: actions/setup-go@v5
         with:
-          go-version: stable
+          go-version-file: backend/go/go.mod
+          cache-dependency-path: backend/go/go.sum
 
-      # 取前端产物(嵌入)
       - uses: actions/download-artifact@v4
         with:
-          name: webui-out
+          name: desktop-webui
           path: backend/go/internal/webui/out
 
-      # 取 python 运行时(后续 ci-assemble 装入包内)
-      - uses: actions/download-artifact@v4
+      - name: Restore target Python runtime
+        id: runtime-cache
+        uses: actions/cache@v4
         with:
-          name: runtime-${{ matrix.platform }}
           path: backend/go/dist-runtime
+          key: desktop-runtime-v2-${{ matrix.platform }}-${{ hashFiles('scripts/build-python-runtime.sh', 'backend/python/requirements.txt', 'backend/python/app/**/*.py') }}
 
-      - name: install wails
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.10.2
+      - name: Build target Python runtime
+        if: steps.runtime-cache.outputs.cache-hit != 'true'
+        run: ./scripts/build-python-runtime.sh ${{ matrix.platform }} backend/go/dist-runtime
 
-      - name: wails build
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.14.0
+
+      - name: Install NSIS
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) {
+            choco install nsis --no-progress -y
+          }
+          "C:\Program Files (x86)\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Build Wails application
         working-directory: backend/go
         env:
-          VERSION: ${{ github.ref_name || inputs.tag || github.sha }}
-          REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
+          RELEASE_SHA: ${{ github.sha }}
         run: |
-          mkdir -p build/bin
-          wails build -platform ${{ matrix.wailsPlatform }} \
-            -ldflags "-X github.com/alchemy-furnace/server/internal/buildinfo.Version=${VERSION} -X github.com/alchemy-furnace/server/internal/buildinfo.Commit=${{ github.sha }} -X github.com/alchemy-furnace/server/internal/buildinfo.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ) -X github.com/alchemy-furnace/server/internal/buildinfo.UpdateRepo=${REPO}" \
-            -skipbindings -tags webkit2_41
+          wails build -clean -platform "${{ matrix.wails_platform }}" \
+            -ldflags "-X github.com/alchemy-furnace/server/internal/buildinfo.Version=${RELEASE_TAG} -X github.com/alchemy-furnace/server/internal/buildinfo.Commit=${RELEASE_SHA} -X github.com/alchemy-furnace/server/internal/buildinfo.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ) -X github.com/alchemy-furnace/server/internal/buildinfo.UpdateRepo=${RELEASE_REPOSITORY}" \
+            -skipbindings
 
-      - name: assemble package
-        run: ./scripts/ci-assemble.sh ${{ matrix.platform }}
+      - name: Assemble release package
+        env:
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY || '-' }}
+        run: ./scripts/ci-assemble.sh ${{ matrix.platform }} "${{ needs.prepare.outputs.tag }}"
 
-      # smoke: ALCHEMY_SMOKE=1 起二进制 → curl /api/v1/version == tag
-      - name: smoke test (no window)
-        shell: bash
+      - name: Verify macOS package layout
+        if: runner.os == 'macOS'
         run: |
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            # windows 用 start /B + sleep,简化仅校验产物存在
-            echo "[smoke] windows: skip headless run(无 display)"
-          else
-            ALCHEMY_SMOKE=1 ./backend/go/build/bin/AlchemyFurnace.app/Contents/MacOS/AlchemyFurnace &
-            SMOKE_PID=$!
-            sleep 4
-            PORT=$(lsof -nP -iTCP -sTCP:LISTEN -a -p $SMOKE_PID 2>/dev/null | tail -1 | awk '{print $9}' | cut -d: -f2)
-            if [ -z "$PORT" ]; then echo "[smoke] ❌ 未监听端口"; kill $SMOKE_PID; exit 1; fi
-            echo "[smoke] 端口: $PORT"
-            HTTP_CODE=$(curl -s -o /tmp/smoke.json -w "%{http_code}" "http://127.0.0.1:${PORT}/api/v1/version" || true)
-            if [ "$HTTP_CODE" != "401" ]; then echo "[smoke] ❌ 期望 401(无 token 被 Guard 拒绝),得到 $HTTP_CODE"; kill $SMOKE_PID; exit 1; fi
-            echo "[smoke] ✅ 401 Guard 生效"
-            kill $SMOKE_PID 2>/dev/null
-          fi
+          app=backend/go/build/bin/AlchemyFurnace.app
+          test -x "$app/Contents/MacOS/AlchemyFurnace"
+          test -x "$app/Contents/Resources/python-runtime/bin/python3"
+          test -f "$app/Contents/Resources/python-runtime/engine/app/main.py"
+          codesign --verify --deep --strict --verbose=2 "$app"
+
+      - name: Verify Windows package layout
+        if: runner.os == 'Windows'
+        run: |
+          test -f backend/go/build/package/windows/AlchemyFurnace.exe
+          test -f backend/go/build/package/windows/runtime/python.exe
+          test -f backend/go/build/package/windows/runtime/engine/app/main.py
+          test -s backend/go/build/dist/AlchemyFurnace-Setup.exe
 
       - uses: actions/upload-artifact@v4
         with:
-          name: pkg-${{ matrix.platform }}
-          path: backend/go/build/dist/*
+          name: desktop-${{ matrix.platform }}
+          path: backend/go/build/dist/AlchemyFurnace-*
           if-no-files-found: error
+          retention-days: 7
 
-  # ───────────────────── 4. 汇总发布到 GitHub Release ─────────────────────
   release:
-    name: publish GitHub Release
-    needs: [desktop]
+    name: Publish GitHub Release
+    needs: [prepare, package]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: pkg-*
+          pattern: desktop-*
           merge-multiple: true
           path: dist
 
-      - name: checksums
-        working-directory: dist
+      - name: Verify release asset contract
         run: |
-          sha256sum * > checksums.txt
-          cat checksums.txt
+          for asset in \
+            AlchemyFurnace-mac-arm64.dmg \
+            AlchemyFurnace-mac-arm64.zip \
+            AlchemyFurnace-mac-x64.dmg \
+            AlchemyFurnace-mac-x64.zip \
+            AlchemyFurnace-Setup.exe; do
+            test -s "dist/$asset" || { echo "::error::Missing $asset"; exit 1; }
+          done
+          (cd dist && sha256sum AlchemyFurnace-* > checksums.txt)
 
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
           files: dist/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          prerelease: ${{ contains(needs.prepare.outputs.tag, '-') }}
           body: |
             ## 桌面端安装
 
-            - **macOS**：`dmg` 拖入 `Applications`；首次启动右键 → 打开（未签名）
-              或运行 `xattr -dr com.apple.quarantine /Applications/AlchemyFurnace.app`
-            - **Windows**：`Setup.exe` 安装向导（NSIS）；SmartScreen 选「仍要运行」（未签名）
+            - macOS Apple Silicon：下载 `AlchemyFurnace-mac-arm64.dmg`
+            - macOS Intel：下载 `AlchemyFurnace-mac-x64.dmg`
+            - Windows x64：下载 `AlchemyFurnace-Setup.exe`
 
-            ## 校验
-            `checksums.txt` 提供 SHA256：
-            ```bash
-            sha256sum -c checksums.txt
-            ```
+            当前默认构建未经过 Apple 公证或商业代码签名。macOS 首次启动请右键应用并选择“打开”；Windows SmartScreen 提示时请选择“更多信息”后继续运行。

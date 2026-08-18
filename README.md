@@ -80,6 +80,15 @@ sha256sum -c checksums.txt
 
 **更新**：关于页 → 「检查更新」→ 进度条 → 自动重启完成。dev 构建会提示「未启用更新」。
 
+维护者发布桌面版本时，推送 `vX.Y.Z` tag 会自动构建 macOS Apple Silicon、
+macOS Intel 和 Windows x64 三个平台，并发布到对应 GitHub Release。本地可复用同一链路：
+
+```bash
+make desktop-package PLATFORM=darwin-arm64 VERSION=v0.2.0
+```
+
+另外两个平台值为 `darwin-amd64` 与 `windows-amd64`；目标系统的原生工具链必须可用。
+
 ---
 
 ## 快速开始

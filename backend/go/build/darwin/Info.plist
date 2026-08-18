@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>炼丹炉</string>
+    <string>AlchemyFurnace</string>
     <key>CFBundleExecutable</key>
-    <string>LianDanLu</string>
+    <string>AlchemyFurnace</string>
     <key>CFBundleIconFile</key>
     <string>iconfile</string>
     <key>CFBundleDisplayName</key>

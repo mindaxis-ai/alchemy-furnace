@@ -3,12 +3,12 @@
 # 炼丹炉 · 本地桌面打包(CI 等价:frontend + runtime + wails + assemble)
 #
 # 用法: scripts/package-desktop.sh <darwin-arm64|darwin-amd64|windows-amd64> [version]
-# 产物: backend/go/build/dist/AlchemyFurnace-<platform>-<version>.{dmg,zip,exe}
+# 产物: backend/go/build/dist/ 下与 GitHub Release 相同的稳定文件名
 #
 # 注意:
 #   - 前端 build 需 Google Fonts: 1panel/nvm proxy 兜底(7890)
 #   - python-build-standalone 需访问 GitHub: 同上代理或用户自备
-#   - wails 工具需单独安装: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+#   - wails 工具需单独安装: go install github.com/wailsapp/wails/v2/cmd/wails@v2.14.0
 # ═══════════════════════════════════════════════════════════
 
 set -euo pipefail
@@ -22,8 +22,8 @@ say()  { printf '\033[36m[package]\033[0m %s\n' "$*"; }
 fail() { printf '\033[31m[package] ❌ %s\033[0m\n' "$*" >&2; exit 1; }
 
 # ─── 工具链自检 ───
-# Node ≥ 18.12(自动从 nvm 目录兜底)
-node_ok() { command -v node >/dev/null 2>&1 && [ "$(node -v 2>/dev/null | sed 's/^v//; s/\..*//')" -ge 18 ]; }
+# Next.js 16 requires modern Node; automatically fall back to a known nvm install.
+node_ok() { command -v node >/dev/null 2>&1 && [ "$(node -v 2>/dev/null | sed 's/^v//; s/\..*//')" -ge 20 ]; }
 if ! node_ok; then
   for v in v22.12.0 v20.18.1 v18.20.5; do
     if [ -x "$HOME/.nvm/versions/node/$v/bin/node" ]; then
@@ -33,10 +33,10 @@ if ! node_ok; then
     fi
   done
 fi
-node_ok || fail "需要 Node.js ≥ 18.12(nvm install v22)"
+node_ok || fail "需要 Node.js ≥ 20(nvm install v22)"
 command -v pnpm >/dev/null 2>&1 || fail "未找到 pnpm: npm install -g pnpm"
 command -v go >/dev/null 2>&1 || fail "未找到 go"
-command -v wails >/dev/null 2>&1 || fail "未找到 wails CLI: go install github.com/wailsapp/wails/v2/cmd/wails@latest"
+command -v wails >/dev/null 2>&1 || fail "未找到 wails CLI: go install github.com/wailsapp/wails/v2/cmd/wails@v2.14.0"
 
 # 前端字体代理(若有本机代理 + 未设 HTTPS_PROXY)
 if [ -z "${HTTPS_PROXY:-}" ] && nc -z 127.0.0.1 7890 2>/dev/null; then
@@ -71,14 +71,15 @@ case "$PLATFORM" in
 esac
 
 say "wails build → $WAILS_PLATFORM (v$VERSION)"
+rm -rf build/bin
 mkdir -p build/bin
 wails build -platform "$WAILS_PLATFORM" \
   -ldflags "-X github.com/alchemy-furnace/server/internal/buildinfo.Version=${VERSION} -X github.com/alchemy-furnace/server/internal/buildinfo.Commit=${COMMIT} -X github.com/alchemy-furnace/server/internal/buildinfo.BuildDate=${BUILD_DATE} -X github.com/alchemy-furnace/server/internal/buildinfo.UpdateRepo=${REPO}" \
-  -skipbindings -tags webkit2_41
+  -skipbindings
 
 # ─── 4. 装配 + 打 dmg/zip ───
 say "装配 + 打包"
-"$ROOT/scripts/ci-assemble.sh" "$PLATFORM"
+"$ROOT/scripts/ci-assemble.sh" "$PLATFORM" "$VERSION"
 
 # ─── 5. 完成 ───
 say "✅ 完成: $ROOT/backend/go/build/dist/"

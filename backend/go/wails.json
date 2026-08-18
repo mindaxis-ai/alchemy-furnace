@@ -1,7 +1,7 @@
 {
   "$schema": "https://wails.io/schemas/config.v2.json",
-  "name": "炼丹炉",
-  "outputfilename": "LianDanLu",
+  "name": "AlchemyFurnace",
+  "outputfilename": "AlchemyFurnace",
   "frontend:dir": "build/stub",
   "frontend:install": "",
   "frontend:build": "",

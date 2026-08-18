@@ -13,6 +13,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  desktop-contract:
+    name: Desktop release contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go/go.mod
+          cache-dependency-path: backend/go/go.sum
+
+      - name: Validate packaging scripts and config
+        run: |
+          bash -n scripts/build-python-runtime.sh scripts/ci-assemble.sh scripts/package-desktop.sh
+          python3 -m json.tool backend/go/wails.json >/dev/null
+
+      - name: Validate desktop release workflow
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 .github/workflows/release-desktop.yml
+
+      - name: Verify updater asset contract
+        working-directory: backend/go
+        run: go test ./internal/updater ./internal/engineproc
+
   # ───────────────────── 1. Go lint + test ─────────────────────
   go:
     name: Go (backend/go)
