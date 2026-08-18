@@ -4,7 +4,7 @@
  * 金丹状态管理 Context
  * 使用 React Context + useReducer 管理金丹（语言模式技能包）相关状态
  */
-import React, { createContext, useContext, useReducer, useCallback } from 'react'
+import React, { createContext, useContext, useReducer, useCallback, useRef } from 'react'
 import * as pillService from '@/services/pillService'
 import type { Pill, CreatePillRequest, UpdatePillRequest, PillListParams } from '@/services/types'
 
@@ -85,20 +85,27 @@ const PillContext = createContext<PillContextType | null>(null)
 /** Provider 组件 */
 export function PillProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(pillReducer, initialState)
+  const listRequestRef = useRef(0)
 
   /** 获取金丹列表 */
   const fetchPills = useCallback(async (params: PillListParams = {}) => {
+    const requestId = ++listRequestRef.current
+    dispatch({ type: 'SET_ERROR', payload: null })
     dispatch({ type: 'SET_LOADING', payload: true })
     try {
       const data = await pillService.listPills(params)
+      if (requestId !== listRequestRef.current) return
       dispatch({ type: 'SET_PILLS', payload: { list: data.list || [], total: data.total } })
     } catch (error) {
+      if (requestId !== listRequestRef.current) return
       dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '获取金丹列表失败' })
     }
   }, [])
 
   /** 获取单个金丹 */
   const fetchPill = useCallback(async (id: string) => {
+    dispatch({ type: 'SET_ERROR', payload: null })
+    dispatch({ type: 'SET_CURRENT_PILL', payload: null })
     dispatch({ type: 'SET_LOADING', payload: true })
     try {
       const pill = await pillService.getPill(id)

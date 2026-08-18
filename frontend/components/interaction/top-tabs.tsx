@@ -35,7 +35,11 @@ export function TopTabs({
   return (
     <div
       role="tablist"
-      className={cn('relative flex items-center gap-1 border-b border-border/70', className)}
+      className={cn(
+        'relative flex max-w-full items-center gap-1 overflow-x-auto border-b border-border/70',
+        '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
+        className,
+      )}
     >
       {tabs.map((tab) => {
         const active = tab.key === activeKey
@@ -49,7 +53,7 @@ export function TopTabs({
             aria-selected={active}
             onClick={() => onChange(tab.key)}
             className={cn(
-              'relative px-4 py-3 font-serif text-sm font-bold transition-colors duration-300',
+              'relative shrink-0 whitespace-nowrap px-4 py-3 font-serif text-sm font-bold transition-colors duration-300',
               active ? 'text-primary' : 'text-muted-foreground hover:text-foreground',
             )}
           >

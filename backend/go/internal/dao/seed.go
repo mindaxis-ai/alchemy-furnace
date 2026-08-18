@@ -8,15 +8,15 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/alchemy-furnace/server/model"
 	"github.com/alchemy-furnace/server/internal/configuration"
 	alchemycrypto "github.com/alchemy-furnace/server/internal/util/crypto"
+	"github.com/alchemy-furnace/server/model"
 	"gorm.io/gorm"
 )
 
 // SeedBuiltinPills 写入内置示例金丹种子数据
 // 幂等策略：按 name 查重，已存在的金丹直接跳过
-// 由 seed 子命令显式触发
+// 启动流程与 seed 子命令都会调用；幂等实现保证不会覆盖用户数据。
 func SeedBuiltinPills(db *gorm.DB) error {
 	pills := builtinPills()
 

@@ -4,10 +4,21 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestRuntimeRootFromRelativeExecutableIsAbsolute(t *testing.T) {
+	root, err := runtimeRootFromExecutable(filepath.Join("build", "bin", "AlchemyFurnace"))
+	if err != nil {
+		t.Fatalf("runtime root: %v", err)
+	}
+	if !filepath.IsAbs(root) {
+		t.Fatalf("runtime root = %q, want absolute path", root)
+	}
+}
 
 func TestPythonProcessEnvDisablesBytecodeWrites(t *testing.T) {
 	env := pythonProcessEnv([]string{"PATH=/usr/bin", "PYTHONDONTWRITEBYTECODE=0"})

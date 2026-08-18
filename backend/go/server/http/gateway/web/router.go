@@ -23,6 +23,7 @@ func Register(r *gin.Engine, isDesktop bool, guards ...gin.HandlerFunc) error {
 	chatHandler := handler.NewChat()
 	trialHandler := handler.NewTrial()
 	fusionHandler := handler.NewFusion()
+	distillationHandler := handler.NewDistillation()
 	// 装配 system handler: 注入 model service 用于 GetConfig 返回实际配置的融合模型
 	daoModel := service.ProvideModelDao()
 	provider := service.ProvideProviderDao()
@@ -96,6 +97,11 @@ func Register(r *gin.Engine, isDesktop bool, guards ...gin.HandlerFunc) error {
 	fusionGroup := v1.Group("/fusion")
 	{
 		fusionGroup.POST("/fuse", router.Wrapper(fusionHandler.Fuse))
+	}
+
+	distillationGroup := v1.Group("/distillation")
+	{
+		distillationGroup.POST("/nuwa", router.Wrapper(distillationHandler.Nuwa))
 	}
 
 	// 供应商与模型管理(UUID 对外标识;/templates 与 /options 静态路由先于 :uuid 注册)

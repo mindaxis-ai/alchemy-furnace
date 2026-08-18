@@ -70,6 +70,23 @@ export interface SkillSchema {
   [key: string]: unknown
 }
 
+/** 女娲蒸馏产生的可编辑草稿（不会自动落库） */
+export interface DistillationSource {
+  title: string
+  url: string
+  dimension: string
+}
+
+export interface DistillationDraft {
+  name: string
+  description: string
+  persona_summary: string
+  tags: string[]
+  skill_schema: SkillSchema
+  sources: DistillationSource[]
+  model: string
+}
+
 /** 融合血统：父代金丹 + 算子 + 时间 */
 export interface FusionLineage {
   parents: Array<{ uuid: string; name: string }>

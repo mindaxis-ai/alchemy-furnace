@@ -1,0 +1,116 @@
+'use client'
+
+import { useState } from 'react'
+import { useLocale, useTranslations } from 'next-intl'
+import { BrainCircuit, Check, ExternalLink, Loader2, Search } from 'lucide-react'
+import { distillNuwa } from '@/services/distillationService'
+import type { DistillationDraft } from '@/services/types'
+
+export function NuwaDistillPanel({
+  onApply,
+}: {
+  onApply: (draft: DistillationDraft) => void
+}) {
+  const t = useTranslations('distillation')
+  const locale = useLocale() === 'en' ? 'en' : 'zh-CN'
+  const [subject, setSubject] = useState('')
+  const [brief, setBrief] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [draft, setDraft] = useState<DistillationDraft | null>(null)
+
+  const run = async () => {
+    if (subject.trim().length < 2 || brief.trim().length < 4) return
+    setLoading(true)
+    setError(null)
+    try {
+      const result = await distillNuwa({ subject: subject.trim(), brief: brief.trim(), locale })
+      setDraft(result)
+      onApply(result)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('error'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <section className="rounded-2xl border border-gold/35 bg-gold/5 p-4">
+      <div className="mb-3 flex items-start gap-2">
+        <BrainCircuit className="mt-0.5 h-4 w-4 shrink-0 text-gold" />
+        <div className="min-w-0">
+          <h3 className="font-serif text-sm font-bold text-foreground">{t('title')}</h3>
+          <p className="text-[11px] leading-relaxed text-muted-foreground">{t('description')}</p>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <div>
+          <label className="dao-label">{t('subjectLabel')}</label>
+          <input
+            value={subject}
+            onChange={(event) => setSubject(event.target.value)}
+            placeholder={t('subjectPlaceholder')}
+            className="dao-input"
+          />
+        </div>
+        <div>
+          <label className="dao-label">{t('briefLabel')}</label>
+          <textarea
+            value={brief}
+            onChange={(event) => setBrief(event.target.value)}
+            placeholder={t('briefPlaceholder')}
+            rows={3}
+            className="dao-textarea min-h-20"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={run}
+          disabled={loading || subject.trim().length < 2 || brief.trim().length < 4}
+          className="dao-btn-gold w-full disabled:opacity-50"
+        >
+          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+          {loading ? t('researching') : t('start')}
+        </button>
+      </div>
+
+      {loading && (
+        <div className="mt-3 grid grid-cols-3 gap-1 text-center text-[10px] text-sage">
+          <span>{t('stages.research')}</span>
+          <span>{t('stages.verify')}</span>
+          <span>{t('stages.distill')}</span>
+        </div>
+      )}
+      {error && <p className="mt-3 break-words text-xs text-primary">{error}</p>}
+      {draft && !loading && (
+        <div className="mt-3 border-t border-gold/20 pt-3">
+          <p className="flex items-center gap-1 text-xs font-medium text-sage">
+            <Check className="h-3.5 w-3.5" />
+            {t('applied', { count: draft.sources.length })}
+          </p>
+          <div className="mt-2 flex flex-wrap gap-1">
+            {draft.tags.slice(0, 5).map((tag) => (
+              <span key={tag} className="rounded-full border border-gold/20 px-2 py-0.5 text-[10px] text-gold">
+                {tag}
+              </span>
+            ))}
+          </div>
+          <details className="mt-2 text-[11px] text-muted-foreground">
+            <summary className="cursor-pointer select-none">{t('sources')}</summary>
+            <ul className="mt-1 space-y-1">
+              {draft.sources.slice(0, 6).map((source) => (
+                <li key={source.url}>
+                  <a href={source.url} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1 hover:text-gold">
+                    <ExternalLink className="h-3 w-3 shrink-0" />
+                    <span className="truncate">{source.title}</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </details>
+        </div>
+      )}
+    </section>
+  )
+}

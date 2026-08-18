@@ -5,7 +5,7 @@
  * 使用 React Context + useReducer 管理道人（AI Agent）相关状态
  * 道人详情包含已服用金丹（weight/sort_order）与语言模式缓存
  */
-import React, { createContext, useContext, useReducer, useCallback } from 'react'
+import React, { createContext, useContext, useReducer, useCallback, useRef } from 'react'
 import * as agentService from '@/services/agentService'
 import type { Agent, AgentDetail, CreateAgentRequest, UpdateAgentRequest } from '@/services/types'
 
@@ -93,20 +93,27 @@ const AgentContext = createContext<AgentContextType | null>(null)
 /** Provider 组件 */
 export function AgentProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(agentReducer, initialState)
+  const listRequestRef = useRef(0)
 
   /** 获取道人列表 */
   const fetchAgents = useCallback(async () => {
+    const requestId = ++listRequestRef.current
+    dispatch({ type: 'SET_ERROR', payload: null })
     dispatch({ type: 'SET_LOADING', payload: true })
     try {
       const data = await agentService.listAgents()
+      if (requestId !== listRequestRef.current) return
       dispatch({ type: 'SET_AGENTS', payload: { list: data.list || [], total: data.total } })
     } catch (error) {
+      if (requestId !== listRequestRef.current) return
       dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '获取道人列表失败' })
     }
   }, [])
 
   /** 获取单个道人详情 */
   const fetchAgent = useCallback(async (id: string) => {
+    dispatch({ type: 'SET_ERROR', payload: null })
+    dispatch({ type: 'SET_CURRENT_AGENT', payload: null })
     dispatch({ type: 'SET_LOADING', payload: true })
     try {
       const agent = await agentService.getAgent(id)

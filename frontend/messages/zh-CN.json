@@ -197,6 +197,24 @@
     "zh-CN": "简体中文",
     "en": "English"
   },
+  "distillation": {
+    "title": "女娲智能蒸馏",
+    "description": "只需给出对象和目标，系统会收集公开资料，提取心智模型、决策方式与表达 DNA。结果先作为草稿填入下方表单。",
+    "subjectLabel": "人物或主题",
+    "subjectPlaceholder": "如：保罗·格雷厄姆、科学写作",
+    "briefLabel": "你想炼出什么",
+    "briefPlaceholder": "如：提取他判断早期创业产品的思考方式，表达直接但保留诚实边界",
+    "start": "从互联网收集并蒸馏",
+    "researching": "正在查找公开资料…",
+    "stages": {
+      "research": "六路调研",
+      "verify": "交叉核验",
+      "distill": "生成丹方"
+    },
+    "applied": "草稿已填入 · {count} 个公开来源",
+    "sources": "查看资料来源",
+    "error": "智能蒸馏失败，请重试"
+  },
   "pills": {
     "title": "金丹阁",
     "subtitle": "炼制语言模式金丹，塑造道人性情",
@@ -208,6 +226,8 @@
     },
     "create": "炼制新金丹",
     "loading": "正在搜寻金丹...",
+    "loadErrorTitle": "金丹列表加载失败",
+    "retry": "重新加载",
     "emptyTitle": "暂无金丹",
     "emptySearchTitle": "未找到匹配的金丹",
     "emptySearchDesc": "尝试其他关键词或过滤条件",
@@ -274,6 +294,7 @@
     "loading": "加载金丹...",
     "notFound": "金丹不存在或已被删除",
     "editCta": "编辑丹方",
+    "cancelCta": "取消",
     "bindCta": "赠予道人",
     "deleteCta": "删除金丹",
     "tab": {
@@ -400,6 +421,8 @@
     "searchPlaceholder": "搜索道人...",
     "create": "招募道人",
     "loading": "正在寻访道人...",
+    "loadErrorTitle": "道人列表加载失败",
+    "retry": "重新加载",
     "emptyTitle": "暂无道人",
     "emptySearchTitle": "未找到匹配的道人",
     "emptySearchDesc": "尝试其他关键词",

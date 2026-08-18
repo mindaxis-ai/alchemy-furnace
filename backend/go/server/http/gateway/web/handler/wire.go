@@ -7,6 +7,7 @@ package handler
 import (
 	"github.com/alchemy-furnace/server/server/http/gateway/web/handler/agent"
 	"github.com/alchemy-furnace/server/server/http/gateway/web/handler/chat"
+	"github.com/alchemy-furnace/server/server/http/gateway/web/handler/distillation"
 	"github.com/alchemy-furnace/server/server/http/gateway/web/handler/fusion"
 	"github.com/alchemy-furnace/server/server/http/gateway/web/handler/model"
 	"github.com/alchemy-furnace/server/server/http/gateway/web/handler/pill"
@@ -40,6 +41,12 @@ func NewTrial() *trial.Trial {
 func NewFusion() *fusion.Fusion {
 	panic(wire.Build(
 		service.FusionService, fusion.New,
+	))
+}
+
+func NewDistillation() *distillation.Handler {
+	panic(wire.Build(
+		service.DistillationService, distillation.New,
 	))
 }
 

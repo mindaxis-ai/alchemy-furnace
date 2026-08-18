@@ -16,13 +16,16 @@ import {
   Loader2,
   FlaskConical,
   X,
+  AlertCircle,
+  RefreshCw,
 } from 'lucide-react'
 import { usePill } from '@/contexts/PillContext'
 import { PillCard } from '@/components/pill-card'
 import { BindAgentModal } from '@/components/bind-agent-modal'
 import { TopTabs } from '@/components/interaction/top-tabs'
+import { NuwaDistillPanel } from '@/components/nuwa-distill-panel'
 import { emptySkillSchema } from '@/services/pillService'
-import type { Pill } from '@/services/types'
+import type { DistillationDraft, Pill } from '@/services/types'
 
 /** 内置过滤选项 */
 type BuiltinFilter = 'all' | 'builtin' | 'custom'
@@ -38,6 +41,7 @@ export default function PillsPage() {
   const [builtinFilter, setBuiltinFilter] = useState<BuiltinFilter>('all')
   const [bindingPill, setBindingPill] = useState<Pill | null>(null)
   const [creating, setCreating] = useState(false)
+  const [distilledDraft, setDistilledDraft] = useState<DistillationDraft | null>(null)
 
   /** 按搜索条件加载金丹列表 */
   const loadPills = useCallback((keyword: string, filter: BuiltinFilter) => {
@@ -47,14 +51,12 @@ export default function PillsPage() {
     })
   }, [fetchPills])
 
-  // 初始化加载
+  // 首次立即加载；输入搜索词时防抖。保持单一请求入口，避免初始化双请求竞态。
   useEffect(() => {
-    loadPills('', 'all')
-  }, [loadPills])
-
-  // 搜索防抖
-  useEffect(() => {
-    const timer = setTimeout(() => loadPills(searchQuery, builtinFilter), 300)
+    const timer = setTimeout(
+      () => loadPills(searchQuery, builtinFilter),
+      searchQuery.trim() ? 300 : 0,
+    )
     return () => clearTimeout(timer)
   }, [searchQuery, builtinFilter, loadPills])
 
@@ -66,8 +68,8 @@ export default function PillsPage() {
     const pill = await addPill({
       name: name.trim(),
       description: description.trim() || undefined,
-      skill_schema: emptySkillSchema(),
-      tags: [],
+      skill_schema: distilledDraft?.skill_schema || emptySkillSchema(),
+      tags: distilledDraft?.tags || [],
       version: '1.0.0',
     })
     setCreating(false)
@@ -75,6 +77,7 @@ export default function PillsPage() {
       setShowCreate(false)
       setName('')
       setDescription('')
+      setDistilledDraft(null)
       router.push(`/pills/${pill.id}`)
     }
   }
@@ -145,6 +148,14 @@ export default function PillsPage() {
             </div>
 
             <form onSubmit={handleCreate} className="space-y-4">
+              <NuwaDistillPanel
+                onApply={(draft) => {
+                  setDistilledDraft(draft)
+                  setName(draft.name)
+                  setDescription(draft.description)
+                }}
+              />
+
               <div>
                 <label className="dao-label">{t('modal.nameLabel')}</label>
                 <input
@@ -206,8 +217,24 @@ export default function PillsPage() {
         </div>
       )}
 
+      {!state.loading && state.error && (
+        <div className="dao-card flex flex-col items-center px-6 py-10 text-center">
+          <AlertCircle className="mb-3 h-10 w-10 text-primary" />
+          <h3 className="mb-1 font-medium text-foreground">{t('loadErrorTitle')}</h3>
+          <p className="mb-4 max-w-xl break-words text-sm text-muted-foreground">{state.error}</p>
+          <button
+            type="button"
+            onClick={() => loadPills(searchQuery, builtinFilter)}
+            className="dao-btn-ghost"
+          >
+            <RefreshCw className="h-4 w-4" />
+            {t('retry')}
+          </button>
+        </div>
+      )}
+
       {/* 空状态 */}
-      {!state.loading && state.pills.length === 0 && (
+      {!state.loading && !state.error && state.pills.length === 0 && (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <CircleDot className="w-12 h-12 text-sage/50 mb-3" />
           <h3 className="text-base font-medium text-muted-foreground mb-1">

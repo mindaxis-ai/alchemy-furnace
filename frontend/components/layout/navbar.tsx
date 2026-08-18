@@ -88,7 +88,7 @@ export function Navbar() {
     >
       <div className="flex h-16 items-center justify-between px-5 sm:px-8 lg:px-14">
         {/* 桌面端导航（居左，无品牌区） */}
-        <nav aria-label={t('ariaLabel')} className="hidden items-center gap-2 md:flex">
+        <nav aria-label={t('ariaLabel')} className="hidden items-center gap-1 lg:flex">
           {navItems.map((item) => {
             const active = isActive(item.path)
             const hasChildren = !!item.children?.length
@@ -150,7 +150,7 @@ export function Navbar() {
         </nav>
 
         {/* 右侧：主行动按钮 */}
-        <div className="hidden items-center gap-3 md:flex">
+        <div className="hidden items-center gap-3 lg:flex">
           <Link
             href="/chat"
             className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-[15px] font-medium text-primary-foreground shadow-[0_10px_20px_-8px_rgba(181,74,63,0.5)] transition-all duration-300 hover:bg-cinnabar/90 hover:shadow-[0_14px_24px_-8px_rgba(181,74,63,0.55)]"
@@ -161,7 +161,7 @@ export function Navbar() {
         </div>
 
         {/* 移动端：汉堡按钮 */}
-        <div className="flex items-center gap-2 md:hidden">
+        <div className="flex items-center gap-2 lg:hidden">
           <button
             type="button"
             className="grid size-10 place-items-center text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
@@ -177,7 +177,7 @@ export function Navbar() {
       {/* mega-dropdown 面板（桌面端） */}
       {open && (
         <div
-          className="absolute inset-x-0 top-full hidden md:block"
+          className="absolute inset-x-0 top-full hidden lg:block"
           onMouseEnter={cancelClose}
           onMouseLeave={scheduleClose}
         >
@@ -192,7 +192,7 @@ export function Navbar() {
       {mobileOpen && (
         <nav
           aria-label={t('mobileAriaLabel')}
-          className="border-t border-border/70 bg-card/95 backdrop-blur-md md:hidden"
+          className="border-t border-border/70 bg-card/95 backdrop-blur-md lg:hidden"
         >
           <div className="space-y-1 px-4 py-3">
             {navItems.map((item) => {

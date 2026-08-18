@@ -104,6 +104,33 @@ class CombineResponse(BaseModel):
     degraded: bool = Field(default=False, description="是否走了兜底提示词(LLM 不可用/失败)")
 
 
+# ==================== 女娲蒸馏 ====================
+
+class DistillRequest(BaseModel):
+    subject: str = Field(..., min_length=2, max_length=120, description="人物或主题")
+    brief: str = Field(..., min_length=4, max_length=1000, description="用户的粗略目标描述")
+    model: str = Field(default="", description="蒸馏模型")
+    api_key: Optional[str] = Field(default=None, description="按请求覆盖 API Key")
+    base_url: Optional[str] = Field(default=None, description="按请求覆盖 OpenAI 兼容地址")
+    locale: Literal["zh-CN", "en"] = Field(default="zh-CN")
+
+
+class DistillSource(BaseModel):
+    title: str
+    url: str
+    dimension: str
+
+
+class DistillResponse(BaseModel):
+    name: str
+    description: str
+    persona_summary: str
+    tags: List[str] = Field(default_factory=list)
+    skill_schema: Dict[str, Any]
+    sources: List[DistillSource] = Field(default_factory=list)
+    model: str = ""
+
+
 # ==================== 对话相关模型 ====================
 
 class ChatMessage(BaseModel):

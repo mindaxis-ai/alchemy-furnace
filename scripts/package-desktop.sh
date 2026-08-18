@@ -36,6 +36,9 @@ fi
 node_ok || fail "需要 Node.js ≥ 20(nvm install v22)"
 command -v pnpm >/dev/null 2>&1 || fail "未找到 pnpm: npm install -g pnpm"
 command -v go >/dev/null 2>&1 || fail "未找到 go"
+# go install 默认把 CLI 放在 GOPATH/bin；nvm 切换后 PATH 可能未包含它。
+GO_TOOL_BIN="$(go env GOPATH)/bin"
+export PATH="$GO_TOOL_BIN:$PATH"
 command -v wails >/dev/null 2>&1 || fail "未找到 wails CLI: go install github.com/wailsapp/wails/v2/cmd/wails@v2.14.0"
 
 # 前端字体代理(若有本机代理 + 未设 HTTPS_PROXY)

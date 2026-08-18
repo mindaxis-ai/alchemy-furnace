@@ -496,7 +496,7 @@ export function ModelsPanel() {
             return (
               <div key={provider.id} className="dao-card overflow-hidden">
                 {/* 供应商行 */}
-                <div className="p-4 flex flex-col md:flex-row md:items-center gap-3">
+                <div className="p-4 flex flex-col lg:flex-row lg:items-center gap-3">
                   {/* 展开按钮 + 名称 */}
                   <div className="flex items-center gap-2 flex-1 min-w-0">
                     <button

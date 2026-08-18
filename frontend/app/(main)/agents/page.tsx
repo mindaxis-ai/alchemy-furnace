@@ -18,9 +18,12 @@ import {
   Sparkles,
   Cpu,
   Search,
+  AlertCircle,
+  RefreshCw,
 } from 'lucide-react'
 import { useAgent } from '@/contexts/AgentContext'
 import { AgentCard } from '@/components/agent-card'
+import { NuwaDistillPanel } from '@/components/nuwa-distill-panel'
 import * as modelService from '@/services/modelService'
 import type { ModelOption } from '@/services/modelService'
 
@@ -128,6 +131,13 @@ export default function AgentsPage() {
             </div>
 
             <form onSubmit={handleCreate} className="space-y-4">
+              <NuwaDistillPanel
+                onApply={(draft) => {
+                  setName((current) => current || draft.name)
+                  setPersonality(draft.persona_summary)
+                }}
+              />
+
               <div>
                 <label className="dao-label">{t('modal.nameLabel')}</label>
                 <input
@@ -217,8 +227,20 @@ export default function AgentsPage() {
         </div>
       )}
 
+      {!state.loading && state.error && (
+        <div className="dao-card flex flex-col items-center px-6 py-10 text-center">
+          <AlertCircle className="mb-3 h-10 w-10 text-primary" />
+          <h3 className="mb-1 font-medium text-foreground">{t('loadErrorTitle')}</h3>
+          <p className="mb-4 max-w-xl break-words text-sm text-muted-foreground">{state.error}</p>
+          <button type="button" onClick={fetchAgents} className="dao-btn-ghost">
+            <RefreshCw className="h-4 w-4" />
+            {t('retry')}
+          </button>
+        </div>
+      )}
+
       {/* 空状态 */}
-      {!state.loading && filteredAgents.length === 0 && (
+      {!state.loading && !state.error && filteredAgents.length === 0 && (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <Users className="w-12 h-12 text-muted-foreground/50 mb-3" />
           <h3 className="text-base font-medium text-muted-foreground mb-1">

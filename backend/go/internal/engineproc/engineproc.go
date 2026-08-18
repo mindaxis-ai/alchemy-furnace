@@ -21,17 +21,28 @@ import (
 // env ALCHEMY_PYTHON_RUNTIME 优先(开发用本机环境);否则相对可执行文件
 func ResolveRuntimeRoot() (string, error) {
 	if v := os.Getenv("ALCHEMY_PYTHON_RUNTIME"); v != "" {
-		return v, nil
+		return filepath.Abs(v)
 	}
 	exe, err := os.Executable()
 	if err != nil {
 		return "", err
 	}
+	return runtimeRootFromExecutable(exe)
+}
+
+// runtimeRootFromExecutable 先绝对化可执行文件路径，再推导 bundle 资源目录。
+// 从终端用相对路径启动 .app 时，部分系统会让 os.Executable 返回相对路径；
+// 子进程又会切换到 engine 目录，若不绝对化，python 路径会被二次相对解析而启动失败。
+func runtimeRootFromExecutable(exe string) (string, error) {
+	absExe, err := filepath.Abs(exe)
+	if err != nil {
+		return "", fmt.Errorf("解析桌面可执行文件绝对路径失败: %w", err)
+	}
 	if runtime.GOOS == "darwin" {
 		// <.app>/Contents/MacOS/<bin> → <.app>/Contents/Resources/python-runtime
-		return filepath.Join(filepath.Dir(exe), "..", "Resources", "python-runtime"), nil
+		return filepath.Join(filepath.Dir(absExe), "..", "Resources", "python-runtime"), nil
 	}
-	return filepath.Join(filepath.Dir(exe), "runtime"), nil
+	return filepath.Join(filepath.Dir(absExe), "runtime"), nil
 }
 
 // pythonBin 返回可执行的 Python 解释器路径(跨平台)

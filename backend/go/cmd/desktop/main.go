@@ -70,6 +70,11 @@ func main() {
 	if err := dao.MaybeAutoMigrate(); err != nil {
 		log.Fatalf("[炼丹炉] 自动建表失败: %v", err)
 	}
+	// 桌面安装包没有运维命令入口，首次启动必须自动准备内置金丹。
+	// SeedBuiltinPills 按名称幂等写入，不覆盖用户已存在的数据。
+	if err := dao.SeedBuiltinPills(dao.GetDB()); err != nil {
+		log.Fatalf("[炼丹炉] 初始化内置金丹失败: %v", err)
+	}
 	go func() {
 		_, stop, err := engineproc.Start(context.Background())
 		readyMu.Lock()

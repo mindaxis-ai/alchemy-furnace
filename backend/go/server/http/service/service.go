@@ -4,12 +4,14 @@ package service
 
 import (
 	"github.com/alchemy-furnace/server/internal/dao"
+	"github.com/alchemy-furnace/server/internal/distillation"
 	"github.com/alchemy-furnace/server/internal/engineendpoint"
 	idao "github.com/alchemy-furnace/server/internal/interface/dao"
 	iservice "github.com/alchemy-furnace/server/internal/interface/service"
 	"github.com/alchemy-furnace/server/internal/service/agent_service"
 	"github.com/alchemy-furnace/server/internal/service/chat_service"
 	"github.com/alchemy-furnace/server/internal/service/credential"
+	"github.com/alchemy-furnace/server/internal/service/distillation_service"
 	"github.com/alchemy-furnace/server/internal/service/fusion_service"
 	"github.com/alchemy-furnace/server/internal/service/language_pattern_service"
 	"github.com/alchemy-furnace/server/internal/service/model_service"
@@ -104,6 +106,16 @@ var FusionService = wire.NewSet(
 	NewFusionClient,
 	credential.NewResolver, wire.Bind(new(credential.Resolver), new(*credential.ModelResolver)),
 	fusion_service.New, wire.Bind(new(iservice.Fusion), new(*fusion_service.Fusion)),
+)
+
+func NewDistillationClient() distillation.Client {
+	return distillation.NewDynamicClient(engineendpoint.Current)
+}
+
+var DistillationService = wire.NewSet(
+	NewDistillationClient,
+	credential.NewResolver, wire.Bind(new(credential.Resolver), new(*credential.ModelResolver)),
+	distillation_service.New, wire.Bind(new(iservice.Distillation), new(*distillation_service.Service)),
 )
 
 // ProviderService 供应商域装配集(连接测试回退取首个启用模型,故依赖模型 DAO)

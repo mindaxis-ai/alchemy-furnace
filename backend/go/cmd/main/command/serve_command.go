@@ -45,6 +45,9 @@ func runServe(cmd *cobra.Command) {
 	if err := dao.MaybeAutoMigrate(); err != nil {
 		log.Fatalf("[炼丹炉] 自动建表失败: %v", err)
 	}
+	if err := dao.SeedBuiltinPills(dao.GetDB()); err != nil {
+		log.Fatalf("[炼丹炉] 初始化内置金丹失败: %v", err)
+	}
 	defer logger.Sync()
 	// 共用引擎装配(serve/desktop 都走 web.NewEngine;此处无 guards 保持固定端口行为)
 	r, err := web.NewEngine(false)

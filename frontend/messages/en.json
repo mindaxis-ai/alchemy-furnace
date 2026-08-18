@@ -197,6 +197,24 @@
     "zh-CN": "简体中文",
     "en": "English"
   },
+  "distillation": {
+    "title": "Nuwa smart distillation",
+    "description": "Name a subject and goal. The app collects public evidence and extracts mental models, decision heuristics, and expression DNA into an editable draft.",
+    "subjectLabel": "Person or topic",
+    "subjectPlaceholder": "e.g. Paul Graham or scientific writing",
+    "briefLabel": "What should this capture?",
+    "briefPlaceholder": "e.g. How they judge early products, with direct language and honest limits",
+    "start": "Research and distill",
+    "researching": "Collecting public evidence…",
+    "stages": {
+      "research": "Research",
+      "verify": "Cross-check",
+      "distill": "Build draft"
+    },
+    "applied": "Draft applied · {count} public sources",
+    "sources": "View research sources",
+    "error": "Distillation failed. Try again."
+  },
   "pills": {
     "title": "Pill Vault",
     "subtitle": "Forge language-mode pills, shape a daoist's nature",
@@ -208,6 +226,8 @@
     },
     "create": "Forge a new pill",
     "loading": "Searching the vault...",
+    "loadErrorTitle": "Could not load pills",
+    "retry": "Try again",
     "emptyTitle": "No pills yet",
     "emptySearchTitle": "No matches",
     "emptySearchDesc": "Try other keywords or filters",
@@ -274,6 +294,7 @@
     "loading": "Loading pill...",
     "notFound": "Pill not found or has been removed",
     "editCta": "Edit recipe",
+    "cancelCta": "Cancel",
     "bindCta": "Bestow on daoist",
     "deleteCta": "Delete pill",
     "tab": {
@@ -400,6 +421,8 @@
     "searchPlaceholder": "Search daoists...",
     "create": "Recruit daoist",
     "loading": "Seeking daoists...",
+    "loadErrorTitle": "Could not load daoists",
+    "retry": "Try again",
     "emptyTitle": "No daoists yet",
     "emptySearchTitle": "No matches",
     "emptySearchDesc": "Try other keywords",

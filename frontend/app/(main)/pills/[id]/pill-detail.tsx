@@ -31,6 +31,8 @@ import {
   MessagesSquare,
   Tag,
   User,
+  Pencil,
+  X,
 } from 'lucide-react'
 import { usePill } from '@/contexts/PillContext'
 import { BindAgentModal } from '@/components/bind-agent-modal'
@@ -185,6 +187,19 @@ function Section({ icon: Icon, title, children }: { icon: React.ElementType; tit
   )
 }
 
+function ReadOnlyList({ items, empty }: { items: string[]; empty: string }) {
+  if (items.length === 0) return <p className="text-sm text-muted-foreground">{empty}</p>
+  return (
+    <ul className="space-y-2">
+      {items.map((item, index) => (
+        <li key={`${item}-${index}`} className="rounded-lg border border-border/70 bg-muted px-3 py-2 text-sm leading-relaxed">
+          {item}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 /** 字符串列表编辑器 */
 function StringListEditor({
   items,
@@ -250,6 +265,7 @@ export default function PillDetailPage() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [showBind, setShowBind] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
 
   const pill = state.currentPill
 
@@ -290,6 +306,7 @@ export default function PillDetailPage() {
     setSaving(false)
     if (updated) {
       setSaved(true)
+      setIsEditing(false)
       setTimeout(() => setSaved(false), 2000)
     }
   }
@@ -323,6 +340,76 @@ export default function PillDetailPage() {
             {tPill('backToList')}
           </Link>
         </div>
+      </div>
+    )
+  }
+
+  if (!isEditing) {
+    const vocabulary = parseList(form.dna.vocabularyText)
+    const tags = parseList(form.tagsText)
+    return (
+      <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
+        <Link href="/pills" className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-gold">
+          <ArrowLeft className="h-4 w-4" />
+          {tPill('backToList')}
+        </Link>
+
+        <div className="dao-card mb-6 p-5 md:p-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-start">
+            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-gold/15 text-gold shadow-[0_0_18px_rgba(201,169,110,0.35)]">
+              <FlaskConical className="h-8 w-8" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="font-serif text-2xl font-bold text-foreground">{pill.name}</h1>
+                {pill.is_builtin && <span className="rounded-full border border-sage/30 bg-sage/15 px-2 py-0.5 text-[10px] text-sage">{t('builtInBadge')}</span>}
+              </div>
+              <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{pill.description || tPill('content.empty')}</p>
+              <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground">
+                {pill.author && <span>{t('authorLabel')}: {pill.author}</span>}
+                <span>{t('versionLabel')}: {pill.version}</span>
+                <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{formatDateTime(pill.updated_at)}</span>
+              </div>
+              {tags.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{tags.map(tag => <span key={tag} className="rounded-full border border-gold/20 px-2 py-0.5 text-[11px] text-gold">{tag}</span>)}</div>}
+            </div>
+            <div className="flex shrink-0 flex-wrap items-center gap-2 md:flex-col md:items-stretch">
+              <button onClick={() => setIsEditing(true)} className="dao-btn-primary text-sm"><Pencil className="h-4 w-4" />{tPill('editCta')}</button>
+              <button onClick={() => setShowBind(true)} className="dao-btn-gold text-sm"><Gift className="h-4 w-4" />{tPill('bindCta')}</button>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-5">
+          <Section icon={IdCard} title={t('section.identity')}>
+            <p className="whitespace-pre-wrap text-sm leading-relaxed">{form.identityCard || tPill('schema.empty')}</p>
+          </Section>
+          <Section icon={Dna} title={t('section.dna')}>
+            <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+              <p><span className="text-muted-foreground">{t('dna.sentenceLength')} · </span>{t(`dna.lengthOption.${form.dna.sentence_length}`)}</p>
+              <p><span className="text-muted-foreground">{t('dna.formality', { value: form.dna.formality.toFixed(2) })}</span></p>
+              {form.dna.rhythm && <p><span className="text-muted-foreground">{t('dna.rhythm')} · </span>{form.dna.rhythm}</p>}
+              {form.dna.humor_type && <p><span className="text-muted-foreground">{t('dna.humor')} · </span>{form.dna.humor_type}</p>}
+              {form.dna.certainty_style && <p><span className="text-muted-foreground">{t('dna.certainty')} · </span>{form.dna.certainty_style}</p>}
+              {form.dna.citation_habit && <p><span className="text-muted-foreground">{t('dna.citation')} · </span>{form.dna.citation_habit}</p>}
+            </div>
+            {vocabulary.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{vocabulary.map(word => <span key={word} className="rounded-full bg-gold/10 px-2 py-1 text-xs text-gold">{word}</span>)}</div>}
+          </Section>
+          <Section icon={BrainCircuit} title={t('section.mentalModels')}>
+            {form.mentalModels.length === 0 ? <p className="text-sm text-muted-foreground">{tPill('schema.empty')}</p> : <div className="space-y-3">{form.mentalModels.map((model, index) => <article key={`${model.name}-${index}`} className="rounded-lg border border-border/70 bg-muted p-3"><h3 className="font-medium">{model.name}</h3>{model.one_liner && <p className="mt-1 text-sm text-gold">{model.one_liner}</p>}<p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">{model.application}</p></article>)}</div>}
+          </Section>
+          <Section icon={Split} title={t('section.heuristics')}>
+            <ReadOnlyList items={form.heuristics.map(item => [item.condition, item.action, item.case].filter(Boolean).join(' → '))} empty={tPill('schema.empty')} />
+          </Section>
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+            <Section icon={Heart} title={t('section.values')}><ReadOnlyList items={form.values} empty={tPill('schema.empty')} /></Section>
+            <Section icon={ShieldAlert} title={t('section.antiPatterns')}><ReadOnlyList items={form.antiPatterns} empty={tPill('schema.empty')} /></Section>
+            <Section icon={Handshake} title={t('section.honestLimits')}><ReadOnlyList items={form.honestLimits} empty={tPill('schema.empty')} /></Section>
+          </div>
+          <Section icon={MessagesSquare} title={t('section.dialogues')}>
+            {form.dialogues.length === 0 ? <p className="text-sm text-muted-foreground">{tPill('schema.empty')}</p> : <div className="space-y-3">{form.dialogues.map((dialogue, index) => <article key={index} className="rounded-lg border border-border/70 p-3 text-sm"><p className="text-muted-foreground">{dialogue.user}</p><p className="mt-2 whitespace-pre-wrap">{dialogue.assistant}</p></article>)}</div>}
+          </Section>
+        </div>
+        {showBind && <BindAgentModal pill={pill} onClose={() => setShowBind(false)} />}
       </div>
     )
   }
@@ -416,6 +503,16 @@ export default function PillDetailPage() {
 
           {/* 操作按钮 */}
           <div className="flex md:flex-col items-center gap-2 shrink-0">
+            <button
+              onClick={() => {
+                setForm(buildForm(pill.skill_schema, pill))
+                setIsEditing(false)
+              }}
+              className="dao-btn-ghost text-sm whitespace-nowrap"
+            >
+              <X className="w-4 h-4" />
+              {tPill('cancelCta')}
+            </button>
             <button onClick={() => setShowBind(true)} className="dao-btn-gold text-sm whitespace-nowrap">
               <Gift className="w-4 h-4" />
               {tPill('bindCta')}
