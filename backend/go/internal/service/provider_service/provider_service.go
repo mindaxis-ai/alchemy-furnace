@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alchemy-furnace/server/internal/configuration"
+	"github.com/alchemy-furnace/server/internal/engineendpoint"
 	"github.com/alchemy-furnace/server/internal/errors"
 	"github.com/alchemy-furnace/server/internal/interface/dao"
 	"github.com/alchemy-furnace/server/internal/service/credential"
@@ -26,20 +26,18 @@ import (
 
 // ProviderService service.Provider 接口实现
 type ProviderService struct {
-	provider      dao.Provider
-	model         dao.Model
-	engineBaseURL string
-	httpClient    *http.Client
+	provider   dao.Provider
+	model      dao.Model
+	httpClient *http.Client
 }
 
 // New 构造供应商业务实例
 // provider: 供应商 DAO;model: 模型 DAO(连接测试回退取首个启用模型)
 func New(provider dao.Provider, model dao.Model) *ProviderService {
 	return &ProviderService{
-		provider:      provider,
-		model:         model,
-		engineBaseURL: configuration.Configuration.PythonEngine.BaseURL,
-		httpClient:    &http.Client{Timeout: 60 * time.Second},
+		provider:   provider,
+		model:      model,
+		httpClient: &http.Client{Timeout: 60 * time.Second},
 	}
 }
 
@@ -343,7 +341,7 @@ func (s *ProviderService) TestConnection(ctx context.Context, uid uuid.UUID, mod
 	}
 	jsonBody, _ := json.Marshal(reqBody)
 
-	url := fmt.Sprintf("%s/api/v1/chat/completions", s.engineBaseURL)
+	url := fmt.Sprintf("%s/api/v1/chat/completions", engineendpoint.Current())
 	req, rerr := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonBody))
 	if rerr != nil {
 		return nil, errors.ErrorServerInternalError("service.provider.test_build_req")

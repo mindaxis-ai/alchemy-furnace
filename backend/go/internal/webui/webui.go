@@ -33,7 +33,7 @@ func defaultLocaleHTML(sub fs.FS) string {
 
 // Handler 静态文件服务 + SPA fallback + 正确 Content-Type
 //
-// 映射: 精确文件 → 目录/index.html → 默认 locale(SPA fallback)→ 404.html
+// 映射:精确文件 → Next export 的 route.html → 动态 route/_.html → 默认页 → 404
 //
 // 根路径 / 处理:优先默认 locale(zh-CN.html)→ index.html(占位)
 //   - 生产:real build 有 zh-CN.html,直接服务真实首页
@@ -44,7 +44,8 @@ func defaultLocaleHTML(sub fs.FS) string {
 //   - *.html   no-cache(每次构建 hash 变,需重新验证)
 //
 // Content-Type: 用 mime.TypeByExtension 自动识别
-//   .css → text/css; .js → application/javascript; .svg → image/svg+xml 等
+//
+//	.css → text/css; .js → application/javascript; .svg → image/svg+xml 等
 func Handler() http.Handler {
 	sub, _ := fs.Sub(outFS, "out")
 	defaultHTML := defaultLocaleHTML(sub)
@@ -60,13 +61,19 @@ func Handler() http.Handler {
 		if strings.HasPrefix(p, "_next/") {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		}
-		// 1) 精确文件 / 目录/index.html
-		if serveFile(w, sub, p) || serveFile(w, sub, p+"/index.html") {
+		// 1) 精确文件 / Next.js output:export 的扁平 route.html / 目录 index
+		if serveFile(w, sub, p) || serveFile(w, sub, p+".html") || serveFile(w, sub, p+"/index.html") {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-		// 2) SPA fallback:找不到资源 + 路径里没点 → client-side router 接管
-		// 覆盖: /chat/abc 这类无扩展名路径
+		// 2) 动态导出路由: /chat/<uuid> → chat/_.html。
+		if !strings.Contains(path.Base(p), ".") {
+			if dir := path.Dir(p); dir != "." && serveFile(w, sub, path.Join(dir, "_.html")) {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+		}
+		// 3) 未导出的无扩展路径回退默认页，让客户端路由接管。
 		base := path.Base(p)
 		if base == "index.html" || !strings.Contains(base, ".") {
 			if serveFile(w, sub, defaultHTML) {
@@ -74,7 +81,7 @@ func Handler() http.Handler {
 				return
 			}
 		}
-		// 3) 真没有 → 404 页
+		// 4) 真没有 → 404 页
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusNotFound)

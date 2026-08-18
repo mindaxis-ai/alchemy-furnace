@@ -41,8 +41,7 @@ FROM alpine:3.20
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
 ENV HTTP_PROXY=${HTTP_PROXY} \
-    HTTPS_PROXY=${HTTPS_PROXY} \
-    DEMO_MODE=true
+    HTTPS_PROXY=${HTTPS_PROXY}
 
 RUN apk --no-cache add ca-certificates curl tzdata
 

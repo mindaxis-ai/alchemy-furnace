@@ -35,13 +35,13 @@ type PillInput struct {
 // combineRequest 合成请求体
 // base_url/api_key 为按请求透传的模型凭证(可选),缺省时 Python 回退自身环境变量配置
 type combineRequest struct {
-	Personality string     `json:"personality"`
+	Personality string      `json:"personality"`
 	Pills       []PillInput `json:"pills"`
-	Model       string     `json:"model"`
-	BaseURL     string     `json:"base_url,omitempty"`
-	APIKey      string     `json:"api_key,omitempty"`
-	Temperature float64    `json:"temperature"`
-	MaxTokens   int        `json:"max_tokens"`
+	Model       string      `json:"model"`
+	BaseURL     string      `json:"base_url,omitempty"`
+	APIKey      string      `json:"api_key,omitempty"`
+	Temperature float64     `json:"temperature"`
+	MaxTokens   int         `json:"max_tokens"`
 }
 
 // InnerTension 内在冲突记录
@@ -65,12 +65,17 @@ type CombineResponse struct {
 
 // SynthesisClient Client 接口实现
 type SynthesisClient struct {
-	baseURL string
+	baseURL func() string
 	client  *http.Client
 }
 
 // New 构造合成引擎客户端
 func New(baseURL string) *SynthesisClient {
+	return NewDynamic(func() string { return baseURL })
+}
+
+// NewDynamic 构造运行时读取最新地址的合成客户端（桌面随机端口场景）。
+func NewDynamic(baseURL func() string) *SynthesisClient {
 	return &SynthesisClient{
 		baseURL: baseURL,
 		client:  &http.Client{Timeout: 30 * time.Second},
@@ -79,7 +84,7 @@ func New(baseURL string) *SynthesisClient {
 
 // Combine 调用 Python /api/v1/synthesis/combine,将基础性格与金丹列表合成为系统提示词
 func (c *SynthesisClient) Combine(ctx context.Context, personality string, pills []PillInput, creds *credential.ModelCredentials) (*CombineResponse, error) {
-	url := fmt.Sprintf("%s/api/v1/synthesis/combine", c.baseURL)
+	url := fmt.Sprintf("%s/api/v1/synthesis/combine", c.baseURL())
 
 	reqBody := combineRequest{
 		Personality: personality,

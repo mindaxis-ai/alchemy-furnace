@@ -39,7 +39,6 @@ RUN pnpm build
 # ---- runtime ----
 # 静态导出：构建器把 out/ 落到挂载卷，由 nginx 服务
 FROM alpine:3.20
-ENV DEMO_MODE=true
 WORKDIR /app
 COPY --from=builder /app/out ./dist
 VOLUME /app/dist

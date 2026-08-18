@@ -26,7 +26,6 @@
 - **响应式设计** —— 同一套代码兼容桌面 Web 与手机 H5
 - **模型协议化** —— 预置国内外常见 OpenAI 兼容供应商（DeepSeek / 通义千问 / 智谱 GLM / Kimi / 百川 / 文心一言 / Ollama），API Key 加密存储
 - **合成缓存** —— 道人当前合成提示词按需缓存，性格或金丹变化时自动重建
-- **演示模式** —— `DEMO_MODE=true` 一键开启内存 mock，无须 PostgreSQL 即可演示
 
 ---
 
@@ -133,23 +132,6 @@ make dev-front      # Next.js 前端 → http://localhost:3000
 ```
 
 也可以用 `bash scripts/dev.sh` 一键拉起三个服务（自动处理 Docker postgres 与 Postgres.app 的端口冲突）。
-
-### 三、演示模式
-
-演示模式**不需要 PostgreSQL**，Go 与 Python 全部走内存 mock——适合服务器做产品演示或离线体验。
-
-```bash
-# 本地开发
-export DEMO_MODE=true
-bash scripts/dev.sh
-
-# 服务器一键部署
-sudo bash scripts/deploy-demo.sh
-```
-
-启动时自动载入 9 颗金丹 / 9 位道人 / 9 个供应商 / 9 个模型 / 9 条会话；对话与合成由 mock Provider 返回固定中文回复。详细见 [docs/operations/deploy.md](docs/operations/deploy.md)。
-
----
 
 ## 首次使用
 
@@ -261,7 +243,6 @@ curl -X POST http://localhost:8080/api/v1/fusion/fuse \
 | [docs/architecture.md](docs/architecture.md) | 系统架构详解 |
 | [docs/api.md](docs/api.md) | 完整 API 接口文档 |
 | [docs/frontend.md](docs/frontend.md) | 前端开发指南 |
-| [docs/operations/deploy.md](docs/operations/deploy.md) | 演示模式与服务器部署 |
 
 ---
 

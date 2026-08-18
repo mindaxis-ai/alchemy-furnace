@@ -43,7 +43,6 @@ export interface VersionInfo {
   version: string
   commit: string
   buildDate: string
-  mode: string
 }
 
 /** 获取版本信息(关于区) */

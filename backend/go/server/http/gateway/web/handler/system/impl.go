@@ -24,9 +24,8 @@ type HealthResponse struct {
 	Status       string `json:"status"`        // 状态: ok/degraded
 	Version      string `json:"version"`       // 版本号
 	Timestamp    int64  `json:"timestamp"`     // 时间戳(unix 秒)
-	DB           string `json:"db"`            // 数据库状态: ok/down/mock(演示模式)
+	DB           string `json:"db"`            // 数据库状态: ok/down
 	PythonEngine string `json:"python_engine"` // Python 语言引擎状态: ok/down
-	Mode         string `json:"mode"`          // 007-demo-mode: 运行模式 demo/real
 }
 
 // ConfigResponse 系统配置响应 DTO(前端可见模型清单 + 实际配置的融合模型)

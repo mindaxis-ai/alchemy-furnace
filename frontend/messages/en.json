@@ -197,11 +197,6 @@
     "zh-CN": "简体中文",
     "en": "English"
   },
-  "demoBanner": {
-    "title": "Demo Mode",
-    "text": "In-memory mock data, resets on restart",
-    "dismiss": "Dismiss"
-  },
   "pills": {
     "title": "Pill Vault",
     "subtitle": "Forge language-mode pills, shape a daoist's nature",
@@ -524,7 +519,6 @@
     "version": "Version",
     "commit": "Commit",
     "buildDate": "Build date",
-    "mode": "Mode",
     "checkUpdate": "Check for updates",
     "checking": "Checking..."
   },

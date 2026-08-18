@@ -40,6 +40,10 @@ case "$PLATFORM" in
     # Wails build happens before runtime assembly. Re-sign afterwards or the
     # bundle's original signature becomes invalid as soon as Resources changes.
     PLIST="$APP/Contents/Info.plist"
+    ICON_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$PLIST" 2>/dev/null || true)"
+    [ -n "$ICON_NAME" ] || fail "Info.plist 缺少 CFBundleIconFile"
+    ICON_PATH="$RES/${ICON_NAME%.icns}.icns"
+    [ -s "$ICON_PATH" ] || fail "应用图标缺失或为空: $ICON_PATH"
     BUNDLE_VERSION="${VERSION#v}"
     BUNDLE_VERSION="${BUNDLE_VERSION%%-*}"
     if [[ ! "$BUNDLE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then

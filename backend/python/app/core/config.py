@@ -3,8 +3,6 @@
 炼丹炉 · 金丹化性 - 配置管理模块 (Configuration)
 以 pydantic_settings 管理环境变量，犹如炼丹之天时地利
 """
-import os
-
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 
@@ -57,36 +55,10 @@ class Settings(BaseSettings):
         description="日志格式"
     )
 
-    # ==================== 演示模式（007-demo-mode） ====================
-    # 接受 true/1/yes/demo(大小写不敏感);其他值视为 false
-    # 为 true 时,ChatService / SynthesisService 走 demo provider(无 LLM 调用)
-    demo_mode: bool = Field(default=False, alias="DEMO_MODE", description="演示模式开关")
-
     @property
     def openai_api_key_valid(self) -> bool:
         """检查 OpenAI API 密钥是否有效配置"""
         return bool(self.openai_api_key and self.openai_api_key.startswith("sk-"))
-
-
-# ==================== 演示模式辅助函数（007-demo-mode） ====================
-
-
-def is_demo() -> bool:
-    """
-    全局演示模式判定(对齐 Go 端 configuration.IsDemo)
-    优先读取已加载的 Settings.demo_mode;失败时回退到直接读环境变量
-    """
-    try:
-        return bool(settings.demo_mode)
-    except Exception:
-        pass
-    v = os.environ.get("DEMO_MODE", "").strip().lower()
-    return v in ("true", "1", "yes", "demo")
-
-
-def mode() -> str:
-    """可读模式字符串: 'demo' 或 'real'"""
-    return "demo" if is_demo() else "real"
 
 
 # ==================== 全局配置实例 ====================

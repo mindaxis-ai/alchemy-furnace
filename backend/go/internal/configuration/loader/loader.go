@@ -39,12 +39,6 @@ var legacyEnv = map[string]string{
 // LoadConfig 从 dir 目录读取 main.toml 并应用环境变量覆盖,填充 configuration.Configuration
 // dir 缺省依次尝试: ./config、/app/config(Docker 镜像 WORKDIR)
 func LoadConfig(dir string) error {
-	// 演示模式开关(007-demo-mode): 先解析,后续服务启动时据此选 memory/gorm
-	configuration.LoadDemoConfig()
-	if configuration.IsDemo() {
-		fmt.Println("[炼丹炉] 演示模式已开启 — 内存 mock,无 PostgreSQL")
-	}
-
 	v := viper.New()
 	v.SetConfigName("main")
 	v.SetConfigType("toml")

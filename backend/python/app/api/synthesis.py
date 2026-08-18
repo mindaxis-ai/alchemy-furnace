@@ -8,20 +8,14 @@ import logging
 from fastapi import APIRouter, HTTPException, status
 
 from app.models.schemas import CombineRequest, CombineResponse
-from app.core import runtime
+from app.services.language_synthesis_service import LanguageSynthesisService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/synthesis", tags=["合成 - 化丹为性"])
 
 
-# 007-demo-mode: 延迟代理,运行时由 runtime.setup_providers() 注入真实或演示 SynthesisProvider
-class _SynthesisServiceProxy:
-    def __getattr__(self, name):
-        return getattr(runtime.get_synthesis_provider(), name)
-
-
-synthesis_service = _SynthesisServiceProxy()
+synthesis_service = LanguageSynthesisService()
 
 
 @router.post(

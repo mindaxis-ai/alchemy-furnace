@@ -82,8 +82,8 @@ func NewChat() *chat.Chat {
 	client := service.NewSynthesisClient()
 	modelResolver := credential.NewResolver()
 	languagePatternService := language_pattern_service.New(daoAgent, client, modelResolver)
-	string2 := service.NewEngineBaseURL()
-	chat_serviceChat := chat_service.New(daoChat, daoAgent, languagePatternService, modelResolver, string2)
+	engineBaseURL := service.NewEngineBaseURL()
+	chat_serviceChat := chat_service.NewDynamic(daoChat, daoAgent, languagePatternService, modelResolver, engineBaseURL)
 	chatChat := chat.New(chat_serviceChat)
 	return chatChat
 }

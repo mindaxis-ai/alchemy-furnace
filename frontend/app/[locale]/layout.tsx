@@ -3,7 +3,6 @@ import { getMessages, setRequestLocale } from 'next-intl/server'
 import type { ReactNode } from 'react'
 import { Navbar } from '@/components/layout/navbar'
 import { Footer } from '@/components/layout/footer'
-import { DemoBanner } from '@/components/layout/demo-banner'
 import { LocaleProvider } from '@/components/i18n/locale-provider'
 import { locales, type Locale } from '@/i18n'
 
@@ -45,7 +44,6 @@ export default async function LocaleLayout({
 
   return (
     <LocaleProvider initialLocale={locale as Locale}>
-      <DemoBanner />
       <Navbar />
       <div className="flex-1">{children}</div>
       <Footer />

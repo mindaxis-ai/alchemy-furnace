@@ -217,7 +217,7 @@ class FusionService:
     """金丹融合服务: 算子抽样 + prompt 构建 + LLM + 校验 + 保底"""
 
     def __init__(self) -> None:
-        # 延迟导入,避免与 runtime.setup_providers 循环依赖
+        # 延迟导入，避免模块初始化时产生服务循环依赖。
         from app.services.chat_service import ChatService
         self._chat = ChatService()
 

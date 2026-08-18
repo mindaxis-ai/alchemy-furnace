@@ -167,6 +167,8 @@ jobs:
           test -x "$app/Contents/MacOS/AlchemyFurnace"
           test -x "$app/Contents/Resources/python-runtime/bin/python3"
           test -f "$app/Contents/Resources/python-runtime/engine/app/main.py"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$app/Contents/Info.plist")" = "iconfile"
+          test -s "$app/Contents/Resources/iconfile.icns"
           codesign --verify --deep --strict --verbose=2 "$app"
 
       - name: Verify Windows package layout

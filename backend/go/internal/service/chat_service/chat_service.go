@@ -7,17 +7,18 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	stderrors "errors"
 	"fmt"
-	"encoding/json"
 	"io"
 	"net"
 	"net/http"
 	"strings"
-	"unicode/utf8"
 	"time"
+	"unicode/utf8"
 
 	"github.com/alchemy-furnace/server/internal/configuration"
+	"github.com/alchemy-furnace/server/internal/engineendpoint"
 	ierr "github.com/alchemy-furnace/server/internal/errors"
 	"github.com/alchemy-furnace/server/internal/interface/dao"
 	"github.com/alchemy-furnace/server/internal/interface/service"
@@ -34,11 +35,16 @@ type Chat struct {
 	agent         dao.Agent
 	pattern       service.LanguagePatternProvider
 	creds         credential.Resolver
-	engineBaseURL string
+	engineBaseURL engineendpoint.Provider
 }
 
-// New 构造对话业务实例
+// New 构造固定引擎地址的对话业务实例（Web 与单元测试兼容）。
 func New(chat dao.Chat, agent dao.Agent, pattern service.LanguagePatternProvider, creds credential.Resolver, engineBaseURL string) *Chat {
+	return NewDynamic(chat, agent, pattern, creds, engineendpoint.Static(engineBaseURL))
+}
+
+// NewDynamic 构造运行时读取最新地址的对话业务实例（桌面随机端口场景）。
+func NewDynamic(chat dao.Chat, agent dao.Agent, pattern service.LanguagePatternProvider, creds credential.Resolver, engineBaseURL engineendpoint.Provider) *Chat {
 	return &Chat{chat: chat, agent: agent, pattern: pattern, creds: creds, engineBaseURL: engineBaseURL}
 }
 
@@ -249,7 +255,7 @@ func (s *Chat) StreamChat(ctx context.Context, messages []map[string]string, cre
 // callChatCompletion 调用 Python 非流式对话接口(标题生成等短任务)
 // 返回 content 字段;错误经 engine.MapEngineError 映射
 func (s *Chat) callChatCompletion(ctx context.Context, messages []map[string]string, creds *credential.ModelCredentials) (string, error) {
-	url := fmt.Sprintf("%s/api/v1/chat/completions", s.engineBaseURL)
+	url := fmt.Sprintf("%s/api/v1/chat/completions", s.engineBaseURL())
 	modelName := configuration.Configuration.LLM.DefaultModel
 	if creds != nil && creds.Model != "" {
 		modelName = creds.Model
@@ -298,7 +304,7 @@ func (s *Chat) callChatCompletion(ctx context.Context, messages []map[string]str
 // messages 应已包含合成后的 system 消息;ctx 取消时上游 HTTP 请求随之中断(停止指令贯穿取消链)
 // creds 为按请求传递的模型凭证;base_url/api_key 为空时 Python 回退自身环境变量(向后兼容)
 func (s *Chat) callChatStream(ctx context.Context, messages []map[string]string, creds *credential.ModelCredentials) (io.ReadCloser, error) {
-	url := fmt.Sprintf("%s/api/v1/chat/completions/stream", s.engineBaseURL)
+	url := fmt.Sprintf("%s/api/v1/chat/completions/stream", s.engineBaseURL())
 
 	modelName := configuration.Configuration.LLM.DefaultModel
 	if creds != nil && creds.Model != "" {
@@ -339,7 +345,6 @@ func (s *Chat) callChatStream(ctx context.Context, messages []map[string]string,
 
 	return resp.Body, nil
 }
-
 
 // CreateGroupSession 建群:成员≥2、去重、全部 active;title 置空待自动命名
 func (s *Chat) CreateGroupSession(ctx context.Context, agentUIDs []uuid.UUID) (*model.ChatSession, ierr.Error) {

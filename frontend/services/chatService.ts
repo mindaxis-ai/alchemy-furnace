@@ -118,6 +118,8 @@ export async function streamChatMessage(
   let received = false
   /** 是否已收到终止事件（done/error） */
   let finished = false
+  /** 是否已向上报告过错误；群聊成员失败后仍需继续读取 turn_done。 */
+  let reportedError = false
 
   try {
     const response = await fetch(buildApiUrl(`/chat/sse/${sessionId}`), {
@@ -165,7 +167,7 @@ export async function streamChatMessage(
         finished = true
         handlers.onDone()
       } else if (type === 'error') {
-        finished = true
+        reportedError = true
         handlers.onError(typeof payload.content === 'string' ? payload.content : '论道出错了')
       } else if (type === 'speaker_start') {
         handlers.onSpeakerStart?.(payload as unknown as { agent_id: string; agent_name: string; agent_avatar?: string })
@@ -204,7 +206,7 @@ export async function streamChatMessage(
     }
 
     // 流结束但未收到终止事件：连接中断
-    if (!finished) {
+    if (!finished && !reportedError) {
       if (received) {
         handlers.onInterrupted()
       } else {

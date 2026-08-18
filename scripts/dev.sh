@@ -47,13 +47,6 @@ else
   say "⚠️  未找到 .env，将使用默认配置（可先 make init）"
 fi
 
-# ─── 演示模式开关（007-demo-mode） ───
-# DEMO_MODE=true 时 Go/Python 全部走内存 mock,跳过 PostgreSQL
-if [ "${DEMO_MODE:-false}" = "true" ]; then
-  say "🧪 演示模式已开启（DEMO_MODE=true）— 无需 PostgreSQL,数据走内存 mock"
-  export DEMO_MODE=true
-fi
-
 FE_PORT="${PORT:-3000}"
 GO_PORT="${GO_PORT:-8080}"
 PY_PORT="${PYTHON_PORT:-8000}"

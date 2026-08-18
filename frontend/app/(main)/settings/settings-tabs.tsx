@@ -112,7 +112,7 @@ function AboutPanel() {
               <p className="text-xs text-muted-foreground mb-4 font-mono">v{version.version}</p>
             )}
 
-            {/* 版本四字段(全模式: serve + desktop 都显示) */}
+            {/* 构建版本信息 */}
             {version && (
               <div className="w-full text-left space-y-1.5 text-xs mb-4 px-2">
                 <div className="flex justify-between">
@@ -126,10 +126,6 @@ function AboutPanel() {
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">{tAbout('buildDate')}</span>
                   <span className="font-mono text-foreground">{version.buildDate || '-'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">{tAbout('mode')}</span>
-                  <span className="font-mono text-foreground">{version.mode}</span>
                 </div>
               </div>
             )}

@@ -3,7 +3,7 @@
 // 驱动由 configuration.DatabaseConfig.Driver 决定(postgres / mysql / sqlite)
 //   - 生产推荐: postgres(支持 JSONB / 部分唯一索引 / UUID 原生类型)
 //   - 兼容 MySQL: 需 8.0.13+ 才能利用部分唯一索引;更低版本靠 service 层校验兜底
-//   - 零依赖体验: sqlite(单文件 ./data/alchemy.db,Demo / 试用 / 单机首选)
+//   - 桌面单机: sqlite(单文件 ./data/alchemy.db)
 package dao
 
 import (

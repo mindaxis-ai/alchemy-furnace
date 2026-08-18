@@ -1,23 +1,8 @@
 'use client'
 
 /**
- * 聊天消息气泡组件 - 浅色宣纸卷轴风
- * 用户消息: 右侧，朱砂红边框
- * AI 消息: 左侧，金色边框，卷轴风格
- *
- * 版式（飞书/微信 金刚位）:
- *   ┌─────────────────────────────────────────────┐
- *   │ [头像]  [名字]                              │  ← 头像固定顶端
- *   │          ┌──────────────────────────────┐  │
- *   │          │ 气泡(可换行,可很长)            │  │
- *   │          │                              │  │
- *   │          └──────────────────────────────┘  │
- *   │          [状态/mentions chips]              │
- *   └─────────────────────────────────────────────┘
- *
- *   - items-start: 头像始终对齐到本行顶端(不被气泡高度拉长)
- *   - 名字 block: 与气泡竖直堆叠,不挤在一行
- *   - 气泡 block: 宽由 max-w 限制,长内容自然换行
+ * 聊天消息气泡组件：稳定单列的“丹房议事桌”。身份、正文和流式状态都在
+ * 同一消息块内，群聊切换发言人时不会改变列宽或挤压相邻内容。
  *
  * 流式性能:
  *   - streaming=true:  走纯文本路径(见 MarkdownRenderer),无 markdown 解析,逐字显示
@@ -54,17 +39,6 @@ export function ChatMessage({ message, streaming = false, members }: ChatMessage
   const [popoverOpen, setPopoverOpen] = useState(false)
   const avatarAnchorRef = useRef<HTMLButtonElement>(null)
 
-  // 群聊 system 通知条(成员变动 / 整轮沉默)
-  if (message.role === 'system' && !message.is_error) {
-    return (
-      <div className="flex justify-center animate-in fade-in duration-300 my-1">
-        <span className="text-[10px] text-muted-foreground bg-muted px-3 py-1 rounded-full">
-          {message.content}
-        </span>
-      </div>
-    )
-  }
-
   const isUser = message.role === 'user'
 
   // 头像 popover 数据
@@ -97,19 +71,42 @@ export function ChatMessage({ message, streaming = false, members }: ChatMessage
       const fromSession = all.find(a => a.id === sessionAgentId)
       if (fromSession) return fromSession
     }
-    // 4) 群聊 members 中也存了 agent_id/name,做最后兜底
-    if (members && message.agent_id) {
-      const m = members.find(x => x.agent_id === message.agent_id)
-      if (m) {
-        return all.find(a => a.id === m.agent_id) || null
+    // 4) 会话或群成员数据足以生成简略档案，确保头像始终可点。
+    const sessionAgent = chatState.currentSession?.agent
+    if (sessionAgent && (!message.agent_id || sessionAgent.id === message.agent_id)) return sessionAgent
+    const member = members?.find(x => x.agent_id === message.agent_id)
+    if (member) {
+      return {
+        id: member.agent_id,
+        name: member.name,
+        avatar: member.avatar,
+        personality: '',
+        model_name: '',
+        status: 'active',
+        proactivity: member.proactivity,
+        created_at: message.created_at,
       }
     }
     return null
-  }, [isUser, message.agent_id, message.agent_name, agentState.agents, chatState.currentSession?.agent_id, members])
+  }, [isUser, message.agent_id, message.agent_name, message.created_at, agentState.agents, chatState.currentSession, members])
+
+  const memberAvatar = members?.find(member => member.agent_id === message.agent_id)?.avatar
+  const avatarSrc = isUser ? userProfile?.avatar : (agentProfile?.avatar || memberAvatar)
+
+  // Hook 必须在所有渲染分支中保持同序；通知条在档案数据解析后再提前返回。
+  if (message.role === 'system' && !message.is_error) {
+    return (
+      <div className="flex justify-center animate-in fade-in duration-300 my-1">
+        <span className="text-[10px] text-muted-foreground bg-muted px-3 py-1 rounded-full">
+          {message.content}
+        </span>
+      </div>
+    )
+  }
 
   return (
     <div className={`
-      flex items-start gap-3 md:gap-4 min-w-0
+      flex w-full items-start gap-3 min-w-0
       ${isUser ? 'flex-row-reverse' : 'flex-row'}
       animate-in fade-in duration-300
     `}>
@@ -121,7 +118,7 @@ export function ChatMessage({ message, streaming = false, members }: ChatMessage
         onClick={() => setPopoverOpen(true)}
         className={`
           shrink-0 self-start
-          w-9 h-9 md:w-10 md:h-10 rounded-full
+          w-10 h-10 rounded-xl
           flex items-center justify-center
           transition-all duration-150
           hover:ring-2 hover:ring-gold/50 hover:ring-offset-2 hover:ring-offset-background
@@ -132,14 +129,14 @@ export function ChatMessage({ message, streaming = false, members }: ChatMessage
           }
         `}
       >
-        {isUser
-          ? (userProfile?.avatar
-              ? // eslint-disable-next-line @next/next/no-img-element
-                <img src={userProfile.avatar} alt={userProfile.display_name} className="w-full h-full rounded-full object-cover" />
-              : <User className="w-5 h-5" />)
-          : (message.agent_name
+        {avatarSrc
+          ? // eslint-disable-next-line @next/next/no-img-element
+            <img src={avatarSrc} alt={isUser ? userProfile?.display_name : agentProfile?.name} className="h-full w-full rounded-xl object-cover" />
+          : isUser
+            ? <User className="w-5 h-5" />
+            : message.agent_name
               ? <span className="font-serif font-bold">{message.agent_name.charAt(0)}</span>
-              : <Bot className="w-5 h-5" />)}
+              : <Bot className="w-5 h-5" />}
       </button>
 
       {/* 名字 + 气泡(竖直堆叠,与头像独立列) */}
@@ -149,11 +146,11 @@ export function ChatMessage({ message, streaming = false, members }: ChatMessage
       `}>
         {/* 角色标签:单行,block,与气泡独立行 */}
         <span className={`
-          block text-[10px] mb-1.5 px-2 py-0.5 rounded-full whitespace-nowrap
+          block text-[11px] mb-1.5 px-1 whitespace-nowrap font-medium
           ${isUser ? 'self-end' : 'self-start'}
           ${isUser
-            ? 'bg-primary/10 text-primary/70'
-            : 'bg-gold/10 text-gold/80'
+            ? 'text-primary/75'
+            : 'text-gold/90'
           }
         `}>
           {isUser
@@ -163,24 +160,22 @@ export function ChatMessage({ message, streaming = false, members }: ChatMessage
 
         {/* 消息气泡:block,宽由 max-w 控制,长内容自然换行 */}
         <div className={`
-          relative block text-left
-          max-w-[88%] sm:max-w-[78%] md:max-w-[68%] lg:max-w-[60%]
-          px-4 py-3 rounded-2xl break-words
+          relative block w-fit max-w-[82%] text-left
+          px-4 py-3 rounded-2xl break-words shadow-sm
           ${isUser
-            ? 'bg-primary/5 border border-primary/30 rounded-tr-sm'
-            : 'bg-card/90 border border-gold/30 rounded-tl-sm'
+            ? 'bg-primary/[0.07] border border-primary/25 rounded-tr-md'
+            : 'bg-card border border-border/80 rounded-tl-md'
           }
         `}>
-          {/* 卷轴装饰(仅 AI 消息) */}
+          {/* 丹色印记：一条克制的身份线，不参与正文宽度计算。 */}
           {!isUser && (
             <>
-              <div className="absolute -left-1 top-2 bottom-2 w-1 bg-gradient-to-b from-gold/60 via-gold/40 to-gold/60 rounded-full" />
-              <div className="absolute -right-1 top-2 bottom-2 w-1 bg-gradient-to-b from-gold/60 via-gold/40 to-gold/60 rounded-full" />
+              <div className="absolute left-0 top-3 bottom-3 w-0.5 bg-gradient-to-b from-gold/80 to-sage/50 rounded-full" />
             </>
           )}
 
           {/* 消息内容 */}
-          <div className={`md-selectable ${isUser ? '' : 'pl-2 pr-2'} min-w-0 break-words`}>
+          <div className={`md-selectable ${isUser ? '' : 'pl-1.5'} min-w-0 break-words`}>
             {isUser ? (
               // 用户消息: 高亮 @名字 且 @ 文字可点击触发 popover
               <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
@@ -198,7 +193,7 @@ export function ChatMessage({ message, streaming = false, members }: ChatMessage
 
           {/* 流式输出光标 — 仅流中、仅 AI 消息 */}
           {streaming && !isUser && (
-            <span className="inline-block w-2 h-4 bg-gold ml-1 align-text-bottom animate-pulse" />
+            <span className="inline-block w-1.5 h-4 rounded-full bg-gold/80 ml-1 align-text-bottom animate-pulse" />
           )}
         </div>
 

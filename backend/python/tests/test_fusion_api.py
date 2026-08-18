@@ -21,7 +21,7 @@ def test_fuse_endpoint_rejects_single_pill():
 
 
 def test_fuse_endpoint_returns_structure():
-    # 用上下文管理器形式构造 TestClient,触发 lifespan -> runtime.setup_providers()
+    # 用上下文管理器形式构造 TestClient，覆盖完整 lifespan。
     with TestClient(app) as client:
         resp = client.post("/api/v1/fusion/fuse", json=_payload())
     assert resp.status_code == 200

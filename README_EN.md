@@ -26,7 +26,6 @@ Under the hood: a Go API gateway, a Python synthesis engine, and a Next.js front
 - **Responsive UI** — Same code serves desktop and mobile H5
 - **Provider-agnostic** — Built-in templates for common OpenAI-compatible providers (DeepSeek, Qwen, Zhipu GLM, Kimi, Baichuan, Wenxin, Ollama); API keys encrypted at rest
 - **Synthesis cache** — Each agent's synthesized prompt is cached and rebuilt on personality or pill changes
-- **Demo Mode** — `DEMO_MODE=true` runs everything in-memory; no PostgreSQL required
 
 ---
 
@@ -99,23 +98,6 @@ make dev-front      # Next.js frontend → http://localhost:3000
 ```
 
 Or run `bash scripts/dev.sh` to bring all three up at once (it handles Docker postgres vs Postgres.app port conflicts).
-
-### 3. Demo Mode
-
-Demo Mode needs **no PostgreSQL** — Go and Python both run in-memory mocks. Ideal for product demos and offline exploration.
-
-```bash
-# Local dev
-export DEMO_MODE=true
-bash scripts/dev.sh
-
-# One-command server deploy
-sudo bash scripts/deploy-demo.sh
-```
-
-On startup, 9 pills / 9 agents / 9 providers / 9 models / 9 sessions are auto-loaded; chat and synthesis return fixed Chinese replies from a mock provider. See [docs/operations/deploy.md](docs/operations/deploy.md).
-
----
 
 ## First Run
 
@@ -227,7 +209,6 @@ Full reference: [docs/api.md](docs/api.md).
 | [docs/architecture.md](docs/architecture.md) | System architecture in depth |
 | [docs/api.md](docs/api.md) | Full API reference |
 | [docs/frontend.md](docs/frontend.md) | Frontend dev guide |
-| [docs/operations/deploy.md](docs/operations/deploy.md) | Demo Mode and server deploy |
 
 ---
 

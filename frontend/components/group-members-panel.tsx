@@ -5,12 +5,13 @@
  * 桌面 fixed right-0;H5 bottom sheet(沿用项目 sheet 模式)
  * 所有文案走 useTranslations('groupChat')
  */
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useTranslations } from 'next-intl'
 import { X, UserMinus, UserPlus, Check } from 'lucide-react'
 import { useAgent } from '@/contexts/AgentContext'
 import { useChat } from '@/contexts/ChatContext'
-import type { ChatSession } from '@/services/types'
+import { ProfilePopover } from '@/components/profile-popover'
+import type { Agent, ChatSession, GroupMember } from '@/services/types'
 
 export function GroupMembersPanel({
   session,
@@ -127,8 +128,11 @@ export function GroupMembersPanel({
                         }
                       `}
                     >
-                      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-sage to-sage/70 flex items-center justify-center text-white text-xs flex-shrink-0">
-                        {a.name.charAt(0)}
+                      <div className="w-7 h-7 rounded-lg overflow-hidden bg-gradient-to-br from-sage to-sage/70 flex items-center justify-center text-white text-xs flex-shrink-0">
+                        {a.avatar ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={a.avatar} alt={a.name} className="h-full w-full object-cover" />
+                        ) : a.name.charAt(0)}
                       </div>
                       <span className="flex-1 truncate">{a.name}</span>
                       {selected.has(a.id) && <Check className="w-4 h-4 text-gold" />}
@@ -169,9 +173,7 @@ export function GroupMembersPanel({
                 key={m.agent_id}
                 className="flex items-center gap-3 p-2 rounded-lg bg-muted/50 border border-border/70"
               >
-                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-gold/60 to-gold/30 flex items-center justify-center text-foreground font-serif font-bold flex-shrink-0">
-                  {m.name.charAt(0)}
-                </div>
+                <MemberProfileButton member={m} agent={agentState.agents.find(agent => agent.id === m.agent_id)} />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-foreground truncate">{m.name}</p>
                   <p className="text-[10px] text-muted-foreground">
@@ -192,6 +194,45 @@ export function GroupMembersPanel({
           )}
         </div>
       </div>
+    </>
+  )
+}
+
+function MemberProfileButton({ member, agent }: { member: GroupMember; agent?: Agent }) {
+  const [open, setOpen] = useState(false)
+  const anchorRef = useRef<HTMLButtonElement>(null)
+  const profile: Agent = agent || {
+    id: member.agent_id,
+    name: member.name,
+    avatar: member.avatar,
+    personality: '',
+    model_name: '',
+    status: 'active',
+    proactivity: member.proactivity,
+    created_at: '',
+  }
+
+  return (
+    <>
+      <button
+        ref={anchorRef}
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-label={`查看 ${member.name} 简介`}
+        className="h-9 w-9 flex-shrink-0 overflow-hidden rounded-xl bg-gradient-to-br from-gold/60 to-gold/30 font-serif font-bold text-foreground transition hover:ring-2 hover:ring-gold/40"
+      >
+        {member.avatar ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={member.avatar} alt={member.name} className="h-full w-full object-cover" />
+        ) : member.name.charAt(0)}
+      </button>
+      <ProfilePopover
+        kind="agent"
+        anchorRef={anchorRef}
+        open={open}
+        onClose={() => setOpen(false)}
+        agent={profile}
+      />
     </>
   )
 }

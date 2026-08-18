@@ -20,7 +20,6 @@ func NewEngine(isDesktop bool, extraAPIGuards ...gin.HandlerFunc) (*gin.Engine, 
 	r := gin.New()
 	r.Use(
 		middleware.RequestID(),
-		middleware.ModeHeader(),
 		middleware.ErrorRecovery(),
 		middleware.GinLogger(),
 		middleware.CORS(configuration.Configuration.Server.AllowOrigins),

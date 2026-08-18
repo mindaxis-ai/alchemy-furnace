@@ -55,6 +55,7 @@ func main() {
 	if err := logger.Init(configuration.Configuration.Server.Mode); err != nil {
 		log.Fatalf("[炼丹炉] 初始化日志失败: %v", err)
 	}
+	gin.SetMode(gin.ReleaseMode)
 
 	// T3 重构: 先开窗,engineproc 走 goroutine,AssetServer 走 splash 三态
 	// 就绪口径: engineproc.Start 成功(DB 在主线程同步 init 几百毫秒,挪回避免 race
@@ -63,13 +64,11 @@ func main() {
 	var readyOK bool
 	var readyErr error
 	var stopEngine func()
-	if !configuration.IsDemo() {
-		if err := dao.InitDatabase(&configuration.Configuration.Database); err != nil {
-			log.Fatalf("[炼丹炉] 初始化数据库失败: %v", err)
-		}
-		if err := dao.MaybeAutoMigrate(); err != nil {
-			log.Fatalf("[炼丹炉] 自动建表失败: %v", err)
-		}
+	if err := dao.InitDatabase(&configuration.Configuration.Database); err != nil {
+		log.Fatalf("[炼丹炉] 初始化数据库失败: %v", err)
+	}
+	if err := dao.MaybeAutoMigrate(); err != nil {
+		log.Fatalf("[炼丹炉] 自动建表失败: %v", err)
 	}
 	go func() {
 		_, stop, err := engineproc.Start(context.Background())
@@ -127,7 +126,7 @@ func main() {
 		Height:   height,
 		MinWidth: 960, MinHeight: 640,
 		// T4: macOS 原生菜单栏(关于/退出 + 剪贴板快捷键)
-		Menu:     buildAppMenu(),
+		Menu: buildAppMenu(),
 		// mac: 通顶内容,红绿灯 inset 悬浮(任务 T2)
 		Mac: &mac.Options{
 			TitleBar: mac.TitleBarHiddenInset(),

@@ -8,19 +8,14 @@ import logging
 from fastapi import APIRouter, HTTPException, status
 
 from app.models.schemas import FuseRequest, FuseResponse
-from app.core import runtime
+from app.services.fusion_service import FusionService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/fusion", tags=["融合 - 合丹为新"])
 
 
-class _FusionServiceProxy:
-    def __getattr__(self, name):
-        return getattr(runtime.get_fusion_provider(), name)
-
-
-fusion_service = _FusionServiceProxy()
+fusion_service = FusionService()
 
 
 @router.post(

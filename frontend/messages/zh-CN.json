@@ -197,11 +197,6 @@
     "zh-CN": "简体中文",
     "en": "English"
   },
-  "demoBanner": {
-    "title": "演示模式",
-    "text": "数据为内存 mock,重启后重置",
-    "dismiss": "收起"
-  },
   "pills": {
     "title": "金丹阁",
     "subtitle": "炼制语言模式金丹，塑造道人性情",
@@ -524,7 +519,6 @@
     "version": "版本",
     "commit": "提交",
     "buildDate": "构建日期",
-    "mode": "运行模式",
     "checkUpdate": "检查更新",
     "checking": "检查中..."
   },

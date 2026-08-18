@@ -37,24 +37,15 @@ func runServe(cmd *cobra.Command) {
 
 	gin.SetMode(cfg.Server.Mode)
 
-	// 007-demo-mode: 演示模式跳过 PostgreSQL,使用内存 mock DAO
-	if configuration.IsDemo() {
-		log.Println("[炼丹炉] 🧪 演示模式: 跳过数据库连接,使用内存 mock 数据")
-	} else {
-		// 数据库连接
-		if err := dao.InitDatabase(&cfg.Database); err != nil {
-			log.Fatalf("[炼丹炉] 初始化数据库失败: %v", err)
-		}
-		defer dao.CloseDatabase()
-		// 零配置首次启动: 空库自动 AutoMigrate(多数据库支持)
-		// 已建表或 SKIP_AUTO_MIGRATE=1 时跳过,保持显式控制能力
-		if err := dao.MaybeAutoMigrate(); err != nil {
-			log.Fatalf("[炼丹炉] 自动建表失败: %v", err)
-		}
+	if err := dao.InitDatabase(&cfg.Database); err != nil {
+		log.Fatalf("[炼丹炉] 初始化数据库失败: %v", err)
+	}
+	defer dao.CloseDatabase()
+	// 零配置首次启动:空库自动 AutoMigrate；已有表或显式关闭时跳过。
+	if err := dao.MaybeAutoMigrate(); err != nil {
+		log.Fatalf("[炼丹炉] 自动建表失败: %v", err)
 	}
 	defer logger.Sync()
-
-
 	// 共用引擎装配(serve/desktop 都走 web.NewEngine;此处无 guards 保持固定端口行为)
 	r, err := web.NewEngine(false)
 	if err != nil {

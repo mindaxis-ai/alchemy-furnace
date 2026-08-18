@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/alchemy-furnace/server/internal/configuration"
+	"github.com/alchemy-furnace/server/internal/engineendpoint"
 )
 
 // ResolveRuntimeRoot 定位内嵌 Python 运行时根目录
@@ -101,6 +102,7 @@ func Start(ctx context.Context) (baseURL string, stop func(), err error) {
 		baseURL = fmt.Sprintf("http://127.0.0.1:%d", port)
 		if err = waitHealthy(ctx, baseURL, 30*time.Second); err == nil {
 			configuration.Configuration.PythonEngine.BaseURL = baseURL
+			engineendpoint.Set(baseURL)
 			return baseURL, func() { killProcGroup(cmd) }, nil
 		}
 		killProcGroup(cmd)

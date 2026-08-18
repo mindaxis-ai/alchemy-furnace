@@ -436,7 +436,8 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
         </div>
 
         {/* 消息列表 */}
-        <div ref={messagesScrollRef} onScroll={handleMessagesScroll} className="flex-1 overflow-y-auto relative px-4 py-4 space-y-4">
+        <div ref={messagesScrollRef} onScroll={handleMessagesScroll} className="flex-1 overflow-y-auto relative px-4 py-5">
+          <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full text-center">
               <Sparkles className="w-10 h-10 text-sage/50 mb-3" />
@@ -458,7 +459,7 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
               <ChatMessage
                 key={message.id}
                 message={message}
-                streaming={chatState.streaming && message.role === 'assistant' && message.id === '-1'}
+                streaming={chatState.streaming && message.role === 'assistant' && message.id.startsWith('stream-')}
                 members={currentSession.members}
               />
             )
@@ -480,6 +481,7 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
           )}
 
           <div ref={messagesEndRef} />
+          </div>
 
           {/* 「回到底部」浮按钮:用户滚上去后才出现,贴在聊天框右下角(避开消息区) */}
           {showJumpToBottom && (
@@ -555,9 +557,6 @@ function AgentSelectModal({
   const [mode, setMode] = useState<ChatMode>('single')
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
-  // 切换模式时清空选择
-  useEffect(() => { setSelected(new Set()) }, [mode])
-
   const toggleSelect = (id: string) => {
     setSelected(prev => {
       const next = new Set(prev)
@@ -600,7 +599,7 @@ function AgentSelectModal({
         <div className="mb-4 inline-flex rounded-lg bg-muted p-0.5 border border-border/70 self-start">
           <button
             type="button"
-            onClick={() => setMode('single')}
+            onClick={() => { setMode('single'); setSelected(new Set()) }}
             className={`
               inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-xs font-medium transition-all
               ${mode === 'single'
@@ -614,7 +613,7 @@ function AgentSelectModal({
           </button>
           <button
             type="button"
-            onClick={() => setMode('group')}
+            onClick={() => { setMode('group'); setSelected(new Set()) }}
             className={`
               inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-xs font-medium transition-all
               ${mode === 'group'
@@ -736,6 +735,7 @@ function ChatInput({
     start: number // @ 字符在 textarea.value 中的位置
     activeIndex: number
   } | null>(null)
+  const [popPos, setPopPos] = useState<{ bottom: number; left: number } | null>(null)
 
   // 候选项:群聊时仅列群成员,单聊时不用(@补全不启用)
   const candidates = useMemo(() => {
@@ -747,10 +747,13 @@ function ChatInput({
     return []
   }, [mention, isGroup, members])
 
+  const safeActiveIndex = Math.min(mention?.activeIndex || 0, Math.max(0, candidates.length - 1))
+
   // 监听 onChange,检测 @ 触发
   const updateMention = (next: string, caret: number) => {
     if (!isGroup) {
       setMention(null)
+      setPopPos(null)
       return
     }
     // 从 caret 往前找最近 @
@@ -758,10 +761,15 @@ function ChatInput({
     const match = before.match(/(^|\s)@([^\s@]*)$/)
     if (!match) {
       setMention(null)
+      setPopPos(null)
       return
     }
     const start = match.index! + match[1].length // '@' 位置
     setMention({ query: match[2], start, activeIndex: 0 })
+    const rect = textareaRef.current?.getBoundingClientRect()
+    if (rect) {
+      setPopPos({ bottom: window.innerHeight - rect.top + 4, left: rect.left })
+    }
   }
 
   // 替换 @query 为 @name + 空格,光标移到 name 之后
@@ -773,6 +781,7 @@ function ChatInput({
     const next = before + inserted + after
     onChange(next)
     setMention(null)
+    setPopPos(null)
     // 重新聚焦 + 设置光标
     requestAnimationFrame(() => {
       if (textareaRef.current) {
@@ -799,7 +808,7 @@ function ChatInput({
       }
       if (e.key === 'Enter' || e.key === 'Tab') {
         e.preventDefault()
-        const pick = candidates[mention.activeIndex]
+        const pick = candidates[safeActiveIndex]
         if (pick) applyMention(pick.name)
         return
       }
@@ -815,23 +824,6 @@ function ChatInput({
       onSend()
     }
   }
-
-  // 浮层位置
-  const [popPos, setPopPos] = useState<{ bottom: number; left: number } | null>(null)
-  useEffect(() => {
-    if (!mention || candidates.length === 0) {
-      setPopPos(null)
-      return
-    }
-    const ta = textareaRef.current
-    if (!ta) return
-    // 简单定位:在 textarea 上方,左侧对齐 textarea
-    const rect = ta.getBoundingClientRect()
-    setPopPos({
-      bottom: window.innerHeight - rect.top + 4, // 距底部 = 视口高 - rect.top + 4
-      left: rect.left,
-    })
-  }, [mention, candidates.length])
 
   return (
     <div className="px-4 py-3 border-t border-border/70 bg-card/80">
@@ -854,10 +846,10 @@ function ChatInput({
             rows={1}
           />
           {/* @ 补全浮层(飞书式) */}
-          {mention && candidates.length > 0 && popPos && (
+          {mention && popPos && (
             <MentionSuggest
               candidates={candidates}
-              activeIndex={mention.activeIndex}
+              activeIndex={safeActiveIndex}
               onPick={(name) => applyMention(name)}
               onHover={(i) => setMention(m => m ? { ...m, activeIndex: i } : null)}
               position={popPos}

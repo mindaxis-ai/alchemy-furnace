@@ -7,7 +7,6 @@ import (
 	"context"
 
 	"github.com/alchemy-furnace/server/internal/buildinfo"
-	"github.com/alchemy-furnace/server/internal/configuration"
 )
 
 // App 桌面绑定对象(Wails 自动扫描导出方法,经 JS 桥调用)
@@ -25,6 +24,5 @@ func (a *App) GetVersion() map[string]string {
 		"version":   buildinfo.Version,
 		"commit":    buildinfo.Commit,
 		"buildDate": buildinfo.BuildDate,
-		"mode":      configuration.Mode(),
 	}
 }

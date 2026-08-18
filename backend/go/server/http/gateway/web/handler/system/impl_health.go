@@ -4,27 +4,22 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/alchemy-furnace/server/internal/configuration"
 	"github.com/alchemy-furnace/server/internal/dao"
+	"github.com/alchemy-furnace/server/internal/engineendpoint"
 	"github.com/alchemy-furnace/server/server/http/response"
 	"github.com/gin-gonic/gin"
 )
 
 // HealthCheck 健康检查
 // GET /api/v1/system/health
-// 007-demo-mode: 演示模式返回 mode=demo, db=mock;真实模式返回 mode=real, db=ok/down
 func (cls *System) HealthCheck(c *gin.Context) (response.Code, any, error) {
-	mode := configuration.Mode()
-
 	dbStatus := "ok"
-	if configuration.IsDemo() {
-		dbStatus = "mock"
-	} else if sqlDB, err := dao.GetDB().DB(); err != nil || sqlDB.Ping() != nil {
+	if sqlDB, err := dao.GetDB().DB(); err != nil || sqlDB.Ping() != nil {
 		dbStatus = "down"
 	}
 
 	pythonEngine := "down"
-	if pingEngine(configuration.Configuration.PythonEngine.BaseURL) {
+	if pingEngine(engineendpoint.Current()) {
 		pythonEngine = "ok"
 	}
 
@@ -39,7 +34,6 @@ func (cls *System) HealthCheck(c *gin.Context) (response.Code, any, error) {
 		Timestamp:    time.Now().Unix(),
 		DB:           dbStatus,
 		PythonEngine: pythonEngine,
-		Mode:         mode,
 	}, nil
 }
 

@@ -9,11 +9,12 @@ app.core.config）导入之前，向 sys.modules 注入最小可用的桩模块�
 """
 import sys
 import types
+import importlib.util
 
 
 def _install_pydantic_stubs() -> None:
     """桩住 pydantic / pydantic_settings，仅满足 app.core.config 的用法"""
-    if "pydantic" in sys.modules:
+    if "pydantic" in sys.modules or importlib.util.find_spec("pydantic") is not None:
         return
 
     pydantic = types.ModuleType("pydantic")
@@ -50,7 +51,7 @@ def _install_pydantic_stubs() -> None:
 
 
 def _install_httpx_stub() -> None:
-    if "httpx" in sys.modules:
+    if "httpx" in sys.modules or importlib.util.find_spec("httpx") is not None:
         return
     httpx = types.ModuleType("httpx")
 
@@ -78,7 +79,7 @@ def _install_httpx_stub() -> None:
 
 
 def _install_openai_stub() -> None:
-    if "openai" in sys.modules:
+    if "openai" in sys.modules or importlib.util.find_spec("openai") is not None:
         return
     openai = types.ModuleType("openai")
 

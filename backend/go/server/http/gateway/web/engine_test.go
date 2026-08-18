@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -13,16 +14,25 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/alchemy-furnace/server/internal/configuration"
+	"github.com/alchemy-furnace/server/internal/dao"
 	"github.com/alchemy-furnace/server/internal/paths"
 	"github.com/alchemy-furnace/server/server/http/middleware"
 )
 
-// TestMain 统一开 DEMO_MODE 让 handler 装配走 mock DAO,
-// 避免 NewEngine 注册 user handler 时调 dao.GetDB() 触发 log.Fatal
+// TestMain 使用隔离 SQLite，测试与正式运行走同一套 GORM DAO 装配。
 func TestMain(m *testing.M) {
-	os.Setenv("DEMO_MODE", "1")
-	configuration.LoadDemoConfig()
-	os.Exit(m.Run())
+	dir, err := os.MkdirTemp("", "alchemy-web-test-")
+	if err != nil {
+		panic(err)
+	}
+	cfg := &configuration.DatabaseConfig{Driver: configuration.DriverSQLite, SQLitePath: filepath.Join(dir, "web.db")}
+	if err := dao.InitDatabase(cfg); err != nil {
+		panic(err)
+	}
+	code := m.Run()
+	_ = dao.CloseDatabase()
+	_ = os.RemoveAll(dir)
+	os.Exit(code)
 }
 
 func newReq(t *testing.T, method, path, host, token string) *http.Request {

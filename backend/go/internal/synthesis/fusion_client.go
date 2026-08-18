@@ -48,12 +48,17 @@ type fuseRequest struct {
 
 // FusionHTTPClient FusionClient 实现
 type FusionHTTPClient struct {
-	baseURL string
+	baseURL func() string
 	client  *http.Client
 }
 
 // NewFusionClient 构造融合引擎客户端
 func NewFusionClient(baseURL string) *FusionHTTPClient {
+	return NewDynamicFusionClient(func() string { return baseURL })
+}
+
+// NewDynamicFusionClient 构造运行时读取最新地址的融合客户端。
+func NewDynamicFusionClient(baseURL func() string) *FusionHTTPClient {
 	// 融合 prompt 长 + LLM 重试可达 60s+;前端走 Next.js dev proxy 转发(默认 30s 超时),
 	// 实测需要 ≥180s 才能覆盖 deepseek 慢响应 + Python 内部 JSON 解析重试一轮的场景。
 	// 真正的根因修复在 next.config.mjs 侧加 proxyTimeout;此处给 Go 客户端也留足余量。
@@ -66,7 +71,7 @@ func NewFusionClient(baseURL string) *FusionHTTPClient {
 // Fuse 调用 Python /api/v1/fusion/fuse,将 N 枚金丹融合为新金丹预览
 // creds 为 nil 或 Model 为空时 model 字段留空,Python 回退自身默认配置
 func (c *FusionHTTPClient) Fuse(ctx context.Context, pills []PillInput, excludeOperatorID string, creds *credential.ModelCredentials) (*FuseResponse, error) {
-	url := fmt.Sprintf("%s/api/v1/fusion/fuse", c.baseURL)
+	url := fmt.Sprintf("%s/api/v1/fusion/fuse", c.baseURL())
 
 	reqBody := fuseRequest{
 		Pills:             pills,
