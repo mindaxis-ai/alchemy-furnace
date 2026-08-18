@@ -26,5 +26,8 @@ main
 /desktop.exe
 /AlchemyFurnace.app
 
+# 桌面内嵌 Python 运行时（按目标平台构建，不入库）
+/dist-runtime/
+
 # Wails build 目录(白名单抵消根 .gitignore 的 build/)
 !/build
