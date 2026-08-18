@@ -93,7 +93,7 @@ func Start(ctx context.Context) (baseURL string, stop func(), err error) {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		// 过滤污染 env: 父 shell 的 LOG_FORMAT=json / 自定义 %-style 配置会让 uvicorn 崩溃
-		cmd.Env = filterPythonEnv(os.Environ())
+		cmd.Env = pythonProcessEnv(os.Environ())
 		setProcGroup(cmd) // 平台文件实现
 		if err = cmd.Start(); err != nil {
 			continue // 端口竞争等,换端口重试
@@ -108,6 +108,12 @@ func Start(ctx context.Context) (baseURL string, stop func(), err error) {
 	return "", nil, fmt.Errorf("Python 引擎启动失败(重试 3 次): %w", err)
 }
 
+// pythonProcessEnv 返回内嵌引擎的隔离环境。运行时位于已签名的 macOS app
+// bundle 内，必须禁止生成 __pycache__，否则首次启动会修改 Resources 并破坏 seal。
+func pythonProcessEnv(parent []string) []string {
+	out := filterPythonEnv(parent)
+	return append(out, "PYTHONDONTWRITEBYTECODE=1")
+}
 
 // filterPythonEnv 保留 PATH/HOME 等必要 env,移除 Python app 已知冲突的键
 // 桌面 .app bundle 启动时会 inherit 父 shell 的全部 env,某些自定义
@@ -124,10 +130,11 @@ func filterPythonEnv(parent []string) []string {
 	}
 	// 必须移除的(冲突或与 desktop 模式无关)
 	drop := map[string]bool{
-		"LOG_FORMAT":  true, // 父 shell 的 json 格式与 Python app %-style 冲突
-		"LOG_LEVEL":   true, // 留给 Python app 自己 default
-		"RUST_LOG":    true, // rust 工具链噪声
-		"OS_ACTIVITY": true, // macOS
+		"LOG_FORMAT":              true, // 父 shell 的 json 格式与 Python app %-style 冲突
+		"LOG_LEVEL":               true, // 留给 Python app 自己 default
+		"RUST_LOG":                true, // rust 工具链噪声
+		"OS_ACTIVITY":             true, // macOS
+		"PYTHONDONTWRITEBYTECODE": true, // pythonProcessEnv 强制为 1
 	}
 	out := make([]string, 0, len(parent))
 	for _, kv := range parent {

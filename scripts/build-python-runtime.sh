@@ -87,8 +87,12 @@ cp -R "$ROOT/backend/python/app" "$STAGED_RUNTIME/engine/"
 
 say "自检: 引擎可 import"
 ( cd "$STAGED_RUNTIME/engine" && env -u LOG_FORMAT -u LOG_LEVEL -u RUST_LOG \
+    PYTHONDONTWRITEBYTECODE=1 \
     "$PYBIN" -c "import app.main; print('import ok')" ) \
   || fail "引擎 import 失败"
+
+# 自检和 pip 可能加载模块；发布运行时不携带可变 bytecode 缓存。
+find "$STAGED_RUNTIME" -type d -name '__pycache__' -prune -exec rm -rf {} + 2>/dev/null || true
 
 say "原子替换运行时: $RUNTIME_ROOT"
 rm -rf "$RUNTIME_ROOT"

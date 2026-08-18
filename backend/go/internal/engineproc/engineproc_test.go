@@ -4,9 +4,26 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestPythonProcessEnvDisablesBytecodeWrites(t *testing.T) {
+	env := pythonProcessEnv([]string{"PATH=/usr/bin", "PYTHONDONTWRITEBYTECODE=0"})
+	count := 0
+	for _, value := range env {
+		if strings.HasPrefix(value, "PYTHONDONTWRITEBYTECODE=") {
+			count++
+			if value != "PYTHONDONTWRITEBYTECODE=1" {
+				t.Fatalf("bytecode env=%q", value)
+			}
+		}
+	}
+	if count != 1 {
+		t.Fatalf("PYTHONDONTWRITEBYTECODE count=%d, env=%v", count, env)
+	}
+}
 
 func TestPickPort(t *testing.T) {
 	p1, err := pickPort()
