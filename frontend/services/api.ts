@@ -41,6 +41,7 @@ export function authHeaders(): Record<string, string> {
  */
 export interface ApiEnvelope<T> {
   code: number
+  error_code?: string
   message: string
   data: T
 }
@@ -141,6 +142,8 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
  * 自定义 API 错误类
  */
 export class ApiError extends Error {
+  public readonly errorCode?: string
+
   constructor(
     message: string,
     public status: number,
@@ -148,6 +151,10 @@ export class ApiError extends Error {
   ) {
     super(message)
     this.name = 'ApiError'
+    const errorCode = data?.error_code
+    if (typeof errorCode === 'string') {
+      this.errorCode = errorCode
+    }
   }
 }
 

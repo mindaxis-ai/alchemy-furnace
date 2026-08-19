@@ -9,10 +9,11 @@ import (
 
 // Response 统一响应结构体
 type Response struct {
-	Code      int         `json:"code"`       // 业务状态码: 0=成功
-	Message   string      `json:"message"`    // 提示信息(命名保留,前端依赖)
-	RequestID string      `json:"request_id"` // 请求链路 ID
-	Data      interface{} `json:"data"`       // 响应数据
+	Code      int         `json:"code"`                 // 业务状态码: 0=成功
+	ErrorCode string      `json:"error_code,omitempty"` // 稳定业务错误定位码(仅错误响应)
+	Message   string      `json:"message"`              // 提示信息(命名保留,前端依赖)
+	RequestID string      `json:"request_id"`           // 请求链路 ID
+	Data      interface{} `json:"data"`                 // 响应数据
 }
 
 // PageInfo 分页信息结构体
@@ -45,16 +46,32 @@ func Created(c *gin.Context, data interface{}) {
 
 // Failure 返回错误响应(带 HTTP 状态码)
 func Failure(c *gin.Context, httpStatus int, code Code, message string) {
-	FailureWithData(c, httpStatus, code, message, nil)
+	failureWithData(c, httpStatus, code, "", message, nil)
 }
 
 // FailureWithData 返回错误响应(带 HTTP 状态码与附加数据,如 409 引用计数)
 func FailureWithData(c *gin.Context, httpStatus int, code Code, message string, data interface{}) {
-	c.JSON(httpStatus, Response{Code: code, Message: message, RequestID: requestID(c), Data: data})
+	failureWithData(c, httpStatus, code, "", message, data)
+}
+
+// FailureWithErrorCode 返回错误响应(带稳定业务错误码)
+func FailureWithErrorCode(c *gin.Context, httpStatus int, code Code, errorCode, message string) {
+	failureWithData(c, httpStatus, code, errorCode, message, nil)
+}
+
+// FailureWithDataAndErrorCode 返回错误响应(带稳定业务错误码与附加数据)
+func FailureWithDataAndErrorCode(c *gin.Context, httpStatus int, code Code, errorCode, message string, data interface{}) {
+	failureWithData(c, httpStatus, code, errorCode, message, data)
+}
+
+func failureWithData(c *gin.Context, httpStatus int, code Code, errorCode, message string, data interface{}) {
+	c.JSON(httpStatus, Response{Code: code, ErrorCode: errorCode, Message: message, RequestID: requestID(c), Data: data})
 }
 
 // BadRequest 400 / NotFoundResp 404 / ConflictResp 409 / InternalError 500 便捷函数
-func BadRequest(c *gin.Context, message string)   { Failure(c, http.StatusBadRequest, InvalidParams, message) }
+func BadRequest(c *gin.Context, message string) {
+	Failure(c, http.StatusBadRequest, InvalidParams, message)
+}
 func NotFoundResp(c *gin.Context, message string) { Failure(c, http.StatusNotFound, NotFound, message) }
 func ConflictResp(c *gin.Context, message string) { Failure(c, http.StatusConflict, Conflict, message) }
 func InternalError(c *gin.Context, message string) {

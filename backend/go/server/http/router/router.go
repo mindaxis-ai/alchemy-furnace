@@ -26,6 +26,10 @@ func Wrapper(h Handler) gin.HandlerFunc {
 			if bodyCode == 0 {
 				bodyCode = status
 			}
+			errorCode := ""
+			if internalError, ok := err.(errors.Error); ok {
+				errorCode = internalError.GetCode()
+			}
 			// 5xx 不向前端暴露内部细节,统一文案并记日志;4xx 业务错误消息可直接返回
 			message := err.Error()
 			if status >= 500 {
@@ -36,9 +40,9 @@ func Wrapper(h Handler) gin.HandlerFunc {
 			}
 			// 携带附加数据的错误(如 409 引用计数)写入响应 data 字段
 			if ed, ok := err.(errors.ErrorWithData); ok {
-				response.FailureWithData(c, status, bodyCode, message, ed.GetData())
+				response.FailureWithDataAndErrorCode(c, status, bodyCode, errorCode, message, ed.GetData())
 			} else {
-				response.Failure(c, status, bodyCode, message)
+				response.FailureWithErrorCode(c, status, bodyCode, errorCode, message)
 			}
 			return
 		}
@@ -57,14 +61,18 @@ func WrapperPage(h func(c *gin.Context) (int64, int, int, any, error)) gin.Handl
 		total, page, pageSize, list, err := h(c)
 		if err != nil {
 			status := errors.HTTPStatus(err)
+			errorCode := ""
+			if internalError, ok := err.(errors.Error); ok {
+				errorCode = internalError.GetCode()
+			}
 			if status >= 500 {
 				zap.L().Error("[炼丹炉] 内部错误",
 					zap.String("request_id", c.GetString("X-Request-ID")),
 					zap.Error(err))
-				response.Failure(c, status, status, "服务器内部错误")
+				response.FailureWithErrorCode(c, status, status, errorCode, "服务器内部错误")
 				return
 			}
-			response.Failure(c, status, status, err.Error())
+			response.FailureWithErrorCode(c, status, status, errorCode, err.Error())
 			return
 		}
 		response.SuccessWithPage(c, total, page, pageSize, list)
