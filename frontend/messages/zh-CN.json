@@ -3,6 +3,10 @@
     "title": "炼丹炉 · Skill-Persona Alchemy",
     "description": "以火为引，以药为基 —— 语言模式金丹与道人 Agent 的炼制之所"
   },
+  "common": {
+    "retry": "重试",
+    "submitting": "正在提交..."
+  },
   "nav": {
     "ariaLabel": "主导航",
     "mobileAriaLabel": "移动端导航",

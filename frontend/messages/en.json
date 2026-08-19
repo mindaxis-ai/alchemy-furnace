@@ -3,6 +3,10 @@
     "title": "Alchemy Furnace · Skill-Persona Alchemy",
     "description": "Fire as the spark, herbs as the base — a forge for language-mode golden pills and Daoist agents"
   },
+  "common": {
+    "retry": "Retry",
+    "submitting": "Submitting..."
+  },
   "nav": {
     "ariaLabel": "Primary",
     "mobileAriaLabel": "Mobile",
