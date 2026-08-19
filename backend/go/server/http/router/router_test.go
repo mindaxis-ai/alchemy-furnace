@@ -2,6 +2,7 @@ package router
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -92,6 +93,53 @@ func TestWrapperPagePreservesErrorCode(t *testing.T) {
 	}
 	if got := body["message"]; got != "服务器内部错误" {
 		t.Errorf("message = %v, want 服务器内部错误", got)
+	}
+}
+
+func TestWrappersPreserveErrorCodeForWrappedInternalError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tests := []struct {
+		name     string
+		register func(*gin.Engine, error)
+	}{
+		{
+			name: "standard wrapper",
+			register: func(r *gin.Engine, err error) {
+				r.GET("/chat", Wrapper(func(c *gin.Context) (int, any, error) {
+					return 0, nil, err
+				}))
+			},
+		},
+		{
+			name: "page wrapper",
+			register: func(r *gin.Engine, err error) {
+				r.GET("/chat", WrapperPage(func(c *gin.Context) (int64, int, int, any, error) {
+					return 0, 0, 0, nil, err
+				}))
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := gin.New()
+			tt.register(r, fmt.Errorf("handler context: %w", internalerrors.New(
+				internalerrors.ErrorTypeServerInternalError,
+				"service.chat.agent_inactive",
+				"agent service connection password=secret",
+			)))
+
+			recorder := httptest.NewRecorder()
+			r.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/chat", nil))
+
+			var body map[string]any
+			if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			if got := body["error_code"]; got != "service.chat.agent_inactive" {
+				t.Errorf("error_code = %v, want service.chat.agent_inactive", got)
+			}
+		})
 	}
 }
 

@@ -3,6 +3,8 @@
 package router
 
 import (
+	stderrors "errors"
+
 	"github.com/alchemy-furnace/server/internal/errors"
 	"github.com/alchemy-furnace/server/server/http/response"
 	"github.com/gin-gonic/gin"
@@ -26,10 +28,7 @@ func Wrapper(h Handler) gin.HandlerFunc {
 			if bodyCode == 0 {
 				bodyCode = status
 			}
-			errorCode := ""
-			if internalError, ok := err.(errors.Error); ok {
-				errorCode = internalError.GetCode()
-			}
+			errorCode := stableErrorCode(err)
 			// 5xx 不向前端暴露内部细节,统一文案并记日志;4xx 业务错误消息可直接返回
 			message := err.Error()
 			if status >= 500 {
@@ -61,10 +60,7 @@ func WrapperPage(h func(c *gin.Context) (int64, int, int, any, error)) gin.Handl
 		total, page, pageSize, list, err := h(c)
 		if err != nil {
 			status := errors.HTTPStatus(err)
-			errorCode := ""
-			if internalError, ok := err.(errors.Error); ok {
-				errorCode = internalError.GetCode()
-			}
+			errorCode := stableErrorCode(err)
 			if status >= 500 {
 				zap.L().Error("[炼丹炉] 内部错误",
 					zap.String("request_id", c.GetString("X-Request-ID")),
@@ -77,4 +73,12 @@ func WrapperPage(h func(c *gin.Context) (int64, int, int, any, error)) gin.Handl
 		}
 		response.SuccessWithPage(c, total, page, pageSize, list)
 	}
+}
+
+func stableErrorCode(err error) string {
+	var internalError errors.Error
+	if stderrors.As(err, &internalError) {
+		return internalError.GetCode()
+	}
+	return ""
 }
