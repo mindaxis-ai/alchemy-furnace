@@ -147,18 +147,22 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
   }
 
   const handleCreateSession = async (agentId: string) => {
-    setShowAgentSelect(false)
-    const session = await createSession(agentId)
-    if (session) {
+    try {
+      const session = await createSession(agentId)
+      setShowAgentSelect(false)
       router.push(`/chat/${session.id}`)
+    } catch {
+      // ChatContext 已派发全局错误；保留当前选择供用户继续操作。
     }
   }
 
   const handleCreateGroupSession = async (memberAgentIds: string[]) => {
-    setShowAgentSelect(false)
-    const session = await createGroupSession(memberAgentIds)
-    if (session) {
+    try {
+      const session = await createGroupSession(memberAgentIds)
+      setShowAgentSelect(false)
       router.push(`/chat/${session.id}`)
+    } catch {
+      // ChatContext 已派发全局错误；保留当前选择供用户继续操作。
     }
   }
 

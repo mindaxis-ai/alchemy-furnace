@@ -317,9 +317,14 @@ export default function AgentDetailPage() {
   /** 开始对话 */
   const handleStartChat = async () => {
     setIsCreatingSession(true)
-    const session = await createSession(agentId, t('chatSessionTitle', { name: agent?.name || '' }))
-    setIsCreatingSession(false)
-    if (session) router.push(`/chat/${session.id}`)
+    try {
+      const session = await createSession(agentId, t('chatSessionTitle', { name: agent?.name || '' }))
+      router.push(`/chat/${session.id}`)
+    } catch {
+      // ChatContext 已派发全局错误；Task 5 将在此接入完整反馈 UI。
+    } finally {
+      setIsCreatingSession(false)
+    }
   }
 
   /** 可服用金丹列表（未绑定的） */
