@@ -194,7 +194,7 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case 'SET_STREAMING':
       return { ...state, streaming: action.payload }
     case 'SET_ERROR':
-      return { ...state, error: action.payload }
+      return { ...state, error: action.payload, loading: false }
     case 'CLEAR_CURRENT':
       return { ...state, currentSession: null, messages: [] }
     default:
@@ -208,8 +208,8 @@ interface ChatContextType {
   dispatch: React.Dispatch<ChatAction>
   // 异步操作
   fetchSessions: () => Promise<void>
-  createSession: (agentId: string, title?: string) => Promise<ChatSession | null>
-  createGroupSession: (memberAgentIds: string[]) => Promise<ChatSession | null>
+  createSession: (agentId: string, title?: string) => Promise<ChatSession>
+  createGroupSession: (memberAgentIds: string[]) => Promise<ChatSession>
   renameSession: (sessionId: string, title: string) => Promise<ChatSession | null>
   inviteMembers: (sessionId: string, agentIds: string[]) => Promise<void>
   kickMember: (sessionId: string, agentId: string) => Promise<void>
@@ -253,7 +253,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   /** 创建 1v1 会话 */
-  const createSession = useCallback(async (agentId: string, title?: string): Promise<ChatSession | null> => {
+  const createSession = useCallback(async (agentId: string, title?: string): Promise<ChatSession> => {
     dispatch({ type: 'SET_LOADING', payload: true })
     try {
       // title 参数保留但忽略(后端自动命名)
@@ -262,19 +262,19 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       return session
     } catch (error) {
       dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '创建会话失败' })
-      return null
+      throw error
     }
   }, [])
 
   /** 建群(≥2 位道人;首问答自动命名) */
-  const createGroupSession = useCallback(async (memberAgentIds: string[]): Promise<ChatSession | null> => {
+  const createGroupSession = useCallback(async (memberAgentIds: string[]): Promise<ChatSession> => {
     try {
       const session = await chatService.createGroupSession(memberAgentIds)
       dispatch({ type: 'ADD_SESSION', payload: session })
       return session
     } catch (error) {
       dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '建群失败' })
-      return null
+      throw error
     }
   }, [])
 
