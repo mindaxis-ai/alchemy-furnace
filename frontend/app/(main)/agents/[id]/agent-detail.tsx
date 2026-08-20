@@ -7,7 +7,7 @@
  * 语言模式合成状态展示（涌现规则 + 丹性相冲警告）
  */
 import { useState, useEffect, useRef, type DragEvent } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { useTranslations } from 'next-intl'
 import {
@@ -33,7 +33,8 @@ import {
 } from 'lucide-react'
 import { useAgent } from '@/contexts/AgentContext'
 import { usePill } from '@/contexts/PillContext'
-import { useChat } from '@/contexts/ChatContext'
+import { ActionFeedback } from '@/components/interaction/action-feedback'
+import { useChatLaunchFlow } from '@/hooks/use-chat-launch-flow'
 import * as modelService from '@/services/modelService'
 import type { ModelOption } from '@/services/modelService'
 import * as agentService from '@/services/agentService'
@@ -196,13 +197,13 @@ export default function AgentDetailPage() {
   const tStatus = useTranslations('agentCard.status')
   const tEditor = useTranslations('agentDetail.editor')
   const tSev = useTranslations('agent.severity')
+  const tLaunch = useTranslations('chatView.launch')
   const { id } = useParams<{ id: string }>()
-  const router = useRouter()
   const agentId = id
 
   const { state: agentState, fetchAgent, bindPill, unbindPill, updateAgentPill, editAgent } = useAgent()
   const { state: pillState, fetchPills } = usePill()
-  const { createSession } = useChat()
+  const launchFlow = useChatLaunchFlow()
 
   const [showBindPill, setShowBindPill] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
@@ -211,7 +212,6 @@ export default function AgentDetailPage() {
   const [editModel, setEditModel] = useState('')
   const [editProactivity, setEditProactivity] = useState(50)
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([])
-  const [isCreatingSession, setIsCreatingSession] = useState(false)
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
   const [reordering, setReordering] = useState(false)
@@ -316,15 +316,7 @@ export default function AgentDetailPage() {
 
   /** 开始对话 */
   const handleStartChat = async () => {
-    setIsCreatingSession(true)
-    try {
-      const session = await createSession(agentId, t('chatSessionTitle', { name: agent?.name || '' }))
-      router.push(`/chat/${session.id}`)
-    } catch {
-      // ChatContext 已派发全局错误；Task 5 将在此接入完整反馈 UI。
-    } finally {
-      setIsCreatingSession(false)
-    }
+    await launchFlow.launchSingle(agentId)
   }
 
   /** 可服用金丹列表（未绑定的） */
@@ -514,9 +506,13 @@ export default function AgentDetailPage() {
                   </span>
                 </div>
 
-                <div className="flex items-center gap-2 mt-4 flex-wrap">
-                  <button onClick={handleStartChat} className="dao-btn-primary text-sm whitespace-nowrap">
-                    {isCreatingSession ? (
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={handleStartChat}
+                    disabled={launchFlow.state.status === 'submitting'}
+                    className="dao-btn-primary whitespace-nowrap text-sm disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {launchFlow.state.status === 'submitting' ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
                     ) : (
                       <MessageSquare className="w-4 h-4" />
@@ -528,6 +524,30 @@ export default function AgentDetailPage() {
                     {t('editCta')}
                   </button>
                 </div>
+                {launchFlow.state.status !== 'idle' && (
+                  <div className="mt-3 rounded-lg border border-gold/40 bg-gold/5 px-3 py-2.5 shadow-sm">
+                    {launchFlow.state.status === 'submitting' ? (
+                      <ActionFeedback status="submitting" message={tLaunch('submitting')} />
+                    ) : (
+                      <>
+                        <ActionFeedback
+                          status="error"
+                          message={launchFlow.state.message}
+                          onRetry={() => { void launchFlow.retry() }}
+                          retryLabel={tLaunch('retry')}
+                        />
+                        {launchFlow.state.errorCode === 'service.chat.model_unavailable' && (
+                          <Link
+                            href="/settings"
+                            className="mt-2 inline-flex max-w-full break-words text-left text-xs font-medium whitespace-normal text-gold hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60"
+                          >
+                            {tLaunch('modelSettings')}
+                          </Link>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
               </>
             )}
           </div>

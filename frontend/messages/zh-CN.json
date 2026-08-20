@@ -749,6 +749,17 @@
   },
   "chatView": {
     "newSession": "新建对话",
+    "load": {
+      "providerError": "模型可用性加载失败",
+      "sessionsError": "会话列表加载失败",
+      "agentsError": "道人列表加载失败",
+      "retry": "重新加载"
+    },
+    "launch": {
+      "submitting": "正在开启论道...",
+      "retry": "重试开启",
+      "modelSettings": "前往模型管理检查配置"
+    },
     "mode": {
       "single": "对谈",
       "group": "围炉论道",

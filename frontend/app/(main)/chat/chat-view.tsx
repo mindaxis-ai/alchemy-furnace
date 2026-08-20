@@ -20,6 +20,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useTranslations } from 'next-intl'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import {
   Plus,
   Loader2,
@@ -42,16 +43,35 @@ import { GroupMembersPanel } from '@/components/group-members-panel'
 import { TopTabs } from '@/components/interaction/top-tabs'
 import { MentionSuggest } from '@/components/mention-suggest'
 import { OnboardingCard } from '@/components/onboarding-card'
+import { ActionFeedback } from '@/components/interaction/action-feedback'
+import { useChatLaunchFlow, type LaunchState } from '@/hooks/use-chat-launch-flow'
 import { listProviders } from '@/services/modelService'
 import type { Agent } from '@/services/types'
 
 type ChatMode = 'single' | 'group'
+type ProviderReadiness =
+  | { status: 'loading' }
+  | { status: 'ready'; empty: boolean }
+  | { status: 'error'; message: string }
+
+async function fetchProviderReadiness(): Promise<ProviderReadiness> {
+  try {
+    const res = await listProviders({ page: 1, page_size: 1 })
+    return { status: 'ready', empty: (res?.list?.length ?? 0) === 0 }
+  } catch (error) {
+    return {
+      status: 'error',
+      message: error instanceof Error ? error.message : '',
+    }
+  }
+}
 
 export function ChatView({ sessionId }: { sessionId?: string }) {
   const router = useRouter()
   const t = useTranslations('chatView')
+  const launchFlow = useChatLaunchFlow()
 
-  const { state: chatState, dispatch, fetchSessions, loadMessages, streamMessage, createSession, createGroupSession, renameSession, stopStream } = useChat()
+  const { state: chatState, dispatch, fetchSessions, loadMessages, streamMessage, renameSession, stopStream } = useChat()
   const { state: agentState, fetchAgents } = useAgent()
 
   const [input, setInput] = useState('')
@@ -59,6 +79,7 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
   const [showAgentSelect, setShowAgentSelect] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesScrollRef = useRef<HTMLDivElement>(null)
+  const providerRequestRef = useRef(0)
   /** 是否粘底(用户当前在底部附近)。ref 而非 state:scroll 事件高频触发,避免触发 re-render */
   const stickyToBottomRef = useRef(true)
   /** 「回到底部」浮按钮显示状态 */
@@ -66,7 +87,7 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
   /** 离底多少 px 算粘底(给用户一点容差,避免边界值抖动) */
   const STICKY_THRESHOLD_PX = 80
   /** 供应商列表是否为空(用于显示首启引导) */
-  const [providersEmpty, setProvidersEmpty] = useState<boolean | null>(null)
+  const [providerReadiness, setProviderReadiness] = useState<ProviderReadiness>({ status: 'loading' })
 
   const currentSession = chatState.currentSession
   const messages = chatState.messages
@@ -79,15 +100,22 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
     fetchAgents()
   }, [fetchSessions, fetchAgents])
 
-  // 首启引导: 拉供应商列表,空 → 显示 OnboardingCard
-  // null = 加载中(防闪烁),true = 空, false = 已有
+  // 首启引导: 仅在供应商请求明确成功且列表为空时显示。
   useEffect(() => {
-    let cancelled = false
-    listProviders({ page: 1, page_size: 1 })
-      .then((res) => { if (!cancelled) setProvidersEmpty((res?.list?.length ?? 0) === 0) })
-      .catch(() => { if (!cancelled) setProvidersEmpty(false) })
-    return () => { cancelled = true }
+    const requestId = ++providerRequestRef.current
+    void fetchProviderReadiness().then(readiness => {
+      if (requestId === providerRequestRef.current) setProviderReadiness(readiness)
+    })
+    return () => { providerRequestRef.current += 1 }
   }, [])
+
+  const retryProviderReadiness = () => {
+    const requestId = ++providerRequestRef.current
+    setProviderReadiness({ status: 'loading' })
+    void fetchProviderReadiness().then(readiness => {
+      if (requestId === providerRequestRef.current) setProviderReadiness(readiness)
+    })
+  }
 
   // T4 快捷键 ⌘N: desktop-guards 在 window 派发 alchemy:new-session → 此处复用现有 setShowAgentSelect
   useEffect(() => {
@@ -147,23 +175,24 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
   }
 
   const handleCreateSession = async (agentId: string) => {
-    try {
-      const session = await createSession(agentId)
+    const launched = await launchFlow.launchSingle(agentId)
+    if (launched) {
       setShowAgentSelect(false)
-      router.push(`/chat/${session.id}`)
-    } catch {
-      // ChatContext 已派发全局错误；保留当前选择供用户继续操作。
     }
+    return launched
   }
 
   const handleCreateGroupSession = async (memberAgentIds: string[]) => {
-    try {
-      const session = await createGroupSession(memberAgentIds)
+    const launched = await launchFlow.launchGroup(memberAgentIds)
+    if (launched) {
       setShowAgentSelect(false)
-      router.push(`/chat/${session.id}`)
-    } catch {
-      // ChatContext 已派发全局错误；保留当前选择供用户继续操作。
     }
+    return launched
+  }
+
+  const closeAgentSelect = () => {
+    launchFlow.reset()
+    setShowAgentSelect(false)
   }
 
   const getAgentName = (agentId: string) => {
@@ -191,7 +220,7 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
 
   // 如果没有选择会话: 先看是否需要首启引导(无供应商)
   if (!currentSession) {
-    if (providersEmpty === true) {
+    if (providerReadiness.status === 'ready' && providerReadiness.empty) {
       return (
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <div className="flex flex-col items-center justify-center h-[60vh]">
@@ -216,6 +245,25 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
             <Plus className="w-4 h-4" />
             {t('newSession')}
           </button>
+
+          <div className="mt-4 flex w-full max-w-md flex-col gap-2 text-left">
+            {providerReadiness.status === 'error' && (
+              <LoadNotice
+                title={t('load.providerError')}
+                message={providerReadiness.message || t('load.providerError')}
+                retryLabel={t('load.retry')}
+                onRetry={retryProviderReadiness}
+              />
+            )}
+            {chatState.error && launchFlow.state.status !== 'error' && (
+              <LoadNotice
+                title={t('load.sessionsError')}
+                message={chatState.error}
+                retryLabel={t('load.retry')}
+                onRetry={fetchSessions}
+              />
+            )}
+          </div>
 
           {/* 已有会话列表入口 */}
           {sessions.length > 0 && (
@@ -246,9 +294,13 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
         {showAgentSelect && (
           <AgentSelectModal
             agents={agents.filter(a => a.status === 'active')}
-            onClose={() => setShowAgentSelect(false)}
+            agentError={agentState.error}
+            launchState={launchFlow.state}
+            onClose={closeAgentSelect}
             onSelectSingle={handleCreateSession}
             onSelectGroup={handleCreateGroupSession}
+            onRetry={launchFlow.retry}
+            onRetryAgents={fetchAgents}
           />
         )}
       </div>
@@ -530,9 +582,13 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
       {showAgentSelect && (
         <AgentSelectModal
           agents={agents.filter(a => a.status === 'active')}
-          onClose={() => setShowAgentSelect(false)}
+          agentError={agentState.error}
+          launchState={launchFlow.state}
+          onClose={closeAgentSelect}
           onSelectSingle={handleCreateSession}
           onSelectGroup={handleCreateGroupSession}
+          onRetry={launchFlow.retry}
+          onRetryAgents={fetchAgents}
         />
       )}
 
@@ -544,22 +600,55 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
   )
 }
 
+function LoadNotice({
+  title,
+  message,
+  retryLabel,
+  onRetry,
+}: {
+  title: string
+  message: string
+  retryLabel: string
+  onRetry: () => void | Promise<void>
+}) {
+  return (
+    <div className="rounded-lg border border-gold/30 bg-card px-3 py-2.5 text-sm" role="alert">
+      <p className="font-medium text-foreground">{title}</p>
+      <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+        <p className="min-w-0 flex-1 break-words text-xs text-muted-foreground">{message}</p>
+        <button type="button" onClick={onRetry} className="dao-btn-ghost shrink-0 text-xs">
+          {retryLabel}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 /* ========== 子组件:选择道人弹窗(对谈 / 围炉论道) ========== */
 
 function AgentSelectModal({
   agents,
+  agentError,
+  launchState,
   onClose,
   onSelectSingle,
   onSelectGroup,
+  onRetry,
+  onRetryAgents,
 }: {
   agents: Agent[]
+  agentError: string | null
+  launchState: LaunchState
   onClose: () => void
-  onSelectSingle: (agentId: string) => void | Promise<void>
-  onSelectGroup: (agentIds: string[]) => void | Promise<void>
+  onSelectSingle: (agentId: string) => Promise<boolean>
+  onSelectGroup: (agentIds: string[]) => Promise<boolean>
+  onRetry: () => Promise<boolean>
+  onRetryAgents: () => void | Promise<void>
 }) {
   const t = useTranslations('chatView')
   const [mode, setMode] = useState<ChatMode>('single')
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const submitting = launchState.status === 'submitting'
 
   const toggleSelect = (id: string) => {
     setSelected(prev => {
@@ -570,13 +659,18 @@ function AgentSelectModal({
     })
   }
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     if (mode === 'single') {
       const id = [...selected][0]
-      if (id) onSelectSingle(id)
+      if (id) await onSelectSingle(id)
     } else {
-      if (selected.size >= 2) onSelectGroup([...selected])
+      if (selected.size >= 2) await onSelectGroup([...selected])
     }
+  }
+
+  const retry = async () => {
+    const launched = await onRetry()
+    if (launched) onClose()
   }
 
   return (
@@ -603,6 +697,7 @@ function AgentSelectModal({
         <div className="mb-4 inline-flex rounded-lg bg-muted p-0.5 border border-border/70 self-start">
           <button
             type="button"
+            disabled={submitting}
             onClick={() => { setMode('single'); setSelected(new Set()) }}
             className={`
               inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-xs font-medium transition-all
@@ -617,6 +712,7 @@ function AgentSelectModal({
           </button>
           <button
             type="button"
+            disabled={submitting}
             onClick={() => { setMode('group'); setSelected(new Set()) }}
             className={`
               inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-xs font-medium transition-all
@@ -642,6 +738,17 @@ function AgentSelectModal({
           </div>
         )}
 
+        {agentError && (
+          <div className="mb-3">
+            <LoadNotice
+              title={t('load.agentsError')}
+              message={agentError}
+              retryLabel={t('load.retry')}
+              onRetry={onRetryAgents}
+            />
+          </div>
+        )}
+
         {/* 列表 */}
         <div className="space-y-2 flex-1 overflow-y-auto min-h-0">
           {agents.map(agent => {
@@ -649,19 +756,24 @@ function AgentSelectModal({
             return (
               <button
                 key={agent.id}
+                type="button"
+                aria-pressed={checked}
+                disabled={submitting}
                 onClick={() => {
                   if (mode === 'single') {
-                    onSelectSingle(agent.id)
+                    setSelected(new Set([agent.id]))
+                    void onSelectSingle(agent.id)
                   } else {
                     toggleSelect(agent.id)
                   }
                 }}
                 className={`
                   w-full flex items-center gap-3 p-3 rounded-lg text-left transition-all
-                  ${mode === 'group' && checked
+                  ${checked
                     ? 'bg-gold/15 border border-gold/50'
                     : 'bg-muted border border-border/70 hover:border-gold/40 hover:bg-gold/5'
                   }
+                  disabled:cursor-wait disabled:opacity-60
                 `}
               >
                 {/* 群模式显示多选 checkbox,单模式隐藏 */}
@@ -692,8 +804,8 @@ function AgentSelectModal({
             <button
               type="button"
               onClick={handleConfirm}
-              disabled={selected.size < 2}
-              className="dao-btn-primary w-full disabled:opacity-40 disabled:cursor-not-allowed"
+              disabled={selected.size < 2 || submitting}
+              className="dao-btn-primary w-full disabled:cursor-not-allowed disabled:opacity-40"
             >
               {t('mode.confirm')} ({selected.size})
             </button>
@@ -701,6 +813,31 @@ function AgentSelectModal({
               <p className="text-[10px] text-muted-foreground text-center mt-1.5">
                 {t('mode.selectAtLeast', { n: 2 })}
               </p>
+            )}
+          </div>
+        )}
+
+        {launchState.status !== 'idle' && (
+          <div className="mt-3 rounded-lg border border-gold/40 bg-gold/5 px-3 py-2.5 shadow-sm">
+            {launchState.status === 'submitting' ? (
+              <ActionFeedback status="submitting" message={t('launch.submitting')} />
+            ) : (
+              <>
+                <ActionFeedback
+                  status="error"
+                  message={launchState.message}
+                  onRetry={() => { void retry() }}
+                  retryLabel={t('launch.retry')}
+                />
+                {launchState.errorCode === 'service.chat.model_unavailable' && (
+                  <Link
+                    href="/settings"
+                    className="mt-2 inline-flex max-w-full break-words text-left text-xs font-medium whitespace-normal text-gold hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60"
+                  >
+                    {t('launch.modelSettings')}
+                  </Link>
+                )}
+              </>
             )}
           </div>
         )}

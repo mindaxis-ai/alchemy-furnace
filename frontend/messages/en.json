@@ -750,6 +750,17 @@
   },
   "chatView": {
     "newSession": "New Session",
+    "load": {
+      "providerError": "Could not check model readiness",
+      "sessionsError": "Could not load sessions",
+      "agentsError": "Could not load agents",
+      "retry": "Load again"
+    },
+    "launch": {
+      "submitting": "Opening the discourse...",
+      "retry": "Try opening again",
+      "modelSettings": "Review the model configuration in Model Management"
+    },
     "mode": {
       "single": "Solo Talk",
       "group": "Group Discussion",
