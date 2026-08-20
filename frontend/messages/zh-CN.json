@@ -753,7 +753,30 @@
       "providerError": "模型可用性加载失败",
       "sessionsError": "会话列表加载失败",
       "agentsError": "道人列表加载失败",
-      "retry": "重新加载"
+      "retry": "重新加载",
+      "sessionLoading": "正在加载会话历史...",
+      "sessionNotFoundTitle": "会话不存在",
+      "sessionNotFoundMessage": "该会话可能已被删除。你可以重试，或返回论道大厅。",
+      "sessionErrorTitle": "会话加载失败",
+      "sessionErrorMessage": "会话历史暂时无法加载。",
+      "backToLobby": "返回论道大厅"
+    },
+    "readOnly": {
+      "single": "该道人已停用。历史消息仍可查看，但无法继续发送新消息。",
+      "group": "当前群成员中有道人已停用。历史消息仍可查看，但无法继续发送新消息。"
+    },
+    "stream": {
+      "retry": "重试"
+    },
+    "input": {
+      "messageLabel": "消息",
+      "placeholder": "向道人请教...",
+      "groupPlaceholder": "向道人请教...输入 @ 提及群成员",
+      "readOnlyPlaceholder": "当前会话仅可查看历史",
+      "send": "发送",
+      "stop": "停止输出",
+      "help": "Enter 发送 · Shift+Enter 换行",
+      "helpGroup": "Enter 发送 · Shift+Enter 换行 · @ 提及群成员"
     },
     "launch": {
       "submitting": "正在开启论道...",

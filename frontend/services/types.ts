@@ -178,6 +178,7 @@ export interface GroupMember {
   name: string
   avatar?: string
   proactivity: number
+  status?: AgentStatus
 }
 
 export interface ChatSession {
@@ -190,6 +191,8 @@ export interface ChatSession {
   created_at: string
   updated_at: string
   agent?: Agent
+  /** 会话加载响应中的当前道人状态，用于历史只读提示。 */
+  agent_status?: AgentStatus
   /** group: 群成员列表(按发言顺序) */
   members?: GroupMember[]
 }
@@ -212,6 +215,8 @@ export interface ChatMessage {
   agent_id?: string
   /** 群聊: 发言道人名(气泡身份头) */
   agent_name?: string
+  /** 群聊流式 speaker_start 携带的头像，确保临时气泡身份稳定。 */
+  agent_avatar?: string
   /** @提及: agents=道人 UUID 数组;user=是否@了用户 */
   mentions?: { agents?: string[]; user?: boolean }
 }

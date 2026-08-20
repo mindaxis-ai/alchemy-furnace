@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/alchemy-furnace/server/internal/service/credential"
 	"github.com/alchemy-furnace/server/model"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -27,13 +28,18 @@ type GroupSpeakerPayload struct {
 	MessageID   string        `json:"message_id,omitempty"`
 	Mentions    model.JSONMap `json:"mentions,omitempty"`
 	Content     string        `json:"content,omitempty"`
+	ErrorCode   string        `json:"error_code,omitempty"`
 }
 
 // GroupTurnDonePayload turn_done 事件数据
-type GroupTurnDonePayload struct{ Spoke int `json:"spoke"` }
+type GroupTurnDonePayload struct {
+	Spoke int `json:"spoke"`
+}
 
 // GroupTitlePayload title 事件数据
-type GroupTitlePayload struct{ Title string `json:"title"` }
+type GroupTitlePayload struct {
+	Title string `json:"title"`
+}
 
 // RunGroupTurn 群聊回合编排:落用户消息→≤3轮逐道人发言→自动命名→turn_done
 // 单道人失败以 error 事件表达并继续;ctx 取消时保存半截发言并推 stopped
@@ -47,6 +53,19 @@ func (s *Chat) RunGroupTurn(ctx context.Context, sessionUID uuid.UUID, content s
 	if err != nil {
 		emit("error", GroupSpeakerPayload{Content: "获取群成员失败"})
 		return
+	}
+	memberCredentials := make(map[uint]*credential.ModelCredentials, len(members))
+	for _, member := range members {
+		agent, credentials, validationErr := s.validateChatAgentAccess(ctx, member.Agent.UUID)
+		if validationErr != nil {
+			emit("error", GroupSpeakerPayload{
+				AgentID: member.Agent.UUID.String(), AgentName: member.Agent.Name,
+				Content: validationErr.Error(), ErrorCode: validationErr.GetCode(),
+			})
+			return
+		}
+		member.Agent = *agent
+		memberCredentials[member.AgentID] = credentials
 	}
 
 	memberNames := make([]string, 0, len(members))
@@ -106,7 +125,7 @@ func (s *Chat) RunGroupTurn(ctx context.Context, sessionUID uuid.UUID, content s
 				return
 			}
 			mustAnswer := inMust[m.AgentID]
-			spoke, full, mentionedNames, _ := s.letAgentSpeak(ctx, session, m, members, memberNames, mustAnswer, emit)
+			spoke, full, mentionedNames, _ := s.letAgentSpeak(ctx, session, m, members, memberNames, memberCredentials[m.AgentID], mustAnswer, emit)
 			if ctx.Err() != nil {
 				emit("stopped", struct{}{})
 				return
@@ -170,7 +189,7 @@ func buildMentionsJSON(members []*model.SessionMember, names []string, user bool
 
 // letAgentSpeak 单个道人的一次发言机会
 // 沉默([PASS])不开气泡不落库;单道人失败推 error 事件并返回 spoke=false
-func (s *Chat) letAgentSpeak(ctx context.Context, session *model.ChatSession, m *model.SessionMember, members []*model.SessionMember, memberNames []string, mustAnswer bool, emit func(event string, payload any)) (spoke bool, full string, mentionedNames []string, pingedUser bool) {
+func (s *Chat) letAgentSpeak(ctx context.Context, session *model.ChatSession, m *model.SessionMember, members []*model.SessionMember, memberNames []string, creds *credential.ModelCredentials, mustAnswer bool, emit func(event string, payload any)) (spoke bool, full string, mentionedNames []string, pingedUser bool) {
 	pattern, err := s.pattern.GetOrBuildPattern(ctx, m.AgentID)
 	if err != nil {
 		emit("error", GroupSpeakerPayload{AgentID: m.Agent.UUID.String(), AgentName: m.Agent.Name, Content: "化丹为性失败: " + err.Error()})
@@ -184,12 +203,6 @@ func (s *Chat) letAgentSpeak(ctx context.Context, session *model.ChatSession, m 
 		return false, "", nil, false
 	}
 	messages := BuildGroupMessages(systemPrompt, history)
-
-	creds, rerr := s.creds.ResolveCredentials(ctx, m.Agent.ModelName)
-	if rerr != nil {
-		emit("error", GroupSpeakerPayload{AgentID: m.Agent.UUID.String(), AgentName: m.Agent.Name, Content: rerr.Error()})
-		return false, "", nil, false
-	}
 
 	// 带前缀缓冲的沉默检测:先攒 passProbeRunes 个 rune 再决定开气泡还是丢弃
 	var probe strings.Builder

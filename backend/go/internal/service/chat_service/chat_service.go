@@ -48,25 +48,30 @@ func NewDynamic(chat dao.Chat, agent dao.Agent, pattern service.LanguagePatternP
 	return &Chat{chat: chat, agent: agent, pattern: pattern, creds: creds, engineBaseURL: engineBaseURL}
 }
 
-func (s *Chat) validateChatAgent(ctx context.Context, agentUID uuid.UUID) (*model.DaoAgent, ierr.Error) {
+func (s *Chat) validateChatAgentAccess(ctx context.Context, agentUID uuid.UUID) (*model.DaoAgent, *credential.ModelCredentials, ierr.Error) {
 	agent, err := s.agent.TakeAgentByUUID(ctx, agentUID)
 	if err != nil {
 		if err.IsType(ierr.ErrorTypeRecordNotFound) {
-			return nil, ierr.New(ierr.ErrorTypeRecordNotFound, "service.chat.agent_not_found", "道人不存在")
+			return nil, nil, ierr.New(ierr.ErrorTypeRecordNotFound, "service.chat.agent_not_found", "道人不存在")
 		}
-		return nil, err.Relation(ierr.ErrorServerInternalError("service.chat.create_take_agent"))
+		return nil, nil, err.Relation(ierr.ErrorServerInternalError("service.chat.create_take_agent"))
 	}
 	if agent.Status != "active" {
-		return nil, ierr.New(ierr.ErrorTypeInvalidRequest, "service.chat.agent_inactive", "道人已停用")
+		return nil, nil, ierr.New(ierr.ErrorTypeInvalidRequest, "service.chat.agent_inactive", "道人已停用")
 	}
 	if s.creds == nil {
-		return nil, ierr.New(ierr.ErrorTypeInvalidRequest, "service.chat.model_unavailable", "道人使用的模型不可用")
+		return nil, nil, ierr.New(ierr.ErrorTypeInvalidRequest, "service.chat.model_unavailable", "道人使用的模型不可用")
 	}
 	credentials, resolveErr := s.creds.ResolveCredentials(ctx, agent.ModelName)
 	if resolveErr != nil || credentials == nil || credentials.APIKey == "" {
-		return nil, ierr.New(ierr.ErrorTypeInvalidRequest, "service.chat.model_unavailable", "道人使用的模型不可用")
+		return nil, nil, ierr.New(ierr.ErrorTypeInvalidRequest, "service.chat.model_unavailable", "道人使用的模型不可用")
 	}
-	return agent, nil
+	return agent, credentials, nil
+}
+
+func (s *Chat) validateChatAgent(ctx context.Context, agentUID uuid.UUID) (*model.DaoAgent, ierr.Error) {
+	agent, _, err := s.validateChatAgentAccess(ctx, agentUID)
+	return agent, err
 }
 
 // CreateSession 创建 1v1 会话;agentUID 为道人对外 UUID
@@ -116,7 +121,24 @@ func (s *Chat) ListSessions(ctx context.Context, agentUID uuid.UUID, page int, s
 		}
 		agentID = agent.ID
 	}
-	return s.chat.FindSessions(ctx, agentID, page, size)
+	total, sessions, err := s.chat.FindSessions(ctx, agentID, page, size)
+	if err != nil {
+		return 0, nil, err
+	}
+	for _, session := range sessions {
+		if session.Type != model.SessionTypeGroup {
+			continue
+		}
+		members, memberErr := s.chat.FindMembers(ctx, session.ID)
+		if memberErr != nil {
+			return 0, nil, memberErr.Relation(ierr.ErrorServerInternalError("service.chat.list_members"))
+		}
+		session.Members = make([]model.SessionMember, 0, len(members))
+		for _, member := range members {
+			session.Members = append(session.Members, *member)
+		}
+	}
+	return total, sessions, nil
 }
 
 // GetMessages 分页查询会话消息历史(按时间正序),sessionUID 为会话对外 UUID
@@ -145,6 +167,19 @@ func (s *Chat) GetSessionAgentInfo(ctx context.Context, sessionUID uuid.UUID) (*
 		return nil, err.Relation(ierr.ErrorRecordNotFound("service.chat.get_session_agent_info"))
 	}
 	return session, nil
+}
+
+// AuthorizeSessionForStream 只用于单聊发送授权；GET 历史不会触发 active/model 校验。
+func (s *Chat) AuthorizeSessionForStream(ctx context.Context, session *model.ChatSession) (*credential.ModelCredentials, ierr.Error) {
+	if session == nil || session.AgentID == nil || session.Agent.UUID == uuid.Nil {
+		return nil, ierr.New(ierr.ErrorTypeInvalidRequest, "service.chat.session_unavailable", "会话信息不可用")
+	}
+	agent, credentials, err := s.validateChatAgentAccess(ctx, session.Agent.UUID)
+	if err != nil {
+		return nil, err
+	}
+	session.Agent = *agent
+	return credentials, nil
 }
 
 // GetOrBuildPattern 获取道人语言模式(委托 LanguagePatternProvider)

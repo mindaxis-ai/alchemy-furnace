@@ -29,9 +29,11 @@ interface ChatMessageProps {
   streaming?: boolean
   /** 群聊: 成员列表(用于 @ 提及查名字) */
   members?: import('@/services/types').GroupMember[]
+  /** 断线/上游失败后的重新发送动作。只读历史不传入。 */
+  onRetry?: () => void
 }
 
-export function ChatMessage({ message, streaming = false, members }: ChatMessageProps) {
+export function ChatMessage({ message, streaming = false, members, onRetry }: ChatMessageProps) {
   const t = useTranslations('chatMessage')
   const tGroup = useTranslations('groupChat')
 
@@ -91,7 +93,7 @@ export function ChatMessage({ message, streaming = false, members }: ChatMessage
   }, [isUser, message.agent_id, message.agent_name, message.created_at, agentState.agents, chatState.currentSession, members])
 
   const memberAvatar = members?.find(member => member.agent_id === message.agent_id)?.avatar
-  const avatarSrc = isUser ? userProfile?.avatar : (agentProfile?.avatar || memberAvatar)
+  const avatarSrc = isUser ? userProfile?.avatar : (message.agent_avatar || agentProfile?.avatar || memberAvatar)
 
   // Hook 必须在所有渲染分支中保持同序；通知条在档案数据解析后再提前返回。
   if (message.role === 'system' && !message.is_error) {
@@ -225,10 +227,21 @@ export function ChatMessage({ message, streaming = false, members }: ChatMessage
         {!isUser && (message.incomplete || message.stopped) && (
           <div className="flex items-center gap-3 mt-1.5 pl-1 flex-wrap">
             {message.incomplete && (
-              <span className="flex items-center gap-1 text-[10px] text-gold/80 whitespace-nowrap">
-                <TriangleAlert className="w-3 h-3 shrink-0" />
-                {t('incomplete')}
-              </span>
+              <>
+                <span className="flex items-center gap-1 text-[10px] text-gold/80 whitespace-nowrap">
+                  <TriangleAlert className="w-3 h-3 shrink-0" />
+                  {t('incomplete')}
+                </span>
+                {onRetry && (
+                  <button
+                    type="button"
+                    onClick={onRetry}
+                    className="text-[10px] font-medium text-gold hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60"
+                  >
+                    {t('retry')}
+                  </button>
+                )}
+              </>
             )}
             {message.stopped && (
               <span className="flex items-center gap-1 text-[10px] text-muted-foreground whitespace-nowrap">

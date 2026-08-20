@@ -2,6 +2,7 @@ package chat_service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -100,6 +101,41 @@ func countEvent(l *eventLog, name string) int {
 		}
 	}
 	return n
+}
+
+func TestInactiveGroupMemberStopsTurnBeforeEngine(t *testing.T) {
+	svc, chats, engine, s := newGroupSvc(t, []string{"engine should not run"})
+	for _, member := range chats.members[s.ID] {
+		if member.AgentID == 2 {
+			chats.agentByID[member.AgentID].Status = "inactive"
+			for _, agent := range svc.agent.(*fakeAgentDao).agents {
+				if agent.ID == member.AgentID {
+					agent.Status = "inactive"
+				}
+			}
+		}
+	}
+	var errorCode string
+	svc.RunGroupTurn(context.Background(), s.UUID, "诸位怎么看?", func(event string, payload any) {
+		if event == "error" {
+			data, _ := json.Marshal(payload)
+			var p struct {
+				ErrorCode string `json:"error_code"`
+			}
+			_ = json.Unmarshal(data, &p)
+			errorCode = p.ErrorCode
+		}
+	})
+
+	if errorCode != "service.chat.agent_inactive" {
+		t.Fatalf("error code = %q, want service.chat.agent_inactive", errorCode)
+	}
+	if engine.calls != 0 {
+		t.Fatalf("engine calls = %d, want 0", engine.calls)
+	}
+	if len(chats.messages) != 0 {
+		t.Fatalf("messages saved before authorization: %+v", chats.messages)
+	}
 }
 
 func TestGroupTurnAllPass(t *testing.T) {

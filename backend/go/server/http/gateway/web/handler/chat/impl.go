@@ -30,13 +30,14 @@ func New(chat service.Chat) *Chat {
 
 // SessionResponse 会话响应 DTO:id/agent_id 输出 UUID 字符串,不泄露数字主键
 type SessionResponse struct {
-	ID        string            `json:"id"`
-	Type      string            `json:"type"` // single | group
-	AgentID   string            `json:"agent_id"`
-	Title     string            `json:"title"`
-	Members   []*MemberResponse `json:"members,omitempty"`
-	CreatedAt time.Time         `json:"created_at"`
-	UpdatedAt time.Time         `json:"updated_at"`
+	ID          string            `json:"id"`
+	Type        string            `json:"type"` // single | group
+	AgentID     string            `json:"agent_id"`
+	AgentStatus string            `json:"agent_status,omitempty"`
+	Title       string            `json:"title"`
+	Members     []*MemberResponse `json:"members,omitempty"`
+	CreatedAt   time.Time         `json:"created_at"`
+	UpdatedAt   time.Time         `json:"updated_at"`
 }
 
 // MemberResponse 群成员 DTO(前端抽屉展示用)
@@ -45,6 +46,7 @@ type MemberResponse struct {
 	Name        string `json:"name"`
 	Avatar      string `json:"avatar"`
 	Proactivity int    `json:"proactivity"`
+	Status      string `json:"status"`
 }
 
 // MessageResponse 消息响应 DTO:id 输出消息 UUID;session_id 不输出
@@ -69,14 +71,23 @@ func toSessionResponse(s *model.ChatSession) *SessionResponse {
 	if typeStr == "" {
 		typeStr = model.SessionTypeSingle
 	}
-	return &SessionResponse{
-		ID:        s.UUID.String(),
-		Type:      typeStr,
-		AgentID:   agentID,
-		Title:     s.Title,
-		CreatedAt: s.CreatedAt,
-		UpdatedAt: s.UpdatedAt,
+	response := &SessionResponse{
+		ID:          s.UUID.String(),
+		Type:        typeStr,
+		AgentID:     agentID,
+		AgentStatus: s.Agent.Status,
+		Title:       s.Title,
+		CreatedAt:   s.CreatedAt,
+		UpdatedAt:   s.UpdatedAt,
 	}
+	if len(s.Members) > 0 {
+		members := make([]*model.SessionMember, 0, len(s.Members))
+		for i := range s.Members {
+			members = append(members, &s.Members[i])
+		}
+		response.Members = toMemberResponseList(members)
+	}
+	return response
 }
 
 // toSessionResponseList 批量转换
@@ -111,6 +122,7 @@ func toMemberResponse(m *model.SessionMember) *MemberResponse {
 		Name:        m.Agent.Name,
 		Avatar:      m.Agent.Avatar,
 		Proactivity: m.Agent.Proactivity,
+		Status:      m.Agent.Status,
 	}
 }
 
@@ -188,7 +200,8 @@ func sseWriteComment(w http.ResponseWriter, flusher http.Flusher, comment string
 
 // ssePayload 事件数据载体(chunk: {"content": "..."}, done: {}, error/stopped: {"content": "..."})
 type ssePayload struct {
-	Content string `json:"content,omitempty"`
+	Content   string `json:"content,omitempty"`
+	ErrorCode string `json:"error_code,omitempty"`
 }
 
 // streamResult StreamChat goroutine 的收尾结果

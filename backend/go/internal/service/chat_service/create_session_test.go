@@ -144,3 +144,33 @@ func TestCreateSessionCreatesUUIDForAvailableFormalModel(t *testing.T) {
 		t.Fatalf("CreateSession() UUID %s was not persisted", session.UUID)
 	}
 }
+
+func TestGetMessagesKeepsInactiveAgentHistoryReadable(t *testing.T) {
+	agentUID := uuid.New()
+	agents := &fakeAgentDao{agents: map[string]*model.DaoAgent{
+		agentUID.String(): {
+			ID: 9, UUID: agentUID, Name: "旧友", Status: "active", ModelName: "formal-model",
+		},
+	}}
+	chats := &fakeChatDao{
+		sessions: map[string]*model.ChatSession{},
+		members:  map[uint][]*model.SessionMember{},
+	}
+	svc := New(chats, agents, nil, availableCredentialResolver("formal-model"), "http://unused")
+	session, err := svc.CreateSession(context.Background(), agentUID)
+	if err != nil {
+		t.Fatalf("CreateSession() error = %v", err)
+	}
+	if _, err := svc.SaveMessage(context.Background(), session.ID, "assistant", "旧日答复"); err != nil {
+		t.Fatalf("SaveMessage() error = %v", err)
+	}
+	agents.agents[agentUID.String()].Status = "inactive"
+
+	_, messages, historyErr := svc.GetMessages(context.Background(), session.UUID, 1, 20)
+	if historyErr != nil {
+		t.Fatalf("GetMessages() error = %v", historyErr)
+	}
+	if len(messages) != 1 || messages[0].Content != "旧日答复" {
+		t.Fatalf("GetMessages() = %+v, want preserved history", messages)
+	}
+}

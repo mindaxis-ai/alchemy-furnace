@@ -81,7 +81,15 @@ func (f *fakeChatDao) TakeSessionByUUID(ctx context.Context, uid uuid.UUID) (*mo
 	return nil, errors.ErrorRecordNotFound("test.fake.take_session")
 }
 func (f *fakeChatDao) FindSessions(ctx context.Context, agentID uint, page, size int) (int64, []*model.ChatSession, errors.Error) {
-	panic("unused")
+	out := make([]*model.ChatSession, 0, len(f.sessions))
+	for _, session := range f.sessions {
+		if agentID != 0 && (session.AgentID == nil || *session.AgentID != agentID) {
+			continue
+		}
+		copy := *session
+		out = append(out, &copy)
+	}
+	return int64(len(out)), out, nil
 }
 func (f *fakeChatDao) SaveSession(ctx context.Context, s *model.ChatSession) errors.Error {
 	f.nextID++
@@ -205,6 +213,29 @@ func TestCreateGroupSession(t *testing.T) {
 	}
 	if chats.members[s.ID][0].SortOrder != 0 || chats.members[s.ID][1].SortOrder != 1 {
 		t.Fatalf("SortOrder 未按邀请顺序赋值: %+v", chats.members[s.ID])
+	}
+}
+
+func TestListSessionsLoadsCurrentGroupMembers(t *testing.T) {
+	svc, chats, u1, u2, _ := newGroupTestSvc()
+	session, err := svc.CreateGroupSession(context.Background(), []uuid.UUID{u1, u2})
+	if err != nil {
+		t.Fatalf("CreateGroupSession() error = %v", err)
+	}
+	chats.agentByID[2].Status = "inactive"
+
+	_, sessions, listErr := svc.ListSessions(context.Background(), uuid.Nil, 1, 100)
+	if listErr != nil {
+		t.Fatalf("ListSessions() error = %v", listErr)
+	}
+	if len(sessions) != 1 || sessions[0].UUID != session.UUID {
+		t.Fatalf("ListSessions() = %+v, want created group", sessions)
+	}
+	if len(sessions[0].Members) != 2 {
+		t.Fatalf("ListSessions() members = %+v, want 2 current members", sessions[0].Members)
+	}
+	if sessions[0].Members[1].Agent.Status != "inactive" {
+		t.Fatalf("second member status = %q, want inactive", sessions[0].Members[1].Agent.Status)
 	}
 }
 

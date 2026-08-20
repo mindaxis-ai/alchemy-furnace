@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/alchemy-furnace/server/internal/context/contextutil"
+	ierr "github.com/alchemy-furnace/server/internal/errors"
 	"github.com/alchemy-furnace/server/server/http/request"
 	"github.com/alchemy-furnace/server/server/http/response"
 	"github.com/gin-gonic/gin"
@@ -67,7 +68,7 @@ func (cls *Chat) SSEChat(c *gin.Context) {
 	// 获取会话关联的道人信息(session 预加载 Agent,边界: session 由 :uuid 解析)
 	session, err := cls.chat.GetSessionAgentInfo(ctx, sessionUID)
 	if err != nil {
-		sseWriteEvent(w, flusher, "error", ssePayload{Content: "获取会话信息失败"})
+		sseWriteEvent(w, flusher, "error", sseErrorPayload(err, true))
 		return
 	}
 	// 群聊 Type=group 走专门通道(编排器驱动,带心跳保活)
@@ -82,6 +83,11 @@ func (cls *Chat) SSEChat(c *gin.Context) {
 	}
 	agentID := *session.AgentID
 	sessionID := session.ID
+	creds, err := cls.chat.AuthorizeSessionForStream(ctx, session)
+	if err != nil {
+		sseWriteEvent(w, flusher, "error", sseErrorPayload(err, false))
+		return
+	}
 	modelName := session.Agent.ModelName
 
 	// 加载/合成道人的语言模式(系统提示词)
@@ -114,13 +120,6 @@ func (cls *Chat) SSEChat(c *gin.Context) {
 	messages := []map[string]string{{"role": "system", "content": pattern.SystemPrompt}}
 	for _, m := range recentMessages {
 		messages = append(messages, map[string]string{"role": m.Role, "content": m.Content})
-	}
-
-	// 解析模型凭证(每轮解析,模型停用/换钥即时生效)
-	creds, err := cls.chat.ResolveCredentials(ctx, modelName)
-	if err != nil {
-		sseWriteEvent(w, flusher, "error", ssePayload{Content: err.Error()})
-		return
 	}
 
 	// 请求级生命周期: 客户端中断 -> ctx 取消 -> 上游 LLM 流中断
@@ -168,6 +167,22 @@ func (cls *Chat) SSEChat(c *gin.Context) {
 				zap.String("session_uuid", sessionUID.String()), zap.Int("partial_length", len(res.full)))
 			return
 		}
+	}
+}
+
+func sseErrorPayload(err ierr.Error, sessionLookup bool) ssePayload {
+	if sessionLookup && err.IsType(ierr.ErrorTypeRecordNotFound) {
+		return ssePayload{Content: "会话不存在或已删除", ErrorCode: "service.chat.session_not_found"}
+	}
+	switch err.GetCode() {
+	case "service.chat.agent_inactive":
+		return ssePayload{Content: "道人已停用", ErrorCode: err.GetCode()}
+	case "service.chat.agent_not_found":
+		return ssePayload{Content: "道人不存在", ErrorCode: err.GetCode()}
+	case "service.chat.model_unavailable":
+		return ssePayload{Content: "道人使用的模型不可用", ErrorCode: err.GetCode()}
+	default:
+		return ssePayload{Content: "暂时无法开始论道，请稍后重试", ErrorCode: "service.chat.stream_unavailable"}
 	}
 }
 

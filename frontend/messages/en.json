@@ -754,7 +754,30 @@
       "providerError": "Could not check model readiness",
       "sessionsError": "Could not load sessions",
       "agentsError": "Could not load agents",
-      "retry": "Load again"
+      "retry": "Load again",
+      "sessionLoading": "Loading conversation history...",
+      "sessionNotFoundTitle": "Conversation not found",
+      "sessionNotFoundMessage": "This conversation may have been removed. You can retry or return to the lobby.",
+      "sessionErrorTitle": "Could not load this conversation",
+      "sessionErrorMessage": "Conversation history is temporarily unavailable.",
+      "backToLobby": "Back to lobby"
+    },
+    "readOnly": {
+      "single": "This daoist is dormant. History remains available, but new messages are disabled.",
+      "group": "A current group member is dormant. History remains available, but new messages are disabled."
+    },
+    "stream": {
+      "retry": "Retry"
+    },
+    "input": {
+      "messageLabel": "Message",
+      "placeholder": "Ask the daoist...",
+      "groupPlaceholder": "Ask the group... Type @ to mention a member",
+      "readOnlyPlaceholder": "History-only conversation",
+      "send": "Send",
+      "stop": "Stop output",
+      "help": "Enter to send · Shift+Enter for a new line",
+      "helpGroup": "Enter to send · Shift+Enter for a new line · @ mentions a group member"
     },
     "launch": {
       "submitting": "Opening the discourse...",

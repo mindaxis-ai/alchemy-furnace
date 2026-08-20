@@ -93,6 +93,17 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
   const messages = chatState.messages
   const sessions = chatState.sessions
   const agents = agentState.agents
+  const readOnlyReason = useMemo(() => {
+    if (!currentSession) return null
+    if (currentSession.type === 'group') {
+      const hasInactiveMember = (currentSession.members || []).some(member =>
+        member.status === 'inactive' || agents.find(agent => agent.id === member.agent_id)?.status === 'inactive'
+      )
+      return hasInactiveMember ? t('readOnly.group') : null
+    }
+    const status = currentSession.agent_status || agents.find(agent => agent.id === currentSession.agent_id)?.status
+    return status === 'inactive' ? t('readOnly.single') : null
+  }, [agents, currentSession, t])
 
   // 初始化加载
   useEffect(() => {
@@ -155,13 +166,25 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
 
   /** 发送消息 */
   const handleSend = async () => {
-    if (!input.trim() || !currentSession || chatState.streaming) return
+    if (!input.trim() || !currentSession || chatState.streaming || readOnlyReason) return
     const content = input.trim()
     setInput('')
     // 发送时启用粘底(用户刚发了消息,理应看到 AI 回复)
     stickyToBottomRef.current = true
     setShowJumpToBottom(false)
     await streamMessage(currentSession.id, content)
+  }
+
+  const retryMessage = async (messageIndex: number) => {
+    if (!currentSession || chatState.streaming || readOnlyReason) return
+    for (let i = messageIndex - 1; i >= 0; i -= 1) {
+      if (messages[i].role === 'user') {
+        stickyToBottomRef.current = true
+        setShowJumpToBottom(false)
+        await streamMessage(currentSession.id, messages[i].content)
+        return
+      }
+    }
   }
 
   /** 防止 IME 中文输入中按 Enter 误触发送 */
@@ -216,6 +239,40 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
     stickyToBottomRef.current = true
     setShowJumpToBottom(false)
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+  }
+
+  if (sessionId && (!currentSession || currentSession.id !== sessionId)) {
+    const loadState = chatState.sessionLoad
+    if (loadState.status === 'not-found') {
+      return (
+        <SessionLoadState
+          title={t('load.sessionNotFoundTitle')}
+          message={t('load.sessionNotFoundMessage')}
+          retryLabel={t('load.retry')}
+          backLabel={t('load.backToLobby')}
+          onRetry={() => loadMessages(sessionId)}
+        />
+      )
+    }
+    if (loadState.status === 'error') {
+      return (
+        <SessionLoadState
+          title={t('load.sessionErrorTitle')}
+          message={loadState.message || t('load.sessionErrorMessage')}
+          retryLabel={t('load.retry')}
+          backLabel={t('load.backToLobby')}
+          onRetry={() => loadMessages(sessionId)}
+        />
+      )
+    }
+    return (
+      <div className="mx-auto flex h-[calc(100vh-4rem)] max-w-6xl items-center justify-center px-4 sm:px-6">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
+          <Loader2 className="h-4 w-4 animate-spin text-gold" />
+          <span>{t('load.sessionLoading')}</span>
+        </div>
+      </div>
+    )
   }
 
   // 如果没有选择会话: 先看是否需要首启引导(无供应商)
@@ -503,13 +560,22 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
             </div>
           )}
 
-          {messages.map(message => (
+          {messages.map((message, messageIndex) => (
             message.is_error ? (
               /* 服务端错误：内联错误气泡 */
               <div key={message.id} className="flex justify-center animate-in fade-in duration-300">
                 <div className="flex items-center gap-2 max-w-[85%] md:max-w-[70%] px-4 py-2.5 rounded-2xl bg-primary/10 border border-primary/30 text-primary">
                   <AlertCircle className="w-4 h-4 flex-shrink-0" />
                   <p className="text-xs leading-relaxed">{message.content}</p>
+                  {!readOnlyReason && (
+                    <button
+                      type="button"
+                      onClick={() => { void retryMessage(messageIndex) }}
+                      className="shrink-0 text-xs font-medium text-gold hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60"
+                    >
+                      {t('stream.retry')}
+                    </button>
+                  )}
                 </div>
               </div>
             ) : (
@@ -518,6 +584,7 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
                 message={message}
                 streaming={chatState.streaming && message.role === 'assistant' && message.id.startsWith('stream-')}
                 members={currentSession.members}
+                onRetry={message.incomplete && !readOnlyReason ? () => { void retryMessage(messageIndex) } : undefined}
               />
             )
           ))}
@@ -576,6 +643,8 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
           onStop={stopStream}
           isGroup={currentSession.type === 'group'}
           members={currentSession.members || []}
+          disabled={Boolean(readOnlyReason)}
+          disabledReason={readOnlyReason}
         />
       </div>
 
@@ -621,6 +690,42 @@ function LoadNotice({
         <button type="button" onClick={onRetry} className="dao-btn-ghost shrink-0 text-xs">
           {retryLabel}
         </button>
+      </div>
+    </div>
+  )
+}
+
+function SessionLoadState({
+  title,
+  message,
+  retryLabel,
+  backLabel,
+  onRetry,
+}: {
+  title: string
+  message: string
+  retryLabel: string
+  backLabel: string
+  onRetry: () => void | Promise<void>
+}) {
+  return (
+    <div className="mx-auto flex h-[calc(100vh-4rem)] max-w-6xl items-center justify-center px-4 sm:px-6">
+      <div className="w-full max-w-md rounded-xl border border-gold/30 bg-card p-5 shadow-sm" role="alert">
+        <div className="flex items-start gap-3">
+          <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-gold" />
+          <div className="min-w-0 flex-1">
+            <p className="font-medium text-foreground">{title}</p>
+            <p className="mt-1 break-words text-sm leading-relaxed text-muted-foreground">{message}</p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button type="button" onClick={onRetry} className="dao-btn-primary text-xs">
+                {retryLabel}
+              </button>
+              <Link href="/chat" className="dao-btn-ghost text-xs">
+                {backLabel}
+              </Link>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -874,6 +979,8 @@ function ChatInput({
   onStop,
   isGroup,
   members,
+  disabled,
+  disabledReason,
 }: {
   value: string
   onChange: (v: string) => void
@@ -882,8 +989,10 @@ function ChatInput({
   onStop: () => void
   isGroup: boolean
   members: import('@/services/types').GroupMember[]
+  disabled: boolean
+  disabledReason: string | null
 }) {
-  const { state: agentState } = useAgent()
+  const t = useTranslations('chatView')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -996,11 +1105,13 @@ function ChatInput({
               updateMention(e.target.value, e.target.selectionStart || 0)
             }}
             onKeyDown={handleKeyDown}
+            disabled={disabled}
             onBlur={() => {
               // 延迟关闭,允许 click 浮层 item
               setTimeout(() => setMention(null), 150)
             }}
-            placeholder={isGroup ? '向道人请教...输入 @ 提及群成员' : '向道人请教...'}
+            aria-label={t('input.messageLabel')}
+            placeholder={disabled ? t('input.readOnlyPlaceholder') : t(isGroup ? 'input.groupPlaceholder' : 'input.placeholder')}
             className="dao-input resize-none min-h-[44px] max-h-[120px] py-2.5 w-full"
             rows={1}
           />
@@ -1016,11 +1127,11 @@ function ChatInput({
           )}
         </div>
         <button
-          aria-label={streaming ? '停止输出' : '发送'}
+          aria-label={streaming ? t('input.stop') : t('input.send')}
           onClick={streaming ? onStop : onSend}
-          disabled={!streaming && !value.trim()}
+          disabled={!streaming && (disabled || !value.trim())}
           className="dao-btn-primary px-3 py-2.5 flex-shrink-0 disabled:opacity-40"
-          title={streaming ? '停止输出' : '发送'}
+          title={streaming ? t('input.stop') : t('input.send')}
         >
           {streaming ? (
             <Square className="w-5 h-5" />
@@ -1029,8 +1140,8 @@ function ChatInput({
           )}
         </button>
       </div>
-      <p className="text-[10px] text-sage/70 mt-1.5 text-center">
-        Enter 发送 · Shift+Enter 换行{isGroup ? ' · @ 提及群成员' : ''}
+      <p className={`mt-1.5 break-words text-center text-[10px] ${disabledReason ? 'text-gold/80' : 'text-sage/70'}`}>
+        {disabledReason || t(isGroup ? 'input.helpGroup' : 'input.help')}
       </p>
     </div>
   )

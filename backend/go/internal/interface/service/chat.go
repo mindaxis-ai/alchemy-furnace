@@ -33,6 +33,10 @@ type Chat interface {
 	// GetSessionAgentInfo 按会话 UUID 取会话(预加载道人),供 SSE 构建对话请求(session.ID/AgentID/Agent.ModelName)
 	GetSessionAgentInfo(ctx context.Context, sessionUID uuid.UUID) (*model.ChatSession, errors.Error)
 
+	// AuthorizeSessionForStream 校验单聊会话当前道人仍可用，并返回本轮已校验凭证。
+	// 历史读取不调用此方法，停用道人历史仍保持可读。
+	AuthorizeSessionForStream(ctx context.Context, session *model.ChatSession) (*credential.ModelCredentials, errors.Error)
+
 	// GetOrBuildPattern 获取道人语言模式(委托 LanguagePatternProvider)
 	GetOrBuildPattern(ctx context.Context, agentID uint) (*model.LanguagePattern, errors.Error)
 

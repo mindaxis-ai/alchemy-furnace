@@ -25,6 +25,11 @@ interface ChatState {
   error: string | null
   /** 会话列表加载错误；与创建、消息等操作错误分开归属。 */
   sessionsError: string | null
+  /** 当前 URL 会话的独立加载生命周期，不与列表/创建错误共享。 */
+  sessionLoad: {
+    status: 'idle' | 'loading' | 'ready' | 'not-found' | 'error'
+    message?: string
+  }
   /** 群聊: 当前正在发言的道人(用于 typing 指示器显示名字/头像) */
   currentSpeaker: { agent_id: string; agent_name: string; agent_avatar?: string } | null
 }
@@ -40,6 +45,7 @@ type ChatAction =
   | { type: 'FINALIZE_STREAM' }
   | { type: 'STOP_STREAM' } // 流式输出被停止(保留部分内容)
   | { type: 'MARK_LAST_INCOMPLETE' } // 标记最后一条助手回复「可能不完整」
+  | { type: 'DISCARD_EMPTY_STREAM' } // 群成员开腔后未产出 chunk 即失败：移除空临时气泡
   | { type: 'ADD_ERROR_MESSAGE'; payload: string } // 内联错误气泡
   /** 回合内系统通知(群聊单道人失败等): 追加系统条,不动 streaming 状态 */
   | { type: 'ADD_SYSTEM_NOTICE'; payload: { text: string; isError: boolean } }
@@ -54,6 +60,10 @@ type ChatAction =
   | { type: 'SET_STREAMING'; payload: boolean }
   | { type: 'SET_ERROR'; payload: string | null }
   | { type: 'SET_SESSIONS_ERROR'; payload: string | null }
+  | { type: 'SESSION_LOAD_START' }
+  | { type: 'SESSION_LOAD_READY'; payload: { session: ChatSession; messages: ChatMessage[] } }
+  | { type: 'SESSION_LOAD_NOT_FOUND' }
+  | { type: 'SESSION_LOAD_ERROR'; payload: string }
   | { type: 'CLEAR_CURRENT' }
 
 /** 初始状态 */
@@ -65,11 +75,13 @@ const initialState: ChatState = {
   streaming: false,
   error: null,
   sessionsError: null,
+  sessionLoad: { status: 'idle' },
   currentSpeaker: null,
 }
 
-let streamMessageSequence = 0
-const streamMessageID = () => `stream-${Date.now()}-${++streamMessageSequence}`
+let localMessageSequence = 0
+const localMessageID = (prefix: string) => `${prefix}-${Date.now()}-${++localMessageSequence}`
+const streamMessageID = () => localMessageID('stream')
 const isStreamMessage = (message?: ChatMessage) => Boolean(message?.id.startsWith('stream-'))
 
 /** 将当前流式临时消息转换为正式消息 */
@@ -77,7 +89,7 @@ function finalizeStreamMessage(messages: ChatMessage[], patch?: Partial<ChatMess
   const result = [...messages]
   const lastMsg = result[result.length - 1]
   if (lastMsg && lastMsg.role === 'assistant' && isStreamMessage(lastMsg)) {
-    result[result.length - 1] = { ...lastMsg, id: String(Date.now()), ...patch }
+    result[result.length - 1] = { ...lastMsg, id: localMessageID('assistant'), ...patch }
   }
   return result
 }
@@ -118,17 +130,25 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       // 停止生成:保留部分内容并标记「已停止」
       return { ...state, messages: finalizeStreamMessage(state.messages, { stopped: true }), streaming: false }
     case 'MARK_LAST_INCOMPLETE': {
-      const messages = [...state.messages]
+      const messages = finalizeStreamMessage(state.messages)
       const lastMsg = messages[messages.length - 1]
       if (lastMsg && lastMsg.role === 'assistant' && !lastMsg.is_error) {
         messages[messages.length - 1] = { ...lastMsg, incomplete: true }
       }
       return { ...state, messages }
     }
+    case 'DISCARD_EMPTY_STREAM': {
+      const messages = [...state.messages]
+      const lastMsg = messages[messages.length - 1]
+      if (lastMsg && lastMsg.role === 'assistant' && isStreamMessage(lastMsg) && lastMsg.content === '') {
+        messages.pop()
+      }
+      return { ...state, messages, currentSpeaker: null }
+    }
     case 'ADD_ERROR_MESSAGE': {
       // 服务端错误:以错误气泡内联展示在消息流中
       const errorMessage: ChatMessage = {
-        id: String(Date.now()),
+        id: localMessageID('error'),
         session_id: state.currentSession?.id || '',
         role: 'system',
         content: action.payload,
@@ -140,7 +160,7 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case 'ADD_SYSTEM_NOTICE': {
       // 回合内通知(群聊单道人失败等): 按序插入系统条,回合流式状态保持不变
       const notice: ChatMessage = {
-        id: String(Date.now()),
+        id: localMessageID('notice'),
         session_id: state.currentSession?.id || '',
         role: 'system',
         content: action.payload.text,
@@ -159,6 +179,7 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
         content: '',
         agent_id: action.payload.agent_id,
         agent_name: action.payload.agent_name,
+        agent_avatar: action.payload.agent_avatar,
         created_at: new Date().toISOString(),
       })
       return { ...state, messages, currentSpeaker: action.payload }
@@ -201,8 +222,40 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return { ...state, error: action.payload, loading: false }
     case 'SET_SESSIONS_ERROR':
       return { ...state, sessionsError: action.payload, loading: false }
+    case 'SESSION_LOAD_START':
+      return {
+        ...state,
+        currentSession: null,
+        messages: [],
+        loading: true,
+        sessionLoad: { status: 'loading' },
+      }
+    case 'SESSION_LOAD_READY':
+      return {
+        ...state,
+        currentSession: action.payload.session,
+        messages: action.payload.messages,
+        loading: false,
+        sessionLoad: { status: 'ready' },
+      }
+    case 'SESSION_LOAD_NOT_FOUND':
+      return {
+        ...state,
+        currentSession: null,
+        messages: [],
+        loading: false,
+        sessionLoad: { status: 'not-found' },
+      }
+    case 'SESSION_LOAD_ERROR':
+      return {
+        ...state,
+        currentSession: null,
+        messages: [],
+        loading: false,
+        sessionLoad: { status: 'error', message: action.payload },
+      }
     case 'CLEAR_CURRENT':
-      return { ...state, currentSession: null, messages: [] }
+      return { ...state, currentSession: null, messages: [], loading: false, sessionLoad: { status: 'idle' } }
     default:
       return state
   }
@@ -235,6 +288,7 @@ const ChatContext = createContext<ChatContextType | null>(null)
 export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(chatReducer, initialState)
   const sessionsRef = useRef<ChatSession[]>([])
+  const sessionLoadRequestRef = useRef(0)
   // 本轮流式是否已收到内容片段
   const partialReceivedRef = useRef(false)
   // 群聊: 本回合是否已有发言人开腔(用于区分单道人失败 vs 启动即败的致命错误)
@@ -321,23 +375,36 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   /** 加载消息历史并定位当前会话 */
   const loadMessages = useCallback(async (sessionId: string) => {
-    dispatch({ type: 'SET_LOADING', payload: true })
+    const requestId = ++sessionLoadRequestRef.current
+    dispatch({ type: 'SESSION_LOAD_START' })
     try {
       // 定位会话:先查已有列表,查不到则拉取一次会话列表
       let session = sessionsRef.current.find(s => s.id === sessionId)
       if (!session) {
         const data = await chatService.listSessions()
+        if (requestId !== sessionLoadRequestRef.current) return
         dispatch({ type: 'SET_SESSIONS', payload: data.list || [] })
-        session = (data.list || []).find(s => s.id === sessionId)
+        sessionsRef.current = data.list || []
+        session = sessionsRef.current.find(s => s.id === sessionId)
       }
-      if (session) {
-        dispatch({ type: 'SET_CURRENT_SESSION', payload: session })
+      if (!session) {
+        dispatch({ type: 'SESSION_LOAD_NOT_FOUND' })
+        return
       }
 
       const data = await chatService.getMessages(sessionId)
-      dispatch({ type: 'SET_MESSAGES', payload: data.list || [] })
+      if (requestId !== sessionLoadRequestRef.current) return
+      dispatch({ type: 'SESSION_LOAD_READY', payload: { session, messages: data.list || [] } })
     } catch (error) {
-      dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '加载消息失败' })
+      if (requestId !== sessionLoadRequestRef.current) return
+      const status = typeof error === 'object' && error !== null && 'status' in error
+        ? Number((error as { status?: unknown }).status)
+        : 0
+      if (status === 404) {
+        dispatch({ type: 'SESSION_LOAD_NOT_FOUND' })
+      } else {
+        dispatch({ type: 'SESSION_LOAD_ERROR', payload: error instanceof Error ? error.message : '加载消息失败' })
+      }
     }
   }, [])
 
@@ -345,7 +412,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const streamMessage = useCallback(async (sessionId: string, content: string) => {
     // 先添加用户消息
     const userMessage: ChatMessage = {
-      id: String(Date.now()),
+      id: localMessageID('user'),
       session_id: sessionId,
       role: 'user',
       content,
@@ -399,10 +466,17 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         // 群聊回合中(已有发言人/内容): 单道人失败按序插通知条,回合继续
         // 否则(单聊/群聊启动即败,后端不再发 turn_done): 致命错误,flush 收尾
         if (isGroup && (groupActiveRef.current || partialReceivedRef.current)) {
+          if (partialReceivedRef.current) {
+            dispatch({ type: 'MARK_LAST_INCOMPLETE' })
+          } else {
+            dispatch({ type: 'DISCARD_EMPTY_STREAM' })
+          }
+          partialReceivedRef.current = false
           chunker.pushNotice(error, true)
           return
         }
         chunker.flushNow()
+        if (partialReceivedRef.current) dispatch({ type: 'MARK_LAST_INCOMPLETE' })
         partialReceivedRef.current = false
         groupActiveRef.current = false
         dispatch({ type: 'ADD_ERROR_MESSAGE', payload: error })
@@ -418,10 +492,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       // ========== 群聊回调（保持 SSE 原序） ==========
       onSpeakerStart: (info) => {
         groupActiveRef.current = true
+        partialReceivedRef.current = false
         chunker.pushSpeakerStart(info)
       },
       onSpeakerDone: (info) => {
         chunker.pushSpeakerDone(info)
+        partialReceivedRef.current = false
       },
       onTurnDone: () => {
         // 群聊回合结束:统一 finalize 并恢复输入。
