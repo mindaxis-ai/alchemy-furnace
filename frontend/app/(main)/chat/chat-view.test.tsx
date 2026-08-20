@@ -35,6 +35,7 @@ const testDoubles = vi.hoisted(() => ({
     loading: false,
     streaming: false,
     error: null as string | null,
+    sessionsError: null as string | null,
     currentSpeaker: null,
   },
   agentState: {
@@ -165,10 +166,11 @@ describe('chat launch surfaces', () => {
   })
 
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
     testDoubles.chatState.sessions = []
     testDoubles.chatState.currentSession = null
     testDoubles.chatState.error = null
+    testDoubles.chatState.sessionsError = null
     testDoubles.agentState.error = null
     testDoubles.fetchSessions.mockResolvedValue(undefined)
     testDoubles.fetchAgents.mockResolvedValue(undefined)
@@ -190,7 +192,7 @@ describe('chat launch surfaces', () => {
   })
 
   it('keeps readiness failures independent and does not treat a provider failure as configured', async () => {
-    testDoubles.chatState.error = 'session list unavailable'
+    testDoubles.chatState.sessionsError = 'session list unavailable'
     testDoubles.agentState.error = 'agent list unavailable'
     testDoubles.listProviders.mockRejectedValueOnce(new Error('provider API unavailable'))
 
@@ -201,6 +203,39 @@ describe('chat launch surfaces', () => {
     expect(screen.getByText('session list unavailable')).toBeInTheDocument()
     await userEvent.setup().click(screen.getByRole('button', { name: 'newSession' }))
     expect(screen.getByText('agent list unavailable')).toBeInTheDocument()
+  })
+
+  it('exposes the picker as a modal dialog named by its ritual heading', async () => {
+    const user = userEvent.setup()
+    render(<ChatView />)
+
+    await user.click(screen.getByRole('button', { name: 'newSession' }))
+
+    expect(screen.getByRole('dialog', { name: 'mode.selectAgent' })).toHaveAttribute('aria-modal', 'true')
+  })
+
+  it('does not dismiss a pending launch through the close control', async () => {
+    const creation = deferred<ChatSession>()
+    const user = userEvent.setup()
+    testDoubles.createSession.mockReturnValueOnce(creation.promise)
+    render(<ChatView />)
+
+    await user.click(screen.getByRole('button', { name: 'newSession' }))
+    await user.click(screen.getByRole('button', { name: /Agent One/ }))
+    const close = screen.getByRole('button', { name: '关闭弹窗' })
+
+    expect(close).toBeDisabled()
+    await user.click(close)
+    expect(screen.getByRole('heading', { name: 'mode.selectAgent' })).toBeInTheDocument()
+
+    await act(async () => {
+      creation.resolve(singleSession)
+      await creation.promise
+    })
+    await waitFor(() => {
+      expect(screen.queryByRole('heading', { name: 'mode.selectAgent' })).not.toBeInTheDocument()
+    })
+    expect(testDoubles.push).toHaveBeenCalledOnce()
   })
 
   it('retains a failed single selection, exposes model recovery, and closes after retry succeeds', async () => {
@@ -255,6 +290,33 @@ describe('chat launch surfaces', () => {
     expect(screen.getByRole('button', { name: 'mode.confirm (2)' })).toBeEnabled()
     expect(screen.getByRole('button', { name: /Agent One/ })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: /Agent Two/ })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('clears a failed group request before the user changes members or mode', async () => {
+    const user = userEvent.setup()
+    testDoubles.createGroupSession.mockRejectedValueOnce(new Error('old group failed'))
+    testDoubles.createSession.mockResolvedValueOnce(singleSession)
+    render(<ChatView />)
+
+    await user.click(screen.getByRole('button', { name: 'newSession' }))
+    await user.click(screen.getByRole('button', { name: 'mode.group' }))
+    await user.click(screen.getByRole('button', { name: /Agent One/ }))
+    await user.click(screen.getByRole('button', { name: /Agent Two/ }))
+    await user.click(screen.getByRole('button', { name: 'mode.confirm (2)' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('old group failed')
+
+    await user.click(screen.getByRole('button', { name: /Agent Two/ }))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'launch.retry' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'mode.single' }))
+    await user.click(screen.getByRole('button', { name: /Agent One/ }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('heading', { name: 'mode.selectAgent' })).not.toBeInTheDocument()
+    })
+    expect(testDoubles.createGroupSession).toHaveBeenCalledOnce()
+    expect(testDoubles.push).toHaveBeenCalledWith('/chat/11111111-1111-4111-8111-111111111111')
   })
 
   it('shows the shared launch failure and retry on agent detail', async () => {

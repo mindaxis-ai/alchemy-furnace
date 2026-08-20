@@ -23,6 +23,8 @@ interface ChatState {
   loading: boolean
   streaming: boolean // 是否正在流式输出
   error: string | null
+  /** 会话列表加载错误；与创建、消息等操作错误分开归属。 */
+  sessionsError: string | null
   /** 群聊: 当前正在发言的道人(用于 typing 指示器显示名字/头像) */
   currentSpeaker: { agent_id: string; agent_name: string; agent_avatar?: string } | null
 }
@@ -51,6 +53,7 @@ type ChatAction =
   | { type: 'SET_LOADING'; payload: boolean }
   | { type: 'SET_STREAMING'; payload: boolean }
   | { type: 'SET_ERROR'; payload: string | null }
+  | { type: 'SET_SESSIONS_ERROR'; payload: string | null }
   | { type: 'CLEAR_CURRENT' }
 
 /** 初始状态 */
@@ -61,6 +64,7 @@ const initialState: ChatState = {
   loading: false,
   streaming: false,
   error: null,
+  sessionsError: null,
   currentSpeaker: null,
 }
 
@@ -82,7 +86,7 @@ function finalizeStreamMessage(messages: ChatMessage[], patch?: Partial<ChatMess
 function chatReducer(state: ChatState, action: ChatAction): ChatState {
   switch (action.type) {
     case 'SET_SESSIONS':
-      return { ...state, sessions: action.payload, loading: false }
+      return { ...state, sessions: action.payload, sessionsError: null, loading: false }
     case 'SET_CURRENT_SESSION':
       return { ...state, currentSession: action.payload, messages: [] }
     case 'SET_MESSAGES':
@@ -195,6 +199,8 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return { ...state, streaming: action.payload }
     case 'SET_ERROR':
       return { ...state, error: action.payload, loading: false }
+    case 'SET_SESSIONS_ERROR':
+      return { ...state, sessionsError: action.payload, loading: false }
     case 'CLEAR_CURRENT':
       return { ...state, currentSession: null, messages: [] }
     default:
@@ -248,7 +254,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       const data = await chatService.listSessions()
       dispatch({ type: 'SET_SESSIONS', payload: data.list || [] })
     } catch (error) {
-      dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '获取会话列表失败' })
+      dispatch({
+        type: 'SET_SESSIONS_ERROR',
+        payload: error instanceof Error ? error.message : '获取会话列表失败',
+      })
     }
   }, [])
 

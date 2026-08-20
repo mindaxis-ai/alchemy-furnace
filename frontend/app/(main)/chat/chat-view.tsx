@@ -255,10 +255,10 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
                 onRetry={retryProviderReadiness}
               />
             )}
-            {chatState.error && launchFlow.state.status !== 'error' && (
+            {chatState.sessionsError && (
               <LoadNotice
                 title={t('load.sessionsError')}
-                message={chatState.error}
+                message={chatState.sessionsError}
                 retryLabel={t('load.retry')}
                 onRetry={fetchSessions}
               />
@@ -301,6 +301,7 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
             onSelectGroup={handleCreateGroupSession}
             onRetry={launchFlow.retry}
             onRetryAgents={fetchAgents}
+            onSelectionChange={launchFlow.reset}
           />
         )}
       </div>
@@ -589,6 +590,7 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
           onSelectGroup={handleCreateGroupSession}
           onRetry={launchFlow.retry}
           onRetryAgents={fetchAgents}
+          onSelectionChange={launchFlow.reset}
         />
       )}
 
@@ -635,6 +637,7 @@ function AgentSelectModal({
   onSelectGroup,
   onRetry,
   onRetryAgents,
+  onSelectionChange,
 }: {
   agents: Agent[]
   agentError: string | null
@@ -644,6 +647,7 @@ function AgentSelectModal({
   onSelectGroup: (agentIds: string[]) => Promise<boolean>
   onRetry: () => Promise<boolean>
   onRetryAgents: () => void | Promise<void>
+  onSelectionChange: () => void
 }) {
   const t = useTranslations('chatView')
   const [mode, setMode] = useState<ChatMode>('single')
@@ -651,6 +655,7 @@ function AgentSelectModal({
   const submitting = launchState.status === 'submitting'
 
   const toggleSelect = (id: string) => {
+    onSelectionChange()
     setSelected(prev => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
@@ -673,21 +678,33 @@ function AgentSelectModal({
     if (launched) onClose()
   }
 
+  const changeMode = (nextMode: ChatMode) => {
+    onSelectionChange()
+    setMode(nextMode)
+    setSelected(new Set())
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div className="dao-card w-full max-w-md p-6 animate-in fade-in duration-300 max-h-[80vh] flex flex-col">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="agent-select-title"
+        className="dao-card w-full max-w-md p-6 animate-in fade-in duration-300 max-h-[80vh] flex flex-col"
+      >
         {/* 头部 */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <Users className="w-5 h-5 text-sage" />
-            <h2 className="text-lg font-serif font-bold text-gold">
+            <h2 id="agent-select-title" className="text-lg font-serif font-bold text-gold">
               {mode === 'single' ? t('mode.selectAgent') : t('mode.selectAgents')}
             </h2>
           </div>
           <button
             aria-label="关闭弹窗"
+            disabled={submitting}
             onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+            className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors disabled:cursor-wait disabled:opacity-40"
           >
             <X className="w-5 h-5" />
           </button>
@@ -698,7 +715,7 @@ function AgentSelectModal({
           <button
             type="button"
             disabled={submitting}
-            onClick={() => { setMode('single'); setSelected(new Set()) }}
+            onClick={() => changeMode('single')}
             className={`
               inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-xs font-medium transition-all
               ${mode === 'single'
@@ -713,7 +730,7 @@ function AgentSelectModal({
           <button
             type="button"
             disabled={submitting}
-            onClick={() => { setMode('group'); setSelected(new Set()) }}
+            onClick={() => changeMode('group')}
             className={`
               inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-xs font-medium transition-all
               ${mode === 'group'
@@ -761,6 +778,7 @@ function AgentSelectModal({
                 disabled={submitting}
                 onClick={() => {
                   if (mode === 'single') {
+                    onSelectionChange()
                     setSelected(new Set([agent.id]))
                     void onSelectSingle(agent.id)
                   } else {

@@ -9,12 +9,14 @@ import type { ChatSession } from '@/services/types'
 
 const createSession = vi.hoisted(() => vi.fn())
 const createGroupSession = vi.hoisted(() => vi.fn())
+const listSessions = vi.hoisted(() => vi.fn())
 const push = vi.hoisted(() => vi.fn())
 
 vi.mock('@/services/chatService', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/services/chatService')>()
   return {
     ...actual,
+    listSessions,
     createSession,
     createGroupSession,
   }
@@ -56,7 +58,34 @@ function deferred<T>() {
 
 describe('ChatProvider session creation', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
+    listSessions.mockResolvedValue({ list: [], total: 0 })
+  })
+
+  it('owns list failures separately and clears them after a successful reload', async () => {
+    listSessions
+      .mockRejectedValueOnce(new Error('session list unavailable'))
+      .mockResolvedValueOnce({ list: [], total: 0 })
+    createSession.mockRejectedValueOnce(new Error('launch unavailable'))
+    const { result } = renderHook(() => useChat(), { wrapper })
+
+    await act(async () => {
+      await result.current.fetchSessions()
+    })
+    expect(result.current.state.sessionsError).toBe('session list unavailable')
+    expect(result.current.state.error).toBeNull()
+
+    await act(async () => {
+      await result.current.createSession('agent-1').catch(() => undefined)
+    })
+    expect(result.current.state.sessionsError).toBe('session list unavailable')
+    expect(result.current.state.error).toBe('launch unavailable')
+
+    await act(async () => {
+      await result.current.fetchSessions()
+    })
+    expect(result.current.state.sessionsError).toBeNull()
+    expect(result.current.state.error).toBe('launch unavailable')
   })
 
   it('surfaces the original single-session error and ends loading', async () => {
@@ -108,7 +137,8 @@ describe('ChatProvider session creation', () => {
 
 describe('useChatLaunchFlow', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
+    listSessions.mockResolvedValue({ list: [], total: 0 })
   })
 
   it('enters submitting immediately while session creation is pending', async () => {
