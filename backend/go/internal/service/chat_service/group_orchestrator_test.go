@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/alchemy-furnace/server/internal/errors"
-	"github.com/alchemy-furnace/server/internal/service/credential"
 	"github.com/alchemy-furnace/server/model"
 	"github.com/google/uuid"
 )
@@ -17,9 +16,9 @@ import (
 // scriptEngine 按调用次序回放预设 SSE 响应;"|" 分隔 chunk
 // completionReply 为非流式 /completions 端点返回的 content(为空时该端点返回 500)
 type scriptEngine struct {
-	server         *httptest.Server
-	replies        []string
-	calls          int
+	server          *httptest.Server
+	replies         []string
+	calls           int
 	completionReply string
 }
 
@@ -58,18 +57,6 @@ func (fakePattern) GetOrBuildPattern(ctx context.Context, agentID uint) (*model.
 	return &model.LanguagePattern{SystemPrompt: "你是道人。"}, nil
 }
 
-type fakeResolver struct{}
-
-func (fakeResolver) ResolveCredentials(ctx context.Context, name string) (*credential.ModelCredentials, error) {
-	return &credential.ModelCredentials{Model: "test-model"}, nil
-}
-func (fakeResolver) ResolveSynthesisCredentials(ctx context.Context) (*credential.ModelCredentials, error) {
-	return &credential.ModelCredentials{Model: "test-model"}, nil
-}
-func (fakeResolver) ResolveFusionCredentials(ctx context.Context) (*credential.ModelCredentials, error) {
-	return &credential.ModelCredentials{Model: "test-model"}, nil
-}
-
 func newGroupSvc(t *testing.T, replies []string) (*Chat, *fakeChatDao, *scriptEngine, *model.ChatSession) {
 	return newGroupSvcWithCompletion(t, replies, "")
 }
@@ -81,8 +68,8 @@ func newGroupSvcWithCompletion(t *testing.T, replies []string, completionReply s
 	t.Cleanup(engine.server.Close)
 	u1, u2 := uuid.New(), uuid.New()
 	agents := &fakeAgentDao{agents: map[string]*model.DaoAgent{
-		u1.String(): {ID: 1, UUID: u1, Name: "太上老君", Status: "active", Proactivity: 50},
-		u2.String(): {ID: 2, UUID: u2, Name: "孙悟空", Status: "active", Proactivity: 90},
+		u1.String(): {ID: 1, UUID: u1, Name: "太上老君", Status: "active", Proactivity: 50, ModelName: "test-model"},
+		u2.String(): {ID: 2, UUID: u2, Name: "孙悟空", Status: "active", Proactivity: 90, ModelName: "test-model"},
 	}}
 	agentByID := map[uint]*model.DaoAgent{
 		1: agents.agents[u1.String()],
@@ -93,7 +80,7 @@ func newGroupSvcWithCompletion(t *testing.T, replies []string, completionReply s
 		members:   map[uint][]*model.SessionMember{},
 		agentByID: agentByID,
 	}
-	svc := New(chats, agents, fakePattern{}, fakeResolver{}, engine.server.URL)
+	svc := New(chats, agents, fakePattern{}, availableCredentialResolver("test-model"), engine.server.URL)
 	s, err := svc.CreateGroupSession(context.Background(), []uuid.UUID{u1, u2})
 	if err != nil {
 		t.Fatalf("建群: %v", err)
@@ -185,7 +172,6 @@ func TestGroupTurnMaxThreeRounds(t *testing.T) {
 		t.Fatalf("应有6条发言: %v", log.events)
 	}
 }
-
 
 func TestGroupTurnAutoTitle(t *testing.T) {
 	svc, chats, _, s := newGroupSvcWithCompletion(t, []string{"金丹妙不可言", "[PASS]"}, "丹道夜话")

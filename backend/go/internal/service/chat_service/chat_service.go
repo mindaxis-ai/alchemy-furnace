@@ -48,12 +48,33 @@ func NewDynamic(chat dao.Chat, agent dao.Agent, pattern service.LanguagePatternP
 	return &Chat{chat: chat, agent: agent, pattern: pattern, creds: creds, engineBaseURL: engineBaseURL}
 }
 
+func (s *Chat) validateChatAgent(ctx context.Context, agentUID uuid.UUID) (*model.DaoAgent, ierr.Error) {
+	agent, err := s.agent.TakeAgentByUUID(ctx, agentUID)
+	if err != nil {
+		if err.IsType(ierr.ErrorTypeRecordNotFound) {
+			return nil, ierr.New(ierr.ErrorTypeRecordNotFound, "service.chat.agent_not_found", "道人不存在")
+		}
+		return nil, err.Relation(ierr.ErrorServerInternalError("service.chat.create_take_agent"))
+	}
+	if agent.Status != "active" {
+		return nil, ierr.New(ierr.ErrorTypeInvalidRequest, "service.chat.agent_inactive", "道人已停用")
+	}
+	if s.creds == nil {
+		return nil, ierr.New(ierr.ErrorTypeInvalidRequest, "service.chat.model_unavailable", "道人使用的模型不可用")
+	}
+	credentials, resolveErr := s.creds.ResolveCredentials(ctx, agent.ModelName)
+	if resolveErr != nil || credentials == nil || credentials.APIKey == "" {
+		return nil, ierr.New(ierr.ErrorTypeInvalidRequest, "service.chat.model_unavailable", "道人使用的模型不可用")
+	}
+	return agent, nil
+}
+
 // CreateSession 创建 1v1 会话;agentUID 为道人对外 UUID
 // 标题一律留空,由首个问答自动命名(群聊/单聊统一);group 会话改由 GroupService 路径另建
 func (s *Chat) CreateSession(ctx context.Context, agentUID uuid.UUID) (*model.ChatSession, ierr.Error) {
-	agent, err := s.agent.TakeAgentByUUID(ctx, agentUID)
+	agent, err := s.validateChatAgent(ctx, agentUID)
 	if err != nil {
-		return nil, err.Relation(ierr.ErrorRecordNotFound("service.chat.create_take_agent"))
+		return nil, err
 	}
 
 	agentID := agent.ID
@@ -363,9 +384,9 @@ func (s *Chat) CreateGroupSession(ctx context.Context, agentUIDs []uuid.UUID) (*
 
 	agents := make([]*model.DaoAgent, 0, len(uids))
 	for _, u := range uids {
-		a, err := s.agent.TakeAgentByUUID(ctx, u)
-		if err != nil || a.Status != "active" {
-			return nil, ierr.New(ierr.ErrorTypeInvalidRequest, "service.chat.group_member_invalid", "成员不存在或已停用")
+		a, err := s.validateChatAgent(ctx, u)
+		if err != nil {
+			return nil, err
 		}
 		agents = append(agents, a)
 	}

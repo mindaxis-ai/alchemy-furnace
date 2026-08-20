@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/alchemy-furnace/server/internal/errors"
+	"github.com/alchemy-furnace/server/internal/service/credential"
 	"github.com/alchemy-furnace/server/model"
 	"github.com/google/uuid"
 )
@@ -112,11 +113,11 @@ func (f *fakeChatDao) FindMessages(ctx context.Context, sessionID uint, page, si
 		if m.SessionID == sessionID {
 			cp := *m
 			if cp.AgentID != nil {
-			if a, ok := f.agentByID[*cp.AgentID]; ok {
-				agent := *a
-				cp.Agent = &agent
+				if a, ok := f.agentByID[*cp.AgentID]; ok {
+					agent := *a
+					cp.Agent = &agent
+				}
 			}
-		}
 			out = append(out, &cp)
 		}
 	}
@@ -164,9 +165,9 @@ func (f *fakeChatDao) DeleteMember(ctx context.Context, sessionID uint, agentID 
 func newGroupTestSvc() (*Chat, *fakeChatDao, uuid.UUID, uuid.UUID, uuid.UUID) {
 	u1, u2, u3 := uuid.New(), uuid.New(), uuid.New()
 	agents := &fakeAgentDao{agents: map[string]*model.DaoAgent{
-		u1.String(): {ID: 1, UUID: u1, Name: "太上老君", Status: "active"},
-		u2.String(): {ID: 2, UUID: u2, Name: "孙悟空", Status: "active"},
-		u3.String(): {ID: 3, UUID: u3, Name: "睡道人", Status: "inactive"},
+		u1.String(): {ID: 1, UUID: u1, Name: "太上老君", Status: "active", ModelName: "test-model"},
+		u2.String(): {ID: 2, UUID: u2, Name: "孙悟空", Status: "active", ModelName: "test-model"},
+		u3.String(): {ID: 3, UUID: u3, Name: "睡道人", Status: "inactive", ModelName: "test-model"},
 	}}
 	agentByID := map[uint]*model.DaoAgent{
 		1: agents.agents[u1.String()],
@@ -177,7 +178,7 @@ func newGroupTestSvc() (*Chat, *fakeChatDao, uuid.UUID, uuid.UUID, uuid.UUID) {
 		members:   map[uint][]*model.SessionMember{},
 		agentByID: agentByID,
 	}
-	svc := New(chats, agents, nil, nil, "http://unused")
+	svc := New(chats, agents, nil, availableCredentialResolver("test-model"), "http://unused")
 	return svc, chats, u1, u2, u3
 }
 
@@ -204,6 +205,72 @@ func TestCreateGroupSession(t *testing.T) {
 	}
 	if chats.members[s.ID][0].SortOrder != 0 || chats.members[s.ID][1].SortOrder != 1 {
 		t.Fatalf("SortOrder 未按邀请顺序赋值: %+v", chats.members[s.ID])
+	}
+}
+
+func TestCreateGroupSessionRejectsInvalidMemberBeforePersistence(t *testing.T) {
+	activeUID := uuid.New()
+	inactiveUID := uuid.New()
+	unavailableUID := uuid.New()
+	agents := &fakeAgentDao{agents: map[string]*model.DaoAgent{
+		activeUID.String(): {
+			ID: 1, UUID: activeUID, Name: "太上老君", Status: "active", ModelName: "available-model",
+		},
+		inactiveUID.String(): {
+			ID: 2, UUID: inactiveUID, Name: "睡道人", Status: "inactive", ModelName: "available-model",
+		},
+		unavailableUID.String(): {
+			ID: 3, UUID: unavailableUID, Name: "无凭道人", Status: "active", ModelName: "unavailable-model",
+		},
+	}}
+
+	tests := []struct {
+		name     string
+		uids     []uuid.UUID
+		wantCode string
+	}{
+		{
+			name:     "inactive member",
+			uids:     []uuid.UUID{activeUID, inactiveUID},
+			wantCode: "service.chat.agent_inactive",
+		},
+		{
+			name:     "member model unavailable",
+			uids:     []uuid.UUID{activeUID, unavailableUID},
+			wantCode: "service.chat.model_unavailable",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			chats := &fakeChatDao{
+				sessions: map[string]*model.ChatSession{},
+				members:  map[uint][]*model.SessionMember{},
+			}
+			resolver := fakeCredentialResolver{credentials: map[string]*credential.ModelCredentials{
+				"available-model":   {Model: "available-model", APIKey: "test-api-key"},
+				"unavailable-model": {Model: "unavailable-model"},
+			}}
+			svc := New(chats, agents, nil, resolver, "http://unused")
+
+			session, err := svc.CreateGroupSession(context.Background(), tt.uids)
+
+			if err == nil {
+				t.Fatalf("CreateGroupSession() error = nil, want %s", tt.wantCode)
+			}
+			if session != nil {
+				t.Fatalf("CreateGroupSession() session = %+v, want nil", session)
+			}
+			if err.GetCode() != tt.wantCode {
+				t.Fatalf("CreateGroupSession() error code = %q, want %q", err.GetCode(), tt.wantCode)
+			}
+			if len(chats.sessions) != 0 {
+				t.Fatalf("CreateGroupSession() persisted %d sessions after validation failure", len(chats.sessions))
+			}
+			if len(chats.members) != 0 {
+				t.Fatalf("CreateGroupSession() persisted members after validation failure: %+v", chats.members)
+			}
+		})
 	}
 }
 
