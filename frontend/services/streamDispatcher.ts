@@ -1,3 +1,5 @@
+import type { StreamChunk, StreamSpeakerInfo } from '@/services/chatService'
+
 /**
  * 标准 SSE 事件调度器。
  *
@@ -6,23 +8,21 @@
  * 仍显示“加载中”。React 会自动批处理同一帧内的状态更新。
  */
 
-export interface SpeakerStartInfo {
-  agent_id: string
-  agent_name: string
-  agent_avatar?: string
-}
+export type SpeakerStartInfo = StreamSpeakerInfo
 
 export interface SpeakerDoneInfo {
   agent_id: string
+  agent_name: string
+  agent_avatar?: string
   message_id?: string
   mentions?: unknown
 }
 
 export interface DispatcherActions {
-  onChunk: (text: string) => void
+  onChunk: (chunk: StreamChunk) => void
   onSpeakerStart: (info: SpeakerStartInfo) => void
   onSpeakerDone: (info: SpeakerDoneInfo) => void
-  onNotice: (text: string, isError: boolean) => void
+  onNotice: (text: string, isError: boolean, retryable?: boolean) => void
   onDrained: () => void
 }
 
@@ -47,8 +47,8 @@ export function createStreamDispatcher(actions: DispatcherActions, _pace?: Dispa
   }
 
   return {
-    pushChunk(text: string) {
-      if (!ended && text) actions.onChunk(text)
+    pushChunk(chunk: StreamChunk) {
+      if (!ended && chunk.content) actions.onChunk(chunk)
     },
     pushSpeakerStart(info: SpeakerStartInfo) {
       if (!ended) actions.onSpeakerStart(info)
@@ -56,8 +56,8 @@ export function createStreamDispatcher(actions: DispatcherActions, _pace?: Dispa
     pushSpeakerDone(info: SpeakerDoneInfo) {
       if (!ended) actions.onSpeakerDone(info)
     },
-    pushNotice(text: string, isError: boolean) {
-      if (!ended) actions.onNotice(text, isError)
+    pushNotice(text: string, isError: boolean, retryable?: boolean) {
+      if (!ended) actions.onNotice(text, isError, retryable)
     },
     markDone() {
       ended = true

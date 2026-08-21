@@ -11,6 +11,7 @@
  */
 import React, { createContext, useContext, useReducer, useCallback, useRef, useEffect } from 'react'
 import * as chatService from '@/services/chatService'
+import type { StreamChunk, StreamSpeakerInfo } from '@/services/chatService'
 import { createStreamDispatcher } from '@/services/streamDispatcher'
 import { notifyDesktop } from '@/services/api'
 import type { ChatSession, ChatMessage } from '@/services/types'
@@ -40,22 +41,23 @@ type ChatAction =
   | { type: 'SET_CURRENT_SESSION'; payload: ChatSession | null }
   | { type: 'SET_MESSAGES'; payload: ChatMessage[] }
   | { type: 'ADD_MESSAGE'; payload: ChatMessage }
-  | { type: 'ADD_STREAM_CHUNK'; payload: string } // 追加流式输出内容
+  | { type: 'ADD_STREAM_CHUNK'; payload: StreamChunk } // 追加流式输出内容
   | { type: 'FINISH_STREAM' }
   | { type: 'FINALIZE_STREAM' }
   | { type: 'STOP_STREAM' } // 流式输出被停止(保留部分内容)
-  | { type: 'MARK_LAST_INCOMPLETE' } // 标记最后一条助手回复「可能不完整」
-  | { type: 'DISCARD_EMPTY_STREAM' } // 群成员开腔后未产出 chunk 即失败：移除空临时气泡
-  | { type: 'ADD_ERROR_MESSAGE'; payload: string } // 内联错误气泡
+  | { type: 'MARK_STREAM_INCOMPLETE'; payload: { agent_id?: string; retryable: boolean } }
+  | { type: 'DISCARD_EMPTY_STREAM'; payload?: { agent_id?: string } }
+  | { type: 'ADD_ERROR_MESSAGE'; payload: { text: string; retryable: boolean } }
   /** 回合内系统通知(群聊单道人失败等): 追加系统条,不动 streaming 状态 */
-  | { type: 'ADD_SYSTEM_NOTICE'; payload: { text: string; isError: boolean } }
+  | { type: 'ADD_SYSTEM_NOTICE'; payload: { text: string; isError: boolean; retryable?: boolean } }
   | { type: 'SPEAKER_START'; payload: { agent_id: string; agent_name: string; agent_avatar?: string } }
-  | { type: 'SPEAKER_DONE' }
+  | { type: 'SPEAKER_DONE'; payload: StreamSpeakerInfo }
   /** 群聊:用服务端真实 message_id 替换本地临时 id，可附 mentions */
-  | { type: 'FINALIZE_STREAM_WITH_ID'; payload: { message_id: string; mentions?: import('@/services/types').ChatMessage['mentions'] } }
+  | { type: 'FINALIZE_STREAM_WITH_ID'; payload: StreamSpeakerInfo & { message_id: string; mentions?: import('@/services/types').ChatMessage['mentions'] } }
   | { type: 'SET_SESSION_TITLE'; payload: { sessionId: string; title: string } }
   | { type: 'UPDATE_SESSION_MEMBERS'; payload: { sessionId: string; members: import('@/services/types').GroupMember[] } }
   | { type: 'ADD_SESSION'; payload: ChatSession }
+  | { type: 'UPSERT_SESSION'; payload: ChatSession }
   | { type: 'SET_LOADING'; payload: boolean }
   | { type: 'SET_STREAMING'; payload: boolean }
   | { type: 'SET_ERROR'; payload: string | null }
@@ -85,11 +87,20 @@ const streamMessageID = () => localMessageID('stream')
 const isStreamMessage = (message?: ChatMessage) => Boolean(message?.id.startsWith('stream-'))
 
 /** 将当前流式临时消息转换为正式消息 */
-function finalizeStreamMessage(messages: ChatMessage[], patch?: Partial<ChatMessage>): ChatMessage[] {
+function findStreamMessageIndex(messages: ChatMessage[], agentId?: string): number {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i]
+    if (message.role !== 'assistant' || !isStreamMessage(message)) continue
+    if (!agentId || message.agent_id === agentId) return i
+  }
+  return -1
+}
+
+function finalizeStreamMessage(messages: ChatMessage[], patch?: Partial<ChatMessage>, agentId?: string): ChatMessage[] {
   const result = [...messages]
-  const lastMsg = result[result.length - 1]
-  if (lastMsg && lastMsg.role === 'assistant' && isStreamMessage(lastMsg)) {
-    result[result.length - 1] = { ...lastMsg, id: localMessageID('assistant'), ...patch }
+  const index = findStreamMessageIndex(result, agentId)
+  if (index >= 0) {
+    result[index] = { ...result[index], id: localMessageID('assistant'), ...patch }
   }
   return result
 }
@@ -106,17 +117,27 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case 'ADD_MESSAGE':
       return { ...state, messages: [...state.messages, action.payload] }
     case 'ADD_STREAM_CHUNK': {
-      // 追加到最后一条 assistant 消息,如果没有则创建
+      // 群聊按 chunk 自带身份定位气泡；单聊无身份时使用当前临时回复。
       const messages = [...state.messages]
-      const lastMsg = messages[messages.length - 1]
-      if (lastMsg && lastMsg.role === 'assistant' && isStreamMessage(lastMsg)) {
-        messages[messages.length - 1] = { ...lastMsg, content: lastMsg.content + action.payload }
+      const index = findStreamMessageIndex(messages, action.payload.agent_id)
+      if (index >= 0) {
+        const current = messages[index]
+        messages[index] = {
+          ...current,
+          content: current.content + action.payload.content,
+          agent_id: action.payload.agent_id || current.agent_id,
+          agent_name: action.payload.agent_name || current.agent_name,
+          agent_avatar: action.payload.agent_avatar || current.agent_avatar,
+        }
       } else {
         messages.push({
           id: streamMessageID(),
           session_id: state.currentSession?.id || '',
           role: 'assistant',
-          content: action.payload,
+          content: action.payload.content,
+          agent_id: action.payload.agent_id,
+          agent_name: action.payload.agent_name,
+          agent_avatar: action.payload.agent_avatar,
           created_at: new Date().toISOString(),
         })
       }
@@ -129,19 +150,19 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case 'STOP_STREAM':
       // 停止生成:保留部分内容并标记「已停止」
       return { ...state, messages: finalizeStreamMessage(state.messages, { stopped: true }), streaming: false }
-    case 'MARK_LAST_INCOMPLETE': {
-      const messages = finalizeStreamMessage(state.messages)
-      const lastMsg = messages[messages.length - 1]
-      if (lastMsg && lastMsg.role === 'assistant' && !lastMsg.is_error) {
-        messages[messages.length - 1] = { ...lastMsg, incomplete: true }
-      }
+    case 'MARK_STREAM_INCOMPLETE': {
+      const messages = finalizeStreamMessage(
+        state.messages,
+        { incomplete: true, retryable: action.payload.retryable },
+        action.payload.agent_id,
+      )
       return { ...state, messages }
     }
     case 'DISCARD_EMPTY_STREAM': {
       const messages = [...state.messages]
-      const lastMsg = messages[messages.length - 1]
-      if (lastMsg && lastMsg.role === 'assistant' && isStreamMessage(lastMsg) && lastMsg.content === '') {
-        messages.pop()
+      const index = findStreamMessageIndex(messages, action.payload?.agent_id)
+      if (index >= 0 && messages[index].content === '') {
+        messages.splice(index, 1)
       }
       return { ...state, messages, currentSpeaker: null }
     }
@@ -151,9 +172,10 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
         id: localMessageID('error'),
         session_id: state.currentSession?.id || '',
         role: 'system',
-        content: action.payload,
+        content: action.payload.text,
         created_at: new Date().toISOString(),
         is_error: true,
+        retryable: action.payload.retryable,
       }
       return { ...state, messages: [...state.messages, errorMessage], streaming: false }
     }
@@ -166,6 +188,7 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
         content: action.payload.text,
         created_at: new Date().toISOString(),
         is_error: action.payload.isError,
+        retryable: action.payload.retryable,
       }
       return { ...state, messages: [...state.messages, notice] }
     }
@@ -185,20 +208,30 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return { ...state, messages, currentSpeaker: action.payload }
     }
     case 'SPEAKER_DONE':
-      // 群聊: 当前发言人 finalize,清空 currentSpeaker
-      return { ...state, messages: finalizeStreamMessage(state.messages), currentSpeaker: null }
+      return {
+        ...state,
+        messages: finalizeStreamMessage(state.messages, undefined, action.payload.agent_id),
+        currentSpeaker: state.currentSpeaker?.agent_id === action.payload.agent_id ? null : state.currentSpeaker,
+      }
     case 'FINALIZE_STREAM_WITH_ID': {
       // 群聊:服务端已返回真实 message_id，替换当前临时 id。
       const messages = [...state.messages]
-      const lastIdx = messages.length - 1
-      if (lastIdx >= 0 && messages[lastIdx].role === 'assistant' && isStreamMessage(messages[lastIdx])) {
-        messages[lastIdx] = {
-          ...messages[lastIdx],
+      const index = findStreamMessageIndex(messages, action.payload.agent_id)
+      if (index >= 0) {
+        messages[index] = {
+          ...messages[index],
           id: action.payload.message_id,
-          mentions: action.payload.mentions || messages[lastIdx].mentions,
+          agent_id: action.payload.agent_id,
+          agent_name: action.payload.agent_name,
+          agent_avatar: action.payload.agent_avatar,
+          mentions: action.payload.mentions || messages[index].mentions,
         }
       }
-      return { ...state, messages, currentSpeaker: null }
+      return {
+        ...state,
+        messages,
+        currentSpeaker: state.currentSpeaker?.agent_id === action.payload.agent_id ? null : state.currentSpeaker,
+      }
     }
     case 'SET_SESSION_TITLE': {
       const { sessionId, title } = action.payload
@@ -214,6 +247,11 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
     }
     case 'ADD_SESSION':
       return { ...state, sessions: [action.payload, ...state.sessions], currentSession: action.payload, loading: false }
+    case 'UPSERT_SESSION':
+      return {
+        ...state,
+        sessions: [action.payload, ...state.sessions.filter(session => session.id !== action.payload.id)],
+      }
     case 'SET_LOADING':
       return { ...state, loading: action.payload }
     case 'SET_STREAMING':
@@ -273,7 +311,12 @@ interface ChatContextType {
   inviteMembers: (sessionId: string, agentIds: string[]) => Promise<void>
   kickMember: (sessionId: string, agentId: string) => Promise<void>
   loadMessages: (sessionId: string) => Promise<void>
-  streamMessage: (sessionId: string, content: string, opts?: { allSilentText?: string }) => Promise<void>
+  clearCurrent: () => void
+  streamMessage: (sessionId: string, content: string, opts?: {
+    retry?: boolean
+    retryBoundaryText?: string
+    interruptedText?: string
+  }) => Promise<void>
   /** 停止当前流式生成(中断 SSE 连接,部分内容落定为「已停止」) */
   stopStream: () => void
 }
@@ -289,12 +332,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(chatReducer, initialState)
   const sessionsRef = useRef<ChatSession[]>([])
   const sessionLoadRequestRef = useRef(0)
-  // 本轮流式是否已收到内容片段
-  const partialReceivedRef = useRef(false)
-  // 群聊: 本回合是否已有发言人开腔(用于区分单道人失败 vs 启动即败的致命错误)
-  const groupActiveRef = useRef(false)
-  // 流式事件调度器(每次 streamMessage 重新构造,避免上一轮残留)
-  const chunkerRef = useRef<ReturnType<typeof createStreamDispatcher> | null>(null)
 
   // 同步会话列表引用,供 loadMessages 查找当前会话
   useEffect(() => {
@@ -378,18 +415,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     const requestId = ++sessionLoadRequestRef.current
     dispatch({ type: 'SESSION_LOAD_START' })
     try {
-      // 定位会话:先查已有列表,查不到则拉取一次会话列表
+      // 定位会话:先查已有列表,查不到则按 UUID 直取；不受列表 100 条上限影响。
       let session = sessionsRef.current.find(s => s.id === sessionId)
       if (!session) {
-        const data = await chatService.listSessions()
+        session = await chatService.getSession(sessionId)
         if (requestId !== sessionLoadRequestRef.current) return
-        dispatch({ type: 'SET_SESSIONS', payload: data.list || [] })
-        sessionsRef.current = data.list || []
-        session = sessionsRef.current.find(s => s.id === sessionId)
-      }
-      if (!session) {
-        dispatch({ type: 'SESSION_LOAD_NOT_FOUND' })
-        return
+        sessionsRef.current = [session, ...sessionsRef.current.filter(item => item.id !== sessionId)]
+        dispatch({ type: 'UPSERT_SESSION', payload: session })
       }
 
       const data = await chatService.getMessages(sessionId)
@@ -408,110 +440,160 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  /** 发送消息(SSE 流式接收回复) */
-  const streamMessage = useCallback(async (sessionId: string, content: string) => {
-    // 先添加用户消息
-    const userMessage: ChatMessage = {
-      id: localMessageID('user'),
-      session_id: sessionId,
-      role: 'user',
-      content,
-      created_at: new Date().toISOString(),
+  /** 离开会话时同时让所有在途元数据/历史响应失效。 */
+  const clearCurrent = useCallback(() => {
+    sessionLoadRequestRef.current += 1
+    dispatch({ type: 'CLEAR_CURRENT' })
+  }, [])
+
+  /** 发送或重试消息(SSE 流式接收回复)。重试不追加本地用户气泡。 */
+  const streamMessage = useCallback(async (
+    sessionId: string,
+    content: string,
+    opts?: { retry?: boolean; retryBoundaryText?: string; interruptedText?: string },
+  ) => {
+    const isGroup = sessionsRef.current.find(s => s.id === sessionId)?.type === 'group'
+    if (!opts?.retry) {
+      dispatch({
+        type: 'ADD_MESSAGE',
+        payload: {
+          id: localMessageID('user'),
+          session_id: sessionId,
+          role: 'user',
+          content,
+          created_at: new Date().toISOString(),
+        },
+      })
+    } else if (isGroup && opts.retryBoundaryText) {
+      dispatch({ type: 'ADD_SYSTEM_NOTICE', payload: { text: opts.retryBoundaryText, isError: false } })
     }
-    dispatch({ type: 'ADD_MESSAGE', payload: userMessage })
-    partialReceivedRef.current = false
+
+    // 每个请求独立持有部分内容/当前发言人/终止状态；迟到的旧请求回调不能污染新回合。
+    let turnPartial = false
+    let speakerPartial = false
+    let activeSpeaker: StreamSpeakerInfo | null = null
+    let turnTerminated = false
     dispatch({ type: 'SET_STREAMING', payload: true })
 
-    // 每轮重建调度器，事件按 SSE 到达顺序直接交付。
-    const isGroup = sessionsRef.current.find(s => s.id === sessionId)?.type === 'group'
-    groupActiveRef.current = false
     const chunker = createStreamDispatcher({
-      onChunk: (text) => dispatch({ type: 'ADD_STREAM_CHUNK', payload: text }),
+      onChunk: (chunk) => dispatch({ type: 'ADD_STREAM_CHUNK', payload: chunk }),
       onSpeakerStart: (info) => dispatch({ type: 'SPEAKER_START', payload: info }),
       onSpeakerDone: (info) => {
         if (info.message_id) {
-          dispatch({ type: 'FINALIZE_STREAM_WITH_ID', payload: { message_id: info.message_id, mentions: info.mentions as ChatMessage['mentions'] } })
+          dispatch({
+            type: 'FINALIZE_STREAM_WITH_ID',
+            payload: { ...info, message_id: info.message_id, mentions: info.mentions as ChatMessage['mentions'] },
+          })
         } else {
-          dispatch({ type: 'SPEAKER_DONE' })
+          dispatch({ type: 'SPEAKER_DONE', payload: info })
         }
       },
-      onNotice: (text, isError) => dispatch({ type: 'ADD_SYSTEM_NOTICE', payload: { text, isError } }),
+      onNotice: (text, isError, retryable) => dispatch({
+        type: 'ADD_SYSTEM_NOTICE',
+        payload: { text, isError, retryable },
+      }),
       onDrained: () => {
         dispatch({ type: 'FINALIZE_STREAM' })
         dispatch({ type: 'FINISH_STREAM' })
       },
     })
-    chunkerRef.current = chunker
+    const finishTerminal = (errorText: string) => {
+      if (turnTerminated) return
+      turnTerminated = true
+      chunker.flushNow()
+      const active = activeSpeaker
+      if (isGroup) {
+        if (active) {
+          if (speakerPartial) {
+            dispatch({ type: 'MARK_STREAM_INCOMPLETE', payload: { agent_id: active.agent_id, retryable: false } })
+          } else {
+            dispatch({ type: 'DISCARD_EMPTY_STREAM', payload: { agent_id: active.agent_id } })
+          }
+        }
+        dispatch({ type: 'ADD_ERROR_MESSAGE', payload: { text: errorText, retryable: true } })
+      } else if (turnPartial) {
+        dispatch({ type: 'MARK_STREAM_INCOMPLETE', payload: { retryable: true } })
+        dispatch({ type: 'FINISH_STREAM' })
+      } else {
+        dispatch({ type: 'ADD_ERROR_MESSAGE', payload: { text: errorText, retryable: true } })
+      }
+      activeSpeaker = null
+      speakerPartial = false
+      turnPartial = false
+    }
 
     await chatService.streamChatMessage(sessionId, content, {
       onChunk: (chunk) => {
-        partialReceivedRef.current = true
+        turnPartial = true
+        if (isGroup) {
+          speakerPartial = true
+          if (chunk.agent_id) {
+            activeSpeaker = {
+              agent_id: chunk.agent_id,
+              agent_name: chunk.agent_name || activeSpeaker?.agent_name || '',
+              agent_avatar: chunk.agent_avatar || activeSpeaker?.agent_avatar,
+            }
+          }
+        }
         chunker.pushChunk(chunk)
       },
       onDone: () => {
-        // 单聊:服务端 [DONE] 后统一 finalize 并恢复输入。
-        partialReceivedRef.current = false
+        if (turnTerminated) return
+        turnTerminated = true
+        turnPartial = false
         chunker.markDone()
-        // T6: 回合完成提醒(窗口未聚焦时 Dock 弹跳)
         notifyDesktop()
       },
       onStopped: () => {
-        // 用户主动停止:保留已经收到的标准流内容并标记「已停止」。
+        if (turnTerminated) return
+        turnTerminated = true
         chunker.flushNow()
-        partialReceivedRef.current = false
-        groupActiveRef.current = false
+        activeSpeaker = null
+        speakerPartial = false
+        turnPartial = false
         dispatch({ type: 'STOP_STREAM' })
       },
-      onError: (error) => {
-        // 群聊回合中(已有发言人/内容): 单道人失败按序插通知条,回合继续
-        // 否则(单聊/群聊启动即败,后端不再发 turn_done): 致命错误,flush 收尾
-        if (isGroup && (groupActiveRef.current || partialReceivedRef.current)) {
-          if (partialReceivedRef.current) {
-            dispatch({ type: 'MARK_LAST_INCOMPLETE' })
-          } else {
-            dispatch({ type: 'DISCARD_EMPTY_STREAM' })
-          }
-          partialReceivedRef.current = false
-          chunker.pushNotice(error, true)
+      onError: (error, info) => {
+        if (info.terminal || !isGroup) {
+          finishTerminal(error)
           return
         }
-        chunker.flushNow()
-        if (partialReceivedRef.current) dispatch({ type: 'MARK_LAST_INCOMPLETE' })
-        partialReceivedRef.current = false
-        groupActiveRef.current = false
-        dispatch({ type: 'ADD_ERROR_MESSAGE', payload: error })
+        const active = activeSpeaker
+        if (active && (!info.agent_id || info.agent_id === active.agent_id)) {
+          if (speakerPartial) {
+            dispatch({ type: 'MARK_STREAM_INCOMPLETE', payload: { agent_id: active.agent_id, retryable: false } })
+          } else {
+            dispatch({ type: 'DISCARD_EMPTY_STREAM', payload: { agent_id: active.agent_id } })
+          }
+          activeSpeaker = null
+          speakerPartial = false
+        }
+        chunker.pushNotice(error, true, false)
       },
-      onInterrupted: () => {
-        // 流式生成中网络中断: 按序立即应用残余内容
-        chunker.flushNow()
-        partialReceivedRef.current = false
-        groupActiveRef.current = false
-        dispatch({ type: 'FINISH_STREAM' })
-        dispatch({ type: 'MARK_LAST_INCOMPLETE' })
-      },
-      // ========== 群聊回调（保持 SSE 原序） ==========
+      onInterrupted: () => finishTerminal(opts?.interruptedText || ''),
       onSpeakerStart: (info) => {
-        groupActiveRef.current = true
-        partialReceivedRef.current = false
+        activeSpeaker = info
+        speakerPartial = false
         chunker.pushSpeakerStart(info)
       },
       onSpeakerDone: (info) => {
         chunker.pushSpeakerDone(info)
-        partialReceivedRef.current = false
+        if (activeSpeaker?.agent_id === info.agent_id) {
+          activeSpeaker = null
+          speakerPartial = false
+        }
       },
       onTurnDone: () => {
-        // 群聊回合结束:统一 finalize 并恢复输入。
-        partialReceivedRef.current = false
-        groupActiveRef.current = false
+        if (turnTerminated) return
+        turnTerminated = true
+        activeSpeaker = null
+        speakerPartial = false
+        turnPartial = false
         chunker.markDone()
-        // T6: 群聊回合完成提醒
         notifyDesktop()
       },
-      onTitle: (title) => {
-        // 自动命名(首问答命名)
-        dispatch({ type: 'SET_SESSION_TITLE', payload: { sessionId, title } })
-      },
-    })
+      onTitle: (title) => dispatch({ type: 'SET_SESSION_TITLE', payload: { sessionId, title } }),
+    }, { retry: opts?.retry })
   }, [])
 
   /** 停止当前流式生成(中断连接,服务端保存部分内容) */
@@ -531,6 +613,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         inviteMembers,
         kickMember,
         loadMessages,
+        clearCurrent,
         streamMessage,
         stopStream,
       }}

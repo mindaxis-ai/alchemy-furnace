@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alchemy-furnace/server/internal/engineendpoint"
 	"github.com/alchemy-furnace/server/internal/errors"
 	"github.com/alchemy-furnace/server/model"
 	"github.com/google/uuid"
@@ -69,8 +70,8 @@ func newGroupSvcWithCompletion(t *testing.T, replies []string, completionReply s
 	t.Cleanup(engine.server.Close)
 	u1, u2 := uuid.New(), uuid.New()
 	agents := &fakeAgentDao{agents: map[string]*model.DaoAgent{
-		u1.String(): {ID: 1, UUID: u1, Name: "太上老君", Status: "active", Proactivity: 50, ModelName: "test-model"},
-		u2.String(): {ID: 2, UUID: u2, Name: "孙悟空", Status: "active", Proactivity: 90, ModelName: "test-model"},
+		u1.String(): {ID: 1, UUID: u1, Name: "太上老君", Avatar: "/laojun.png", Status: "active", Proactivity: 50, ModelName: "test-model"},
+		u2.String(): {ID: 2, UUID: u2, Name: "孙悟空", Avatar: "/wukong.png", Status: "active", Proactivity: 90, ModelName: "test-model"},
 	}}
 	agentByID := map[uint]*model.DaoAgent{
 		1: agents.agents[u1.String()],
@@ -116,25 +117,196 @@ func TestInactiveGroupMemberStopsTurnBeforeEngine(t *testing.T) {
 		}
 	}
 	var errorCode string
+	var terminal bool
 	svc.RunGroupTurn(context.Background(), s.UUID, "诸位怎么看?", func(event string, payload any) {
 		if event == "error" {
 			data, _ := json.Marshal(payload)
 			var p struct {
 				ErrorCode string `json:"error_code"`
+				Terminal  bool   `json:"terminal"`
 			}
 			_ = json.Unmarshal(data, &p)
 			errorCode = p.ErrorCode
+			terminal = p.Terminal
 		}
 	})
 
 	if errorCode != "service.chat.agent_inactive" {
 		t.Fatalf("error code = %q, want service.chat.agent_inactive", errorCode)
 	}
+	if !terminal {
+		t.Fatal("inactive preflight error must terminate a turn that cannot emit turn_done")
+	}
 	if engine.calls != 0 {
 		t.Fatalf("engine calls = %d, want 0", engine.calls)
 	}
 	if len(chats.messages) != 0 {
 		t.Fatalf("messages saved before authorization: %+v", chats.messages)
+	}
+}
+
+func TestGroupSpeakerLifecycleEventsCarryExplicitIdentity(t *testing.T) {
+	svc, chats, _, s := newGroupSvc(t, []string{"太上老君给出一段足够长且完整的回答", "[PASS]", "[PASS]", "[PASS]"})
+	type identity struct {
+		AgentID     string `json:"agent_id"`
+		AgentName   string `json:"agent_name"`
+		AgentAvatar string `json:"agent_avatar"`
+	}
+	seen := map[string][]identity{}
+	svc.RunGroupTurn(context.Background(), s.UUID, "诸位怎么看?", func(event string, payload any) {
+		if event != "speaker_start" && event != "chunk" && event != "speaker_done" {
+			return
+		}
+		data, _ := json.Marshal(payload)
+		var got identity
+		_ = json.Unmarshal(data, &got)
+		seen[event] = append(seen[event], got)
+	})
+
+	wantAgent := chats.agentByID[1]
+	for _, event := range []string{"speaker_start", "chunk", "speaker_done"} {
+		if len(seen[event]) == 0 {
+			t.Fatalf("missing %s event", event)
+		}
+		for _, got := range seen[event] {
+			if got.AgentID != wantAgent.UUID.String() || got.AgentName != wantAgent.Name || got.AgentAvatar != wantAgent.Avatar {
+				t.Fatalf("%s identity = %+v, want id/name/avatar for current speaker", event, got)
+			}
+		}
+	}
+}
+
+func TestGroupTransportInterruptionTerminatesTurnWithoutCorruptingCompletedSpeakers(t *testing.T) {
+	svc, chats, _, session := newGroupSvc(t, nil)
+	engineCalls := 0
+	abruptEngine := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		engineCalls++
+		w.Header().Set("Content-Type", "text/event-stream")
+		switch engineCalls {
+		case 1:
+			fmt.Fprint(w, "data: {\"content\":\"first speaker completed reply\"}\n\n")
+			fmt.Fprint(w, "data: [DONE]\n\n")
+		case 2:
+			fmt.Fprint(w, "data: {\"content\":\"second speaker partial reply\"}\n\n")
+			// Close without [DONE] to reproduce an upstream transport interruption.
+		default:
+			fmt.Fprint(w, "data: {\"content\":\"unexpected later speaker\"}\n\n")
+			fmt.Fprint(w, "data: [DONE]\n\n")
+		}
+	}))
+	t.Cleanup(abruptEngine.Close)
+	svc.engineBaseURL = engineendpoint.Static(abruptEngine.URL)
+
+	type recordedEvent struct {
+		name    string
+		payload GroupSpeakerPayload
+	}
+	var events []recordedEvent
+	svc.RunGroupTurn(context.Background(), session.UUID, "question for the group", func(event string, payload any) {
+		data, _ := json.Marshal(payload)
+		var speakerPayload GroupSpeakerPayload
+		_ = json.Unmarshal(data, &speakerPayload)
+		events = append(events, recordedEvent{name: event, payload: speakerPayload})
+	})
+
+	if engineCalls != 2 {
+		t.Fatalf("engine calls = %d, want 2 after terminal transport interruption", engineCalls)
+	}
+	for _, event := range events {
+		if event.name == "turn_done" {
+			t.Fatalf("events = %+v, terminal transport interruption must not emit turn_done", events)
+		}
+	}
+	wantInterruptedAgent := chats.agentByID[2]
+	foundTerminalInterruption := false
+	for _, event := range events {
+		if event.name == "error" && event.payload.ErrorCode == "service.chat.stream_interrupted" {
+			foundTerminalInterruption = event.payload.Terminal &&
+				event.payload.AgentID == wantInterruptedAgent.UUID.String() &&
+				event.payload.AgentName == wantInterruptedAgent.Name &&
+				event.payload.AgentAvatar == wantInterruptedAgent.Avatar
+		}
+	}
+	if !foundTerminalInterruption {
+		t.Fatalf("events = %+v, want identity-bearing terminal stream_interrupted error", events)
+	}
+
+	assistantMessages := 0
+	for _, message := range chats.messages {
+		if message.Role == "assistant" {
+			assistantMessages++
+			if message.AgentID == nil || *message.AgentID != 1 || message.Content != "first speaker completed reply" {
+				t.Fatalf("persisted assistant = %+v, want only completed first speaker", message)
+			}
+		}
+	}
+	if assistantMessages != 1 {
+		t.Fatalf("assistant messages = %d, want only the completed speaker persisted", assistantMessages)
+	}
+}
+
+func TestGroupMemberStreamErrorIsNonterminalAndSanitized(t *testing.T) {
+	svc, chats, _, session := newGroupSvc(t, nil)
+	engineCalls := 0
+	memberErrorEngine := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		engineCalls++
+		w.Header().Set("Content-Type", "text/event-stream")
+		if engineCalls == 1 {
+			fmt.Fprint(w, "data: {\"error\":\"raw provider error api_key=must-not-leak\"}\n\n")
+		} else {
+			fmt.Fprint(w, "data: {\"content\":\"[PASS]\"}\n\n")
+		}
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	t.Cleanup(memberErrorEngine.Close)
+	svc.engineBaseURL = engineendpoint.Static(memberErrorEngine.URL)
+
+	var memberError GroupSpeakerPayload
+	turnDone := false
+	svc.RunGroupTurn(context.Background(), session.UUID, "question for the group", func(event string, payload any) {
+		if event == "turn_done" {
+			turnDone = true
+		}
+		if event != "error" {
+			return
+		}
+		data, _ := json.Marshal(payload)
+		_ = json.Unmarshal(data, &memberError)
+	})
+
+	wantAgent := chats.agentByID[1]
+	if memberError.Terminal {
+		t.Fatalf("member error = %+v, ordinary member failures must remain nonterminal", memberError)
+	}
+	if memberError.ErrorCode != "service.chat.stream_unavailable" {
+		t.Fatalf("member error code = %q, want stable stream_unavailable", memberError.ErrorCode)
+	}
+	if strings.Contains(memberError.Content, "raw provider") || strings.Contains(memberError.Content, "must-not-leak") {
+		t.Fatalf("member error leaked raw upstream details: %+v", memberError)
+	}
+	if memberError.AgentID != wantAgent.UUID.String() || memberError.AgentName != wantAgent.Name || memberError.AgentAvatar != wantAgent.Avatar {
+		t.Fatalf("member error identity = %+v, want first speaker identity", memberError)
+	}
+	if !turnDone {
+		t.Fatal("nonterminal member error must allow the group turn to finish")
+	}
+}
+
+func TestRetryGroupTurnReusesPersistedUserMessage(t *testing.T) {
+	svc, chats, _, s := newGroupSvc(t, []string{"[PASS]", "[PASS]"})
+	chats.messages = append(chats.messages, &model.ChatMessage{SessionID: s.ID, Role: "user", Content: "same question"})
+	usersBefore := 1
+
+	svc.RetryGroupTurn(context.Background(), s.UUID, "same question", func(string, any) {})
+
+	usersAfter := 0
+	for _, message := range chats.messages {
+		if message.Role == "user" {
+			usersAfter++
+		}
+	}
+	if usersAfter != usersBefore {
+		t.Fatalf("user message count = %d, want %d after group retry", usersAfter, usersBefore)
 	}
 }
 

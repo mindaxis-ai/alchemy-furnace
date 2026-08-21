@@ -211,6 +211,8 @@ export interface ChatMessage {
   stopped?: boolean
   /** 服务端错误消息（以错误气泡展示） */
   is_error?: boolean
+  /** 仅终止整个传输的错误/不完整回复允许重试；成员级错误不允许。 */
+  retryable?: boolean
   /** 群聊: 发言道人 UUID */
   agent_id?: string
   /** 群聊: 发言道人名(气泡身份头) */

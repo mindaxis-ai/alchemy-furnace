@@ -31,7 +31,7 @@ func (s *sseWriter) ping() {
 }
 
 // runGroupSSE 群聊 SSE 通道:编排器驱动事件流,心跳 goroutine 保活至回合结束
-func (cls *Chat) runGroupSSE(c *gin.Context, sessionUID uuid.UUID, content string) {
+func (cls *Chat) runGroupSSE(c *gin.Context, sessionUID uuid.UUID, content string, retry bool) {
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
 		response.InternalError(c, "当前服务不支持流式响应")
@@ -58,5 +58,9 @@ func (cls *Chat) runGroupSSE(c *gin.Context, sessionUID uuid.UUID, content strin
 		}
 	}()
 
+	if retry {
+		cls.chat.RetryGroupTurn(ctx, sessionUID, content, sw.event)
+		return
+	}
 	cls.chat.RunGroupTurn(ctx, sessionUID, content, sw.event)
 }

@@ -767,7 +767,9 @@
       "group": "A current group member is dormant. History remains available, but new messages are disabled."
     },
     "stream": {
-      "retry": "Retry"
+      "retry": "Retry",
+      "interrupted": "The connection ended before this response completed. Retry to start a new attempt.",
+      "retryBoundary": "New attempt after an interrupted group turn; completed replies remain above."
     },
     "input": {
       "messageLabel": "Message",

@@ -2,12 +2,14 @@ package chat
 
 import (
 	"context"
+	stderrors "errors"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/alchemy-furnace/server/internal/context/contextutil"
 	ierr "github.com/alchemy-furnace/server/internal/errors"
+	chatservice "github.com/alchemy-furnace/server/internal/service/chat_service"
 	"github.com/alchemy-furnace/server/server/http/request"
 	"github.com/alchemy-furnace/server/server/http/response"
 	"github.com/gin-gonic/gin"
@@ -21,6 +23,7 @@ import (
 // sseChatRequest SSE 流式对话请求体
 type sseChatRequest struct {
 	Content string `json:"content"` // 用户问题
+	Retry   bool   `json:"retry"`   // 重试既有用户消息，不重复落库
 }
 
 // SSEChat 标准 SSE 流式对话(RAW handler,不经 Wrapper,自行写出标准 SSE 事件)
@@ -73,12 +76,12 @@ func (cls *Chat) SSEChat(c *gin.Context) {
 	}
 	// 群聊 Type=group 走专门通道(编排器驱动,带心跳保活)
 	if session.Type == model.SessionTypeGroup {
-		cls.runGroupSSE(c, sessionUID, content)
+		cls.runGroupSSE(c, sessionUID, content, body.Retry)
 		return
 	}
 	// 群聊 AgentID=nil 走单聊入口视为错误(防御性兜底)
 	if session.AgentID == nil {
-		sseWriteEvent(w, flusher, "error", ssePayload{Content: "该会话不支持单聊通道"})
+		sseWriteEvent(w, flusher, "error", ssePayload{Content: "该会话不支持单聊通道", Terminal: true})
 		return
 	}
 	agentID := *session.AgentID
@@ -93,14 +96,28 @@ func (cls *Chat) SSEChat(c *gin.Context) {
 	// 加载/合成道人的语言模式(系统提示词)
 	pattern, err := cls.chat.GetOrBuildPattern(ctx, agentID)
 	if err != nil {
-		sseWriteEvent(w, flusher, "error", ssePayload{Content: "化丹为性失败: " + err.Error()})
+		sseWriteEvent(w, flusher, "error", ssePayload{Content: "暂时无法开始论道，请稍后重试", ErrorCode: "service.chat.stream_unavailable", Terminal: true})
 		return
 	}
 
-	// 保存用户消息到数据库
-	if _, err := cls.chat.SaveMessage(ctx, sessionID, "user", content); err != nil {
-		sseWriteEvent(w, flusher, "error", ssePayload{Content: "保存消息失败"})
-		return
+	var recentMessages []*model.ChatMessage
+	if body.Retry {
+		// 重试复用最近一次同内容用户消息，避免前端重发导致本地与数据库各多一行。
+		_, recentMessages, err = cls.chat.GetMessages(ctx, sessionUID, 1, 20)
+		if err != nil {
+			sseWriteEvent(w, flusher, "error", ssePayload{Content: "获取历史消息失败", ErrorCode: "service.chat.retry_unavailable", Terminal: true})
+			return
+		}
+		if !canRetryUserMessage(recentMessages, content) {
+			sseWriteEvent(w, flusher, "error", ssePayload{Content: "无法重试该消息，请重新发送", ErrorCode: "service.chat.retry_unavailable", Terminal: true})
+			return
+		}
+	} else {
+		// 新回合才保存用户消息。
+		if _, err := cls.chat.SaveMessage(ctx, sessionID, "user", content); err != nil {
+			sseWriteEvent(w, flusher, "error", ssePayload{Content: "保存消息失败", ErrorCode: "service.chat.stream_unavailable", Terminal: true})
+			return
+		}
 	}
 
 	zap.L().Info("[炼丹炉] 收到论道问题",
@@ -110,10 +127,12 @@ func (cls *Chat) SSEChat(c *gin.Context) {
 		zap.String("content", content))
 
 	// 获取历史消息(最近 20 条,用于上下文)
-	_, recentMessages, err := cls.chat.GetMessages(ctx, sessionUID, 1, 20)
-	if err != nil {
-		sseWriteEvent(w, flusher, "error", ssePayload{Content: "获取历史消息失败"})
-		return
+	if !body.Retry {
+		_, recentMessages, err = cls.chat.GetMessages(ctx, sessionUID, 1, 20)
+		if err != nil {
+			sseWriteEvent(w, flusher, "error", ssePayload{Content: "获取历史消息失败", ErrorCode: "service.chat.stream_unavailable", Terminal: true})
+			return
+		}
 	}
 
 	// 构建消息列表(OpenAI 格式,首条为合成后的系统提示词)
@@ -172,18 +191,27 @@ func (cls *Chat) SSEChat(c *gin.Context) {
 
 func sseErrorPayload(err ierr.Error, sessionLookup bool) ssePayload {
 	if sessionLookup && err.IsType(ierr.ErrorTypeRecordNotFound) {
-		return ssePayload{Content: "会话不存在或已删除", ErrorCode: "service.chat.session_not_found"}
+		return ssePayload{Content: "会话不存在或已删除", ErrorCode: "service.chat.session_not_found", Terminal: true}
 	}
 	switch err.GetCode() {
 	case "service.chat.agent_inactive":
-		return ssePayload{Content: "道人已停用", ErrorCode: err.GetCode()}
+		return ssePayload{Content: "道人已停用", ErrorCode: err.GetCode(), Terminal: true}
 	case "service.chat.agent_not_found":
-		return ssePayload{Content: "道人不存在", ErrorCode: err.GetCode()}
+		return ssePayload{Content: "道人不存在", ErrorCode: err.GetCode(), Terminal: true}
 	case "service.chat.model_unavailable":
-		return ssePayload{Content: "道人使用的模型不可用", ErrorCode: err.GetCode()}
+		return ssePayload{Content: "道人使用的模型不可用", ErrorCode: err.GetCode(), Terminal: true}
 	default:
-		return ssePayload{Content: "暂时无法开始论道，请稍后重试", ErrorCode: "service.chat.stream_unavailable"}
+		return ssePayload{Content: "暂时无法开始论道，请稍后重试", ErrorCode: "service.chat.stream_unavailable", Terminal: true}
 	}
+}
+
+func canRetryUserMessage(messages []*model.ChatMessage, content string) bool {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "user" {
+			return messages[i].Content == content
+		}
+	}
+	return false
 }
 
 // finishSSEStream 处理 StreamChat 正常收尾: done / error / 取消(恰好遇完成按 done 处理)
@@ -203,8 +231,15 @@ func (cls *Chat) finishSSEStream(ctx context.Context, sessionUID uuid.UUID, sess
 			zap.Uint("session_id", sessionID), zap.Int("partial_length", len(res.full)))
 
 	case res.err != nil:
-		// 结构化中文错误(模型凭证无效 / 引擎超时 / 引擎异常等)
-		sseWriteEvent(w, flusher, "error", ssePayload{Content: res.err.Error()})
+		var interrupted *chatservice.StreamInterruptedError
+		if stderrors.As(res.err, &interrupted) {
+			sseWriteEvent(w, flusher, "error", ssePayload{
+				Content: interrupted.Error(), ErrorCode: interrupted.StreamErrorCode(), Terminal: true,
+			})
+			return
+		}
+		// 未知上游错误不越过 HTTP 边界，避免原始 provider/凭证细节进入客户端。
+		sseWriteEvent(w, flusher, "error", ssePayload{Content: "语言引擎服务异常，请稍后重试", ErrorCode: "service.chat.stream_unavailable", Terminal: true})
 
 	default:
 		if res.full != "" {

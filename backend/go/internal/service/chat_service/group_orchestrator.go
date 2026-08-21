@@ -4,6 +4,7 @@ package chat_service
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 	"strings"
 	"unicode/utf8"
@@ -29,6 +30,7 @@ type GroupSpeakerPayload struct {
 	Mentions    model.JSONMap `json:"mentions,omitempty"`
 	Content     string        `json:"content,omitempty"`
 	ErrorCode   string        `json:"error_code,omitempty"`
+	Terminal    bool          `json:"terminal"`
 }
 
 // GroupTurnDonePayload turn_done 事件数据
@@ -44,14 +46,24 @@ type GroupTitlePayload struct {
 // RunGroupTurn 群聊回合编排:落用户消息→≤3轮逐道人发言→自动命名→turn_done
 // 单道人失败以 error 事件表达并继续;ctx 取消时保存半截发言并推 stopped
 func (s *Chat) RunGroupTurn(ctx context.Context, sessionUID uuid.UUID, content string, emit func(event string, payload any)) {
+	s.runGroupTurn(ctx, sessionUID, content, false, emit)
+}
+
+// RetryGroupTurn 重试最近一个同内容用户回合。既有 assistant 回复保留为上一次尝试的
+// 历史，本次不会重复落用户消息。
+func (s *Chat) RetryGroupTurn(ctx context.Context, sessionUID uuid.UUID, content string, emit func(event string, payload any)) {
+	s.runGroupTurn(ctx, sessionUID, content, true, emit)
+}
+
+func (s *Chat) runGroupTurn(ctx context.Context, sessionUID uuid.UUID, content string, retry bool, emit func(event string, payload any)) {
 	session, err := s.chat.TakeSessionByUUID(ctx, sessionUID)
 	if err != nil {
-		emit("error", GroupSpeakerPayload{Content: "获取会话信息失败"})
+		emit("error", GroupSpeakerPayload{Content: "会话不存在或已删除", ErrorCode: "service.chat.session_not_found", Terminal: true})
 		return
 	}
 	members, err := s.chat.FindMembers(ctx, session.ID)
 	if err != nil {
-		emit("error", GroupSpeakerPayload{Content: "获取群成员失败"})
+		emit("error", GroupSpeakerPayload{Content: "获取群成员失败", ErrorCode: "service.chat.stream_unavailable", Terminal: true})
 		return
 	}
 	memberCredentials := make(map[uint]*credential.ModelCredentials, len(members))
@@ -60,7 +72,7 @@ func (s *Chat) RunGroupTurn(ctx context.Context, sessionUID uuid.UUID, content s
 		if validationErr != nil {
 			emit("error", GroupSpeakerPayload{
 				AgentID: member.Agent.UUID.String(), AgentName: member.Agent.Name,
-				Content: validationErr.Error(), ErrorCode: validationErr.GetCode(),
+				AgentAvatar: member.Agent.Avatar, Content: validationErr.Error(), ErrorCode: validationErr.GetCode(), Terminal: true,
 			})
 			return
 		}
@@ -73,14 +85,22 @@ func (s *Chat) RunGroupTurn(ctx context.Context, sessionUID uuid.UUID, content s
 		memberNames = append(memberNames, m.Agent.Name)
 	}
 
-	// 落用户消息(含@解析与提及落库)
+	// 新回合落用户消息；重试则复用最近一次同内容用户消息。
 	userMentionedNames, userPinged := ParseMentions(content, memberNames)
-	if err := s.chat.SaveMessage(ctx, &model.ChatMessage{
-		SessionID: session.ID, Role: "user", Content: content,
-		Mentions: buildMentionsJSON(members, userMentionedNames, userPinged),
-	}); err != nil {
-		emit("error", GroupSpeakerPayload{Content: "保存消息失败"})
-		return
+	if retry {
+		_, history, historyErr := s.chat.FindMessages(ctx, session.ID, 1, 20)
+		if historyErr != nil || !canRetryGroupUserMessage(history, content) {
+			emit("error", GroupSpeakerPayload{Content: "无法重试该消息，请重新发送", ErrorCode: "service.chat.retry_unavailable", Terminal: true})
+			return
+		}
+	} else {
+		if err := s.chat.SaveMessage(ctx, &model.ChatMessage{
+			SessionID: session.ID, Role: "user", Content: content,
+			Mentions: buildMentionsJSON(members, userMentionedNames, userPinged),
+		}); err != nil {
+			emit("error", GroupSpeakerPayload{Content: "保存消息失败", ErrorCode: "service.chat.stream_unavailable", Terminal: true})
+			return
+		}
 	}
 
 	// 必答队列(按被@顺序):用户@的进第 1 轮
@@ -125,9 +145,12 @@ func (s *Chat) RunGroupTurn(ctx context.Context, sessionUID uuid.UUID, content s
 				return
 			}
 			mustAnswer := inMust[m.AgentID]
-			spoke, full, mentionedNames, _ := s.letAgentSpeak(ctx, session, m, members, memberNames, memberCredentials[m.AgentID], mustAnswer, emit)
+			spoke, full, mentionedNames, _, terminal := s.letAgentSpeak(ctx, session, m, members, memberNames, memberCredentials[m.AgentID], mustAnswer, emit)
 			if ctx.Err() != nil {
 				emit("stopped", struct{}{})
+				return
+			}
+			if terminal {
 				return
 			}
 			if !spoke {
@@ -174,6 +197,15 @@ func (s *Chat) RunGroupTurn(ctx context.Context, sessionUID uuid.UUID, content s
 		zap.String("session_uuid", sessionUID.String()), zap.Int("spoke", totalSpoke))
 }
 
+func canRetryGroupUserMessage(messages []*model.ChatMessage, content string) bool {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "user" {
+			return messages[i].Content == content
+		}
+	}
+	return false
+}
+
 // buildMentionsJSON 名字列表 → mentions JSON({"agents":[uuid…],"user":bool})
 func buildMentionsJSON(members []*model.SessionMember, names []string, user bool) model.JSONMap {
 	uuids := make([]string, 0, len(names))
@@ -189,18 +221,18 @@ func buildMentionsJSON(members []*model.SessionMember, names []string, user bool
 
 // letAgentSpeak 单个道人的一次发言机会
 // 沉默([PASS])不开气泡不落库;单道人失败推 error 事件并返回 spoke=false
-func (s *Chat) letAgentSpeak(ctx context.Context, session *model.ChatSession, m *model.SessionMember, members []*model.SessionMember, memberNames []string, creds *credential.ModelCredentials, mustAnswer bool, emit func(event string, payload any)) (spoke bool, full string, mentionedNames []string, pingedUser bool) {
+func (s *Chat) letAgentSpeak(ctx context.Context, session *model.ChatSession, m *model.SessionMember, members []*model.SessionMember, memberNames []string, creds *credential.ModelCredentials, mustAnswer bool, emit func(event string, payload any)) (spoke bool, full string, mentionedNames []string, pingedUser bool, terminal bool) {
 	pattern, err := s.pattern.GetOrBuildPattern(ctx, m.AgentID)
 	if err != nil {
-		emit("error", GroupSpeakerPayload{AgentID: m.Agent.UUID.String(), AgentName: m.Agent.Name, Content: "化丹为性失败: " + err.Error()})
-		return false, "", nil, false
+		emit("error", GroupSpeakerPayload{AgentID: m.Agent.UUID.String(), AgentName: m.Agent.Name, AgentAvatar: m.Agent.Avatar, Content: "化丹为性失败，请稍后重试"})
+		return false, "", nil, false, false
 	}
 	systemPrompt := BuildGroupSystemPrompt(pattern.SystemPrompt, m.Agent.Name, m.Agent.Proactivity, memberNames, mustAnswer)
 
 	_, history, err := s.chat.FindMessages(ctx, session.ID, 1, 20)
 	if err != nil {
-		emit("error", GroupSpeakerPayload{AgentID: m.Agent.UUID.String(), AgentName: m.Agent.Name, Content: "获取历史消息失败"})
-		return false, "", nil, false
+		emit("error", GroupSpeakerPayload{AgentID: m.Agent.UUID.String(), AgentName: m.Agent.Name, AgentAvatar: m.Agent.Avatar, Content: "获取历史消息失败"})
+		return false, "", nil, false, false
 	}
 	messages := BuildGroupMessages(systemPrompt, history)
 
@@ -209,7 +241,14 @@ func (s *Chat) letAgentSpeak(ctx context.Context, session *model.ChatSession, m 
 	decided := false
 	passed := false
 	started := false
-	chunkForward := func(chunk string) { emit("chunk", GroupSpeakerPayload{Content: chunk}) }
+	identityPayload := func() GroupSpeakerPayload {
+		return GroupSpeakerPayload{AgentID: m.Agent.UUID.String(), AgentName: m.Agent.Name, AgentAvatar: m.Agent.Avatar}
+	}
+	chunkForward := func(chunk string) {
+		payload := identityPayload()
+		payload.Content = chunk
+		emit("chunk", payload)
+	}
 
 	// 实时剥前缀:把 LLM 误加的【name】prefix 在 streaming 阶段就丢弃,前端无需重渲染
 	// 实现:累计到一个完整「【xxx】」或判定非 prefix 后再决定
@@ -254,7 +293,7 @@ func (s *Chat) letAgentSpeak(ctx context.Context, session *model.ChatSession, m 
 				passed = true
 			} else {
 				started = true
-				emit("speaker_start", GroupSpeakerPayload{AgentID: m.Agent.UUID.String(), AgentName: m.Agent.Name, AgentAvatar: m.Agent.Avatar})
+				emit("speaker_start", identityPayload())
 				strippedForward(probe.String())
 			}
 		}
@@ -267,7 +306,7 @@ func (s *Chat) letAgentSpeak(ctx context.Context, session *model.ChatSession, m 
 			passed = true
 		} else if probe.Len() > 0 {
 			started = true
-			emit("speaker_start", GroupSpeakerPayload{AgentID: m.Agent.UUID.String(), AgentName: m.Agent.Name, AgentAvatar: m.Agent.Avatar})
+			emit("speaker_start", identityPayload())
 			strippedForward(probe.String())
 		}
 	}
@@ -281,12 +320,22 @@ func (s *Chat) letAgentSpeak(ctx context.Context, session *model.ChatSession, m 
 				zap.L().Warn("[炼丹炉] 群聊半截发言落库失败", zap.Error(err))
 			}
 		}
-		return false, fullContent, nil, false
+		return false, fullContent, nil, false, false
 	case streamErr != nil:
-		emit("error", GroupSpeakerPayload{AgentID: m.Agent.UUID.String(), AgentName: m.Agent.Name, Content: streamErr.Error()})
-		return false, "", nil, false
+		payload := identityPayload()
+		var interrupted *StreamInterruptedError
+		payload.Terminal = stderrors.As(streamErr, &interrupted)
+		if payload.Terminal {
+			payload.Content = interrupted.Error()
+			payload.ErrorCode = interrupted.StreamErrorCode()
+		} else {
+			payload.Content = "语言引擎服务异常，请稍后重试"
+			payload.ErrorCode = "service.chat.stream_unavailable"
+		}
+		emit("error", payload)
+		return false, "", nil, false, payload.Terminal
 	case passed || fullContent == "":
-		return false, "", nil, false // 沉默/空内容:零痕迹
+		return false, "", nil, false, false // 沉默/空内容:零痕迹
 	}
 
 	fullContent = StripSpeakerPrefix(fullContent)
@@ -294,14 +343,14 @@ func (s *Chat) letAgentSpeak(ctx context.Context, session *model.ChatSession, m 
 	mentions := buildMentionsJSON(members, mentionedNames, pingedUser)
 	msg, err := s.SaveAgentMessage(ctx, session.ID, m.AgentID, "assistant", fullContent, mentions)
 	if err != nil {
-		emit("error", GroupSpeakerPayload{AgentID: m.Agent.UUID.String(), AgentName: m.Agent.Name, Content: "保存消息失败"})
-		return false, "", nil, false
+		emit("error", GroupSpeakerPayload{AgentID: m.Agent.UUID.String(), AgentName: m.Agent.Name, AgentAvatar: m.Agent.Avatar, Content: "保存消息失败"})
+		return false, "", nil, false, false
 	}
 	emit("speaker_done", GroupSpeakerPayload{
-		AgentID: m.Agent.UUID.String(), AgentName: m.Agent.Name,
+		AgentID: m.Agent.UUID.String(), AgentName: m.Agent.Name, AgentAvatar: m.Agent.Avatar,
 		MessageID: msg.UUID.String(), Mentions: mentions,
 	})
-	return true, fullContent, mentionedNames, pingedUser
+	return true, fullContent, mentionedNames, pingedUser, false
 }
 
 // generateSessionTitle 生成会话标题并落库;title 已非空(用户手改)放弃;任何失败返回 ""

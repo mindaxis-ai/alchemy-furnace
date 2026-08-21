@@ -23,6 +23,11 @@ export function listSessions(params: ListParams = {}): Promise<PagedList<ChatSes
   })
 }
 
+/** 按 UUID 直接获取会话元数据（深链不依赖会话列表分页）。 */
+export function getSession(sessionId: string): Promise<ChatSession> {
+  return get<ChatSession>(`/chat/sessions/${sessionId}`)
+}
+
 /**
  * 创建会话
  */
@@ -68,22 +73,43 @@ export function removeMember(sessionId: string, agentId: string): Promise<{ memb
   return del<{ members: GroupMember[] }>(`/chat/sessions/${sessionId}/members/${agentId}`)
 }
 
+export interface StreamSpeakerInfo {
+  agent_id: string
+  agent_name: string
+  agent_avatar?: string
+}
+
+export interface StreamChunk extends Partial<StreamSpeakerInfo> {
+  content: string
+}
+
+export interface StreamErrorInfo extends Partial<StreamSpeakerInfo> {
+  error_code?: string
+  /** false=群成员本轮失败但流继续；true=整个请求终止。 */
+  terminal: boolean
+}
+
+export interface StreamOptions {
+  /** 重试最近一次同内容用户消息；服务端不得重复保存用户行。 */
+  retry?: boolean
+}
+
 /** 流式对话回调 */
 export interface StreamHandlers {
   /** 收到内容片段 */
-  onChunk: (content: string) => void
+  onChunk: (chunk: StreamChunk) => void
   /** 流式输出完成（完整回复已入库） */
   onDone: () => void
   /** 已被本地停止（abort；此前内容服务端已保存） */
   onStopped: () => void
   /** 服务端错误（可读中文描述），需恢复输入状态 */
-  onError: (error: string) => void
+  onError: (error: string, info: StreamErrorInfo) => void
   /** 流式生成中网络中断（已收到部分内容，该条回复可能不完整） */
   onInterrupted: () => void
   /** 群聊: 某道人开始发言(气泡身份头) */
-  onSpeakerStart?: (info: { agent_id: string; agent_name: string; agent_avatar?: string }) => void
+  onSpeakerStart?: (info: StreamSpeakerInfo) => void
   /** 群聊: 某道人发言完毕(已入库) */
-  onSpeakerDone?: (info: { agent_id: string; message_id?: string; mentions?: ChatMessage['mentions'] }) => void
+  onSpeakerDone?: (info: StreamSpeakerInfo & { message_id?: string; mentions?: ChatMessage['mentions'] }) => void
   /** 群聊: 回合结束(spoke=本回合发言总数) */
   onTurnDone?: (info: { spoke: number }) => void
   /** 自动命名成功(单/群聊) */
@@ -108,18 +134,20 @@ export function stopStream(): void {
 export async function streamChatMessage(
   sessionId: string,
   content: string,
-  handlers: StreamHandlers
+  handlers: StreamHandlers,
+  options: StreamOptions = {},
 ): Promise<void> {
   stopStream()
   const controller = new AbortController()
   activeController = controller
 
-  /** 是否已收到任何内容片段 */
-  let received = false
-  /** 是否已收到终止事件（done/error） */
-  let finished = false
-  /** 是否已向上报告过错误；群聊成员失败后仍需继续读取 turn_done。 */
-  let reportedError = false
+  /** terminal error / done / turn_done / stopped / transport interruption 恰好交付一次。 */
+  let terminalDelivered = false
+  const terminate = (callback: () => void) => {
+    if (terminalDelivered) return
+    terminalDelivered = true
+    callback()
+  }
 
   try {
     const response = await fetch(buildApiUrl(`/chat/sse/${sessionId}`), {
@@ -129,13 +157,13 @@ export async function streamChatMessage(
         'Content-Type': 'application/json',
         ...authHeaders(),
       },
-      body: JSON.stringify({ content }),
+      body: JSON.stringify(options.retry ? { content, retry: true } : { content }),
       signal: controller.signal,
     })
 
     if (!response.ok || !response.body) {
       const errorData = await response.json().catch(() => ({}))
-      handlers.onError(errorData.message || `请求失败（HTTP ${response.status}）`)
+      terminate(() => handlers.onError(errorData.message || `请求失败（HTTP ${response.status}）`, { terminal: true }))
       return
     }
 
@@ -160,22 +188,23 @@ export async function streamChatMessage(
         // 忽略无法解析的 data
       }
 
+      if (terminalDelivered) return
       if (type === 'chunk' && typeof payload.content === 'string') {
-        received = true
-        handlers.onChunk(payload.content)
+        handlers.onChunk(payload as unknown as StreamChunk)
       } else if (type === 'done') {
-        finished = true
-        handlers.onDone()
+        terminate(handlers.onDone)
       } else if (type === 'error') {
-        reportedError = true
-        handlers.onError(typeof payload.content === 'string' ? payload.content : '论道出错了')
+        const terminal = payload.terminal !== false
+        const info = { ...payload, terminal } as unknown as StreamErrorInfo
+        const report = () => handlers.onError(typeof payload.content === 'string' ? payload.content : '论道出错了', info)
+        if (terminal) terminate(report)
+        else report()
       } else if (type === 'speaker_start') {
-        handlers.onSpeakerStart?.(payload as unknown as { agent_id: string; agent_name: string; agent_avatar?: string })
+        handlers.onSpeakerStart?.(payload as unknown as StreamSpeakerInfo)
       } else if (type === 'speaker_done') {
-        handlers.onSpeakerDone?.(payload as unknown as { agent_id: string; message_id?: string; mentions?: ChatMessage['mentions'] })
+        handlers.onSpeakerDone?.(payload as unknown as StreamSpeakerInfo & { message_id?: string; mentions?: ChatMessage['mentions'] })
       } else if (type === 'turn_done') {
-        finished = true
-        handlers.onTurnDone?.(payload as unknown as { spoke: number })
+        terminate(() => handlers.onTurnDone?.(payload as unknown as { spoke: number }))
       } else if (type === 'title' && typeof payload.title === 'string') {
         // 单/群聊 title 事件统一 {"title": "..."} 形态
         handlers.onTitle?.(payload.title)
@@ -202,28 +231,18 @@ export async function streamChatMessage(
           dataLines.push(line.slice('data:'.length).trimStart())
         }
       }
-      if (finished) break
+      if (terminalDelivered) break
     }
 
     // 流结束但未收到终止事件：连接中断
-    if (!finished && !reportedError) {
-      if (received) {
-        handlers.onInterrupted()
-      } else {
-        handlers.onError('连接中断，请重试')
-      }
-    }
+    terminate(handlers.onInterrupted)
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
       // 本地停止：服务端已保存部分内容，前端落定"已停止"
-      handlers.onStopped()
+      terminate(handlers.onStopped)
       return
     }
-    if (received) {
-      handlers.onInterrupted()
-    } else {
-      handlers.onError(error instanceof Error ? error.message : '网络请求失败，请检查网络连接')
-    }
+    terminate(handlers.onInterrupted)
   } finally {
     if (activeController === controller) {
       activeController = null

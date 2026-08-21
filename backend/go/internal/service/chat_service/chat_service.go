@@ -11,7 +11,6 @@ import (
 	stderrors "errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -37,6 +36,14 @@ type Chat struct {
 	creds         credential.Resolver
 	engineBaseURL engineendpoint.Provider
 }
+
+// StreamInterruptedError 表示上游 SSE 未按协议完整结束。它只暴露稳定、安全的
+// 客户端语义；底层读取错误仅写服务端日志，避免泄露传输或凭证细节。
+type StreamInterruptedError struct{}
+
+func (*StreamInterruptedError) Error() string { return "语言引擎连接中断，请重试" }
+
+func (*StreamInterruptedError) StreamErrorCode() string { return "service.chat.stream_interrupted" }
 
 // New 构造固定引擎地址的对话业务实例（Web 与单元测试兼容）。
 func New(chat dao.Chat, agent dao.Agent, pattern service.LanguagePatternProvider, creds credential.Resolver, engineBaseURL string) *Chat {
@@ -292,18 +299,13 @@ func (s *Chat) StreamChat(ctx context.Context, messages []map[string]string, cre
 
 		if readErr != nil {
 			if readErr == io.EOF {
-				// 流正常结束(未收到 [DONE] 也按完成处理)
-				return full.String(), false, nil
+				return full.String(), false, &StreamInterruptedError{}
 			}
 			if ctx.Err() != nil || stderrors.Is(readErr, context.Canceled) {
 				return full.String(), true, nil
 			}
-			var netErr net.Error
-			if stderrors.As(readErr, &netErr) && netErr.Timeout() {
-				return full.String(), false, stderrors.New("语言引擎响应超时，请稍后重试")
-			}
 			zap.L().Warn("[炼丹炉] SSE 流读取异常", zap.Error(readErr))
-			return full.String(), false, nil
+			return full.String(), false, &StreamInterruptedError{}
 		}
 	}
 }

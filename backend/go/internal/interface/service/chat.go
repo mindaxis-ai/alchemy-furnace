@@ -77,4 +77,7 @@ type Chat interface {
 	// RunGroupTurn 群聊回合编排:落用户消息→≤3轮逐道人发言→自动命名→turn_done
 	// emit 由 handler 提供(带锁 + 心跳)
 	RunGroupTurn(ctx context.Context, sessionUID uuid.UUID, content string, emit func(event string, payload any))
+
+	// RetryGroupTurn 重试最近一个同内容用户回合，不重复保存用户消息。
+	RetryGroupTurn(ctx context.Context, sessionUID uuid.UUID, content string, emit func(event string, payload any))
 }

@@ -202,6 +202,7 @@ func sseWriteComment(w http.ResponseWriter, flusher http.Flusher, comment string
 type ssePayload struct {
 	Content   string `json:"content,omitempty"`
 	ErrorCode string `json:"error_code,omitempty"`
+	Terminal  bool   `json:"terminal,omitempty"`
 }
 
 // streamResult StreamChat goroutine 的收尾结果

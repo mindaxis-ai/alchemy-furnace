@@ -79,6 +79,7 @@ func Register(r *gin.Engine, isDesktop bool, guards ...gin.HandlerFunc) error {
 	{
 		chatGroup.POST("/sessions", router.Wrapper(chatHandler.CreateSession))
 		chatGroup.GET("/sessions", router.WrapperPage(chatHandler.ListSessions))
+		chatGroup.GET("/sessions/:uuid", router.Wrapper(chatHandler.GetSession))
 		chatGroup.GET("/sessions/:uuid/messages", router.WrapperPage(chatHandler.GetMessages))
 		chatGroup.PUT("/sessions/:uuid", router.Wrapper(chatHandler.UpdateSession))
 		chatGroup.POST("/sessions/:uuid/members", router.Wrapper(chatHandler.AddMembers))

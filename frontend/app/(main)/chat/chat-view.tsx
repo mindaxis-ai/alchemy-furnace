@@ -71,7 +71,7 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
   const t = useTranslations('chatView')
   const launchFlow = useChatLaunchFlow()
 
-  const { state: chatState, dispatch, fetchSessions, loadMessages, streamMessage, renameSession, stopStream } = useChat()
+  const { state: chatState, fetchSessions, loadMessages, clearCurrent, streamMessage, renameSession, stopStream } = useChat()
   const { state: agentState, fetchAgents } = useAgent()
 
   const [input, setInput] = useState('')
@@ -140,9 +140,9 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
     if (sessionId) {
       loadMessages(sessionId)
     } else {
-      dispatch({ type: 'CLEAR_CURRENT' })
+      clearCurrent()
     }
-  }, [sessionId, loadMessages, dispatch])
+  }, [sessionId, loadMessages, clearCurrent])
 
   // 自动滚动到底部 — 仅当用户"粘底"时才跟随,避免抢用户滚轮
   // 流式输出时 messages 每 ~30ms 变一次,如果不判断 stickyToBottom,用户的滚轮会被
@@ -172,7 +172,7 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
     // 发送时启用粘底(用户刚发了消息,理应看到 AI 回复)
     stickyToBottomRef.current = true
     setShowJumpToBottom(false)
-    await streamMessage(currentSession.id, content)
+    await streamMessage(currentSession.id, content, { interruptedText: t('stream.interrupted') })
   }
 
   const retryMessage = async (messageIndex: number) => {
@@ -181,7 +181,11 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
       if (messages[i].role === 'user') {
         stickyToBottomRef.current = true
         setShowJumpToBottom(false)
-        await streamMessage(currentSession.id, messages[i].content)
+        await streamMessage(currentSession.id, messages[i].content, {
+          retry: true,
+          interruptedText: t('stream.interrupted'),
+          retryBoundaryText: currentSession.type === 'group' ? t('stream.retryBoundary') : undefined,
+        })
         return
       }
     }
@@ -567,7 +571,7 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
                 <div className="flex items-center gap-2 max-w-[85%] md:max-w-[70%] px-4 py-2.5 rounded-2xl bg-primary/10 border border-primary/30 text-primary">
                   <AlertCircle className="w-4 h-4 flex-shrink-0" />
                   <p className="text-xs leading-relaxed">{message.content}</p>
-                  {!readOnlyReason && (
+                  {message.retryable && !readOnlyReason && (
                     <button
                       type="button"
                       onClick={() => { void retryMessage(messageIndex) }}
@@ -584,7 +588,7 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
                 message={message}
                 streaming={chatState.streaming && message.role === 'assistant' && message.id.startsWith('stream-')}
                 members={currentSession.members}
-                onRetry={message.incomplete && !readOnlyReason ? () => { void retryMessage(messageIndex) } : undefined}
+                onRetry={message.incomplete && message.retryable && !readOnlyReason ? () => { void retryMessage(messageIndex) } : undefined}
               />
             )
           ))}
