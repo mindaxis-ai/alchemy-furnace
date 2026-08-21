@@ -123,13 +123,17 @@ func (d *ChatDao) TakeLatestUserMessage(ctx context.Context, sessionID uint) (*m
 
 // SaveMessage 写入消息并刷新所属会话 updated_at
 func (d *ChatDao) SaveMessage(ctx context.Context, message *model.ChatMessage) errors.Error {
-	if err := GetDB().WithContext(ctx).Create(message).Error; err != nil {
-		return errors.ErrorServerInternalError("dao.chat.save_message")
-	}
-	if err := GetDB().WithContext(ctx).Model(&model.ChatSession{}).
-		Where("id = ?", message.SessionID).
-		Update("updated_at", time.Now()).Error; err != nil {
-		return errors.ErrorServerInternalError("dao.chat.save_message_touch")
+	failureCode := "dao.chat.save_message"
+	if err := GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(message).Error; err != nil {
+			return err
+		}
+		failureCode = "dao.chat.save_message_touch"
+		return tx.Model(&model.ChatSession{}).
+			Where("id = ?", message.SessionID).
+			Update("updated_at", time.Now()).Error
+	}); err != nil {
+		return errors.ErrorServerInternalError(failureCode)
 	}
 	return nil
 }

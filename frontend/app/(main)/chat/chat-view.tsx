@@ -71,7 +71,7 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
   const t = useTranslations('chatView')
   const launchFlow = useChatLaunchFlow()
 
-  const { state: chatState, fetchSessions, loadMessages, clearCurrent, streamMessage, renameSession, stopStream } = useChat()
+  const { state: chatState, dispatch, fetchSessions, loadMessages, clearCurrent, streamMessage, renameSession, stopStream } = useChat()
   const { state: agentState, fetchAgents } = useAgent()
 
   const [input, setInput] = useState('')
@@ -80,6 +80,7 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesScrollRef = useRef<HTMLDivElement>(null)
   const providerRequestRef = useRef(0)
+  const recoveryInFlightRef = useRef<Set<string>>(new Set())
   /** 是否粘底(用户当前在底部附近)。ref 而非 state:scroll 事件高频触发,避免触发 re-render */
   const stickyToBottomRef = useRef(true)
   /** 「回到底部」浮按钮显示状态 */
@@ -177,21 +178,30 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
 
   const retryMessage = async (messageIndex: number) => {
     if (!currentSession || chatState.streaming || readOnlyReason) return
-    const recovery = messages[messageIndex]?.recovery || 'none'
+    const recoveryMessage = messages[messageIndex]
+    if (!recoveryMessage) return
+    const recovery = recoveryMessage.recovery || 'none'
     if (recovery === 'none') return
+    if (recoveryInFlightRef.current.has(recoveryMessage.id)) return
+    recoveryInFlightRef.current.add(recoveryMessage.id)
+    dispatch({ type: 'CONSUME_RECOVERY', payload: { messageId: recoveryMessage.id } })
     const persistedRetry = recovery === 'persisted_retry'
-    for (let i = messageIndex - 1; i >= 0; i -= 1) {
-      if (messages[i].role === 'user') {
-        stickyToBottomRef.current = true
-        setShowJumpToBottom(false)
-        await streamMessage(currentSession.id, messages[i].content, {
-          retry: persistedRetry,
-          reuseUserMessage: true,
-          interruptedText: t('stream.interrupted'),
-          retryBoundaryText: currentSession.type === 'group' && persistedRetry ? t('stream.retryBoundary') : undefined,
-        })
-        return
+    try {
+      for (let i = messageIndex - 1; i >= 0; i -= 1) {
+        if (messages[i].role === 'user') {
+          stickyToBottomRef.current = true
+          setShowJumpToBottom(false)
+          await streamMessage(currentSession.id, messages[i].content, {
+            retry: persistedRetry,
+            reuseUserMessage: true,
+            interruptedText: t('stream.interrupted'),
+            retryBoundaryText: currentSession.type === 'group' && persistedRetry ? t('stream.retryBoundary') : undefined,
+          })
+          return
+        }
       }
+    } finally {
+      recoveryInFlightRef.current.delete(recoveryMessage.id)
     }
   }
 

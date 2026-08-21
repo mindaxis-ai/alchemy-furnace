@@ -41,6 +41,7 @@ type ChatAction =
   | { type: 'SET_CURRENT_SESSION'; payload: ChatSession | null }
   | { type: 'SET_MESSAGES'; payload: ChatMessage[] }
   | { type: 'ADD_MESSAGE'; payload: ChatMessage }
+  | { type: 'CONSUME_RECOVERY'; payload: { messageId: string } }
   | { type: 'ADD_STREAM_CHUNK'; payload: StreamChunk } // 追加流式输出内容
   | { type: 'FINISH_STREAM' }
   | { type: 'FINALIZE_STREAM' }
@@ -116,6 +117,13 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return { ...state, messages: action.payload, loading: false }
     case 'ADD_MESSAGE':
       return { ...state, messages: [...state.messages, action.payload] }
+    case 'CONSUME_RECOVERY':
+      return {
+        ...state,
+        messages: state.messages.map(message => message.id === action.payload.messageId
+          ? { ...message, retryable: false, recovery: 'none' }
+          : message),
+      }
     case 'ADD_STREAM_CHUNK': {
       // 群聊按 chunk 自带身份定位气泡；单聊无身份时使用当前临时回复。
       const messages = [...state.messages]

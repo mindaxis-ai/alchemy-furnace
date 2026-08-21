@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -269,6 +269,127 @@ describe('recoverable chat history and streaming', () => {
       expect.any(Object),
       { retry: false },
     )
+  })
+
+  it('consumes a recovery after one successful click so it cannot be sent sequentially again', async () => {
+    let attempt = 0
+    doubles.streamChatMessage.mockImplementation(async (_sessionId: string, _content: string, handlers: StreamHandlers) => {
+      attempt += 1
+      if (attempt === 1) {
+        handlers.onError('pattern unavailable', { terminal: true, recovery: 'resend' })
+      } else {
+        handlers.onDone()
+      }
+    })
+    const user = userEvent.setup()
+    renderSession(singleSession.id)
+    const input = await screen.findByRole('textbox')
+
+    await user.type(input, 'one-shot sequential question')
+    await user.click(screen.getByRole('button', { name: 'input.send' }))
+    await user.click(await screen.findByRole('button', { name: 'stream.retry' }))
+    await waitFor(() => expect(doubles.streamChatMessage).toHaveBeenCalledTimes(2))
+
+    const staleRecovery = screen.queryByRole('button', { name: 'stream.retry' })
+    if (staleRecovery) await user.click(staleRecovery)
+
+    expect(doubles.streamChatMessage).toHaveBeenCalledTimes(2)
+    expect(screen.queryByRole('button', { name: 'stream.retry' })).not.toBeInTheDocument()
+    expect(screen.getAllByText('one-shot sequential question')).toHaveLength(1)
+  })
+
+  it('guards rapid same-tick recovery clicks before streaming state can render', async () => {
+    let attempt = 0
+    let releaseRecovery!: () => void
+    const recoveryGate = new Promise<void>(resolve => { releaseRecovery = resolve })
+    doubles.streamChatMessage.mockImplementation(async (_sessionId: string, _content: string, handlers: StreamHandlers) => {
+      attempt += 1
+      if (attempt === 1) {
+        handlers.onError('pattern unavailable', { terminal: true, recovery: 'resend' })
+        return
+      }
+      await recoveryGate
+      handlers.onDone()
+    })
+    const user = userEvent.setup()
+    renderSession(singleSession.id)
+    const input = await screen.findByRole('textbox')
+
+    await user.type(input, 'one-shot rapid question')
+    await user.click(screen.getByRole('button', { name: 'input.send' }))
+    const retry = await screen.findByRole('button', { name: 'stream.retry' })
+
+    await act(async () => {
+      retry.click()
+      retry.click()
+      await Promise.resolve()
+    })
+    releaseRecovery()
+    await act(async () => { await recoveryGate })
+
+    expect(doubles.streamChatMessage).toHaveBeenCalledTimes(2)
+    expect(screen.getAllByText('one-shot rapid question')).toHaveLength(1)
+    expect(screen.queryByRole('button', { name: 'stream.retry' })).not.toBeInTheDocument()
+  })
+
+  it('consumes a persisted retry after its recovery succeeds', async () => {
+    let attempt = 0
+    doubles.streamChatMessage.mockImplementation(async (_sessionId: string, _content: string, handlers: StreamHandlers) => {
+      attempt += 1
+      if (attempt === 1) {
+        handlers.onAccepted?.()
+        handlers.onChunk({ content: 'persisted partial answer' })
+        handlers.onInterrupted()
+      } else {
+        handlers.onDone()
+      }
+    })
+    const user = userEvent.setup()
+    renderSession(singleSession.id)
+    const input = await screen.findByRole('textbox')
+
+    await user.type(input, 'persisted one-shot question')
+    await user.click(screen.getByRole('button', { name: 'input.send' }))
+    await user.click(await screen.findByRole('button', { name: 'retry' }))
+    await waitFor(() => expect(doubles.streamChatMessage).toHaveBeenCalledTimes(2))
+
+    expect(screen.queryByRole('button', { name: 'retry' })).not.toBeInTheDocument()
+    expect(screen.getAllByText('persisted one-shot question')).toHaveLength(1)
+    expect(doubles.streamChatMessage).toHaveBeenLastCalledWith(
+      singleSession.id,
+      'persisted one-shot question',
+      expect.any(Object),
+      { retry: true },
+    )
+  })
+
+  it('allows a failed recovery attempt to declare one fresh recovery', async () => {
+    let attempt = 0
+    doubles.streamChatMessage.mockImplementation(async (_sessionId: string, _content: string, handlers: StreamHandlers) => {
+      attempt += 1
+      if (attempt === 1) {
+        handlers.onError('first recoverable failure', { terminal: true, recovery: 'resend' })
+      } else if (attempt === 2) {
+        handlers.onError('fresh recoverable failure', { terminal: true, recovery: 'resend' })
+      } else {
+        handlers.onDone()
+      }
+    })
+    const user = userEvent.setup()
+    renderSession(singleSession.id)
+    const input = await screen.findByRole('textbox')
+
+    await user.type(input, 'fresh recovery question')
+    await user.click(screen.getByRole('button', { name: 'input.send' }))
+    await user.click(await screen.findByRole('button', { name: 'stream.retry' }))
+    expect(await screen.findByText('fresh recoverable failure')).toBeInTheDocument()
+
+    expect(screen.getAllByRole('button', { name: 'stream.retry' })).toHaveLength(1)
+    await user.click(screen.getByRole('button', { name: 'stream.retry' }))
+    await waitFor(() => expect(doubles.streamChatMessage).toHaveBeenCalledTimes(3))
+
+    expect(screen.queryByRole('button', { name: 'stream.retry' })).not.toBeInTheDocument()
+    expect(screen.getAllByText('fresh recovery question')).toHaveLength(1)
   })
 
   it('does not guess a retry mode when transport ends before persistence is acknowledged', async () => {
