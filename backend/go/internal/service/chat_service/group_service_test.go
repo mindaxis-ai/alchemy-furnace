@@ -71,6 +71,7 @@ type fakeChatDao struct {
 	messages  []*model.ChatMessage
 	nextID    uint
 	agentByID map[uint]*model.DaoAgent // 模拟 GORM Preload("Agent")
+	saveErr   errors.Error
 }
 
 func (f *fakeChatDao) TakeSessionByUUID(ctx context.Context, uid uuid.UUID) (*model.ChatSession, errors.Error) {
@@ -131,11 +132,23 @@ func (f *fakeChatDao) FindMessages(ctx context.Context, sessionID uint, page, si
 	}
 	return int64(len(out)), out, nil
 }
+func (f *fakeChatDao) TakeLatestUserMessage(ctx context.Context, sessionID uint) (*model.ChatMessage, errors.Error) {
+	for i := len(f.messages) - 1; i >= 0; i-- {
+		if f.messages[i].SessionID == sessionID && f.messages[i].Role == "user" {
+			cp := *f.messages[i]
+			return &cp, nil
+		}
+	}
+	return nil, errors.ErrorRecordNotFound("test.fake.latest_user")
+}
 func (f *fakeChatDao) DeleteSession(ctx context.Context, s *model.ChatSession) errors.Error {
 	delete(f.sessions, s.UUID.String())
 	return nil
 }
 func (f *fakeChatDao) SaveMessage(ctx context.Context, msg *model.ChatMessage) errors.Error {
+	if f.saveErr != nil {
+		return f.saveErr
+	}
 	f.messages = append(f.messages, msg)
 	return nil
 }

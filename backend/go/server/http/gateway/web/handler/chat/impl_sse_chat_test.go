@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	stderrors "errors"
+	"fmt"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -21,6 +22,8 @@ type sseChatStub struct {
 	service.Chat
 	session        *model.ChatSession
 	sessionErr     errors.Error
+	patternErr     errors.Error
+	saveErr        errors.Error
 	engineCalls    int
 	patternCalls   int
 	savedRoles     []string
@@ -37,6 +40,9 @@ func (s *sseChatStub) GetSessionAgentInfo(context.Context, uuid.UUID) (*model.Ch
 
 func (s *sseChatStub) GetOrBuildPattern(context.Context, uint) (*model.LanguagePattern, errors.Error) {
 	s.patternCalls++
+	if s.patternErr != nil {
+		return nil, s.patternErr
+	}
 	return &model.LanguagePattern{SystemPrompt: "test system prompt"}, nil
 }
 
@@ -48,12 +54,29 @@ func (s *sseChatStub) AuthorizeSessionForStream(_ context.Context, session *mode
 }
 
 func (s *sseChatStub) SaveMessage(_ context.Context, sessionID uint, role, content string) (*model.ChatMessage, errors.Error) {
+	if s.saveErr != nil {
+		return nil, s.saveErr
+	}
 	s.savedRoles = append(s.savedRoles, role)
 	return &model.ChatMessage{SessionID: sessionID, Role: role, Content: content}, nil
 }
 
-func (s *sseChatStub) GetMessages(context.Context, uuid.UUID, int, int) (int64, []*model.ChatMessage, errors.Error) {
-	return int64(len(s.recentMessages)), s.recentMessages, nil
+func (s *sseChatStub) GetMessages(_ context.Context, _ uuid.UUID, page, size int) (int64, []*model.ChatMessage, errors.Error) {
+	start := (page - 1) * size
+	if start >= len(s.recentMessages) {
+		return int64(len(s.recentMessages)), nil, nil
+	}
+	end := min(start+size, len(s.recentMessages))
+	return int64(len(s.recentMessages)), s.recentMessages[start:end], nil
+}
+
+func (s *sseChatStub) TakeLatestUserMessage(context.Context, uint) (*model.ChatMessage, errors.Error) {
+	for i := len(s.recentMessages) - 1; i >= 0; i-- {
+		if s.recentMessages[i].Role == "user" {
+			return s.recentMessages[i], nil
+		}
+	}
+	return nil, errors.ErrorRecordNotFound("test.latest_user")
 }
 
 func (s *sseChatStub) ResolveCredentials(context.Context, string) (*credential.ModelCredentials, errors.Error) {
@@ -142,6 +165,9 @@ func TestSSEChatInterruptedUpstreamRetainsPartialAndNeverEmitsDone(t *testing.T)
 	if !strings.Contains(body, `"error_code":"service.chat.stream_interrupted"`) || !strings.Contains(body, `"terminal":true`) {
 		t.Fatalf("SSE body = %q, want safe terminal interruption", body)
 	}
+	if !strings.Contains(body, `event: accepted`) || !strings.Contains(body, `"recovery":"persisted_retry"`) {
+		t.Fatalf("SSE body = %q, persisted user must be acknowledged before recoverable interruption", body)
+	}
 	if strings.Contains(body, "event: done") {
 		t.Fatalf("SSE body = %q, interrupted stream must not emit done", body)
 	}
@@ -169,6 +195,73 @@ func TestSSEChatUnknownStreamErrorDoesNotLeakRawDetails(t *testing.T) {
 	}
 	if !strings.Contains(body, `"error_code":"service.chat.stream_unavailable"`) || !strings.Contains(body, `"terminal":true`) {
 		t.Fatalf("SSE body = %q, want stable terminal stream_unavailable error", body)
+	}
+}
+
+func TestSSEChatPatternFailureOffersNormalResendBeforePersistence(t *testing.T) {
+	sessionUID := uuid.New()
+	agentID := uint(7)
+	stub := &sseChatStub{
+		session: &model.ChatSession{
+			ID: 3, UUID: sessionUID, Type: model.SessionTypeSingle, AgentID: &agentID,
+			Agent: model.DaoAgent{ID: agentID, UUID: uuid.New(), Status: "active", ModelName: "test-model"},
+		},
+		patternErr: errors.ErrorServerInternalError("secret.pattern.failure"),
+	}
+
+	w := performSSEChat(t, stub, sessionUID)
+	body := w.Body.String()
+
+	if !strings.Contains(body, `"recovery":"resend"`) {
+		t.Fatalf("SSE body = %q, pre-persist pattern failure must offer normal resend", body)
+	}
+	if len(stub.savedRoles) != 0 || stub.engineCalls != 0 {
+		t.Fatalf("pattern failure saved roles %v or called engine %d", stub.savedRoles, stub.engineCalls)
+	}
+}
+
+func TestSSEChatUserSaveFailureOffersNormalResend(t *testing.T) {
+	sessionUID := uuid.New()
+	agentID := uint(7)
+	stub := &sseChatStub{
+		session: &model.ChatSession{
+			ID: 3, UUID: sessionUID, Type: model.SessionTypeSingle, AgentID: &agentID,
+			Agent: model.DaoAgent{ID: agentID, UUID: uuid.New(), Status: "active", ModelName: "test-model"},
+		},
+		saveErr: errors.ErrorServerInternalError("secret.user.save.failure"),
+	}
+
+	w := performSSEChat(t, stub, sessionUID)
+	body := w.Body.String()
+
+	if !strings.Contains(body, `"recovery":"resend"`) {
+		t.Fatalf("SSE body = %q, failed user persistence must offer normal resend", body)
+	}
+	if strings.Contains(body, "secret.user.save.failure") || stub.engineCalls != 0 {
+		t.Fatalf("save failure leaked details or called engine: body=%q engine=%d", body, stub.engineCalls)
+	}
+}
+
+func TestSSEChatPersistedRetryPatternFailureNeverOffersNormalResend(t *testing.T) {
+	sessionUID := uuid.New()
+	agentID := uint(7)
+	stub := &sseChatStub{
+		session: &model.ChatSession{
+			ID: 3, UUID: sessionUID, Type: model.SessionTypeSingle, AgentID: &agentID,
+			Agent: model.DaoAgent{ID: agentID, UUID: uuid.New(), Status: "active", ModelName: "test-model"},
+		},
+		patternErr:     errors.ErrorServerInternalError("secret.pattern.failure"),
+		recentMessages: []*model.ChatMessage{{SessionID: 3, Role: "user", Content: "persisted question"}},
+	}
+
+	w := performSSEChatBody(t, stub, sessionUID, `{"content":"persisted question","retry":true}`)
+	body := w.Body.String()
+
+	if !strings.Contains(body, `"recovery":"persisted_retry"`) || strings.Contains(body, `"recovery":"resend"`) {
+		t.Fatalf("SSE body = %q, failure during persisted retry must keep persisted recovery", body)
+	}
+	if len(stub.savedRoles) != 0 {
+		t.Fatalf("SaveMessage roles = %v, persisted retry must not save another user", stub.savedRoles)
 	}
 }
 
@@ -200,6 +293,35 @@ func TestSSEChatRetryDoesNotPersistDuplicateUserMessage(t *testing.T) {
 	w := performSSEChatBody(t, stub, sessionUID, `{"content":"hello","retry":true}`)
 	if !strings.Contains(w.Body.String(), "event: done") {
 		t.Fatalf("SSE body = %q, want successful retry", w.Body.String())
+	}
+	for _, role := range stub.savedRoles {
+		if role == "user" {
+			t.Fatalf("SaveMessage roles = %v, retry duplicated persisted user", stub.savedRoles)
+		}
+	}
+}
+
+func TestSSEChatRetryUsesLatestUserBeyondFirstHistoryPage(t *testing.T) {
+	sessionUID := uuid.New()
+	agentID := uint(7)
+	history := []*model.ChatMessage{{SessionID: 3, Role: "user", Content: "stale old question"}}
+	for i := 0; i < 20; i++ {
+		history = append(history, &model.ChatMessage{SessionID: 3, Role: "assistant", Content: fmt.Sprintf("old reply %d", i)})
+	}
+	history = append(history, &model.ChatMessage{SessionID: 3, Role: "user", Content: "latest question"})
+	stub := &sseChatStub{
+		session: &model.ChatSession{
+			ID: 3, UUID: sessionUID, Type: model.SessionTypeSingle, AgentID: &agentID,
+			Agent: model.DaoAgent{ID: agentID, UUID: uuid.New(), Status: "active", ModelName: "test-model"},
+		},
+		recentMessages: history,
+		streamFull:     "completed retry",
+	}
+
+	w := performSSEChatBody(t, stub, sessionUID, `{"content":"latest question","retry":true}`)
+
+	if !strings.Contains(w.Body.String(), "event: done") {
+		t.Fatalf("SSE body = %q, retry should validate the latest user beyond page 1", w.Body.String())
 	}
 	for _, role := range stub.savedRoles {
 		if role == "user" {

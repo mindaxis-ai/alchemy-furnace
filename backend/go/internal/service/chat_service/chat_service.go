@@ -45,6 +45,15 @@ func (*StreamInterruptedError) Error() string { return "语言引擎连接中断
 
 func (*StreamInterruptedError) StreamErrorCode() string { return "service.chat.stream_interrupted" }
 
+// StreamRecoveryMode 明确终止错误的安全恢复方式，避免客户端按错误码或气泡形态猜测。
+type StreamRecoveryMode string
+
+const (
+	StreamRecoveryNone           StreamRecoveryMode = "none"
+	StreamRecoveryResend         StreamRecoveryMode = "resend"
+	StreamRecoveryPersistedRetry StreamRecoveryMode = "persisted_retry"
+)
+
 // New 构造固定引擎地址的对话业务实例（Web 与单元测试兼容）。
 func New(chat dao.Chat, agent dao.Agent, pattern service.LanguagePatternProvider, creds credential.Resolver, engineBaseURL string) *Chat {
 	return NewDynamic(chat, agent, pattern, creds, engineendpoint.Static(engineBaseURL))
@@ -165,6 +174,11 @@ func (s *Chat) GetMessages(ctx context.Context, sessionUID uuid.UUID, page int, 
 		return 0, nil, err.Relation(ierr.ErrorRecordNotFound("service.chat.get_messages_take"))
 	}
 	return s.chat.FindMessages(ctx, session.ID, page, size)
+}
+
+// TakeLatestUserMessage 查询最新用户消息，供重试校验复用已持久化的用户回合。
+func (s *Chat) TakeLatestUserMessage(ctx context.Context, sessionID uint) (*model.ChatMessage, ierr.Error) {
+	return s.chat.TakeLatestUserMessage(ctx, sessionID)
 }
 
 // GetSessionAgentInfo 按会话 UUID 取会话(预加载道人),供 SSE 构建对话请求

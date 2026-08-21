@@ -105,6 +105,22 @@ func (d *ChatDao) FindMessages(ctx context.Context, sessionID uint, page int, si
 	return total, messages, nil
 }
 
+// TakeLatestUserMessage 查询会话最新用户消息；ID 作为同时间戳下的稳定次序。
+func (d *ChatDao) TakeLatestUserMessage(ctx context.Context, sessionID uint) (*model.ChatMessage, errors.Error) {
+	var message model.ChatMessage
+	if err := GetDB().WithContext(ctx).
+		Where("session_id = ? AND role = ?", sessionID, "user").
+		Order("created_at DESC").
+		Order("id DESC").
+		First(&message).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, errors.ErrorRecordNotFound("dao.chat.take_latest_user_message")
+		}
+		return nil, errors.ErrorServerInternalError("dao.chat.take_latest_user_message")
+	}
+	return &message, nil
+}
+
 // SaveMessage 写入消息并刷新所属会话 updated_at
 func (d *ChatDao) SaveMessage(ctx context.Context, message *model.ChatMessage) errors.Error {
 	if err := GetDB().WithContext(ctx).Create(message).Error; err != nil {

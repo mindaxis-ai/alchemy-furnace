@@ -219,6 +219,7 @@ describe('recoverable chat history and streaming', () => {
 
   it('retains interrupted content, marks it incomplete, and resends it on retry', async () => {
     doubles.streamChatMessage.mockImplementation(async (_sessionId: string, _content: string, handlers: StreamHandlers) => {
+      handlers.onAccepted?.()
       handlers.onChunk({ content: 'partial answer' })
       handlers.onInterrupted()
     })
@@ -240,6 +241,50 @@ describe('recoverable chat history and streaming', () => {
       expect.any(Object),
       { retry: true },
     )
+  })
+
+  it('resends a single pre-persist failure normally without duplicating the optimistic user bubble', async () => {
+    let attempt = 0
+    doubles.streamChatMessage.mockImplementation(async (_sessionId: string, _content: string, handlers: StreamHandlers) => {
+      attempt += 1
+      if (attempt === 1) {
+        handlers.onError('pattern unavailable', { terminal: true, recovery: 'resend' })
+      } else {
+        handlers.onDone()
+      }
+    })
+    const user = userEvent.setup()
+    renderSession(singleSession.id)
+    const input = await screen.findByRole('textbox')
+
+    await user.type(input, 'single optimistic question')
+    await user.click(screen.getByRole('button', { name: 'input.send' }))
+    await user.click(await screen.findByRole('button', { name: 'stream.retry' }))
+
+    await waitFor(() => expect(doubles.streamChatMessage).toHaveBeenCalledTimes(2))
+    expect(screen.getAllByText('single optimistic question')).toHaveLength(1)
+    expect(doubles.streamChatMessage).toHaveBeenLastCalledWith(
+      singleSession.id,
+      'single optimistic question',
+      expect.any(Object),
+      { retry: false },
+    )
+  })
+
+  it('does not guess a retry mode when transport ends before persistence is acknowledged', async () => {
+    doubles.streamChatMessage.mockImplementation(async (_sessionId: string, _content: string, handlers: StreamHandlers) => {
+      handlers.onInterrupted()
+    })
+    const user = userEvent.setup()
+    renderSession(singleSession.id)
+    const input = await screen.findByRole('textbox')
+
+    await user.type(input, 'unacknowledged question')
+    await user.click(screen.getByRole('button', { name: 'input.send' }))
+
+    expect(await screen.findByText('stream.interrupted')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'stream.retry' })).not.toBeInTheDocument()
+    expect(screen.getAllByText('unacknowledged question')).toHaveLength(1)
   })
 
   it('keeps streamed group chunks in distinct named and avatar-bearing speaker bubbles', async () => {
@@ -278,7 +323,7 @@ describe('recoverable chat history and streaming', () => {
       handlers.onChunk({ agent_id: 'agent-a', agent_name: 'Alpha', content: 'complete alpha reply' })
       handlers.onSpeakerDone?.({ agent_id: 'agent-a', agent_name: 'Alpha', message_id: 'message-a' })
       handlers.onSpeakerStart?.({ agent_id: 'agent-b', agent_name: 'Beta' })
-      handlers.onError('beta upstream failed', { terminal: false, agent_id: 'agent-b', agent_name: 'Beta' })
+      handlers.onError('beta upstream failed', { terminal: false, recovery: 'none', agent_id: 'agent-b', agent_name: 'Beta' })
       handlers.onTurnDone?.({ spoke: 1 })
     })
     const user = userEvent.setup()
@@ -300,12 +345,13 @@ describe('recoverable chat history and streaming', () => {
     doubles.listSessions.mockResolvedValue({ list: [groupSession], total: 1 })
     doubles.getSession.mockResolvedValue(groupSession)
     doubles.streamChatMessage.mockImplementation(async (_sessionId: string, _content: string, handlers: StreamHandlers) => {
+      handlers.onAccepted?.()
       handlers.onSpeakerStart?.({ agent_id: 'agent-a', agent_name: 'Alpha' })
       handlers.onChunk({ agent_id: 'agent-a', agent_name: 'Alpha', content: 'complete alpha' })
       handlers.onSpeakerDone?.({ agent_id: 'agent-a', agent_name: 'Alpha', message_id: 'message-a' })
       handlers.onSpeakerStart?.({ agent_id: 'agent-b', agent_name: 'Beta' })
       handlers.onChunk({ agent_id: 'agent-b', agent_name: 'Beta', content: 'partial beta' })
-      handlers.onError('beta member failed', { terminal: false, agent_id: 'agent-b', agent_name: 'Beta' })
+      handlers.onError('beta member failed', { terminal: false, recovery: 'none', agent_id: 'agent-b', agent_name: 'Beta' })
       handlers.onInterrupted()
     })
     const user = userEvent.setup()
@@ -323,11 +369,44 @@ describe('recoverable chat history and streaming', () => {
     await user.click(screen.getByRole('button', { name: 'stream.retry' }))
     await waitFor(() => expect(doubles.streamChatMessage).toHaveBeenCalledTimes(2))
     expect(screen.getAllByText('group question')).toHaveLength(1)
+    expect(screen.getByText('stream.retryBoundary')).toBeInTheDocument()
     expect(doubles.streamChatMessage).toHaveBeenLastCalledWith(
       groupSession.id,
       'group question',
       expect.any(Object),
       { retry: true },
+    )
+  })
+
+  it('resends a group preflight failure without a duplicate user or phantom attempt boundary', async () => {
+    doubles.agents = [activeAgent('agent-a', 'Alpha'), activeAgent('agent-b', 'Beta')]
+    doubles.listSessions.mockResolvedValue({ list: [groupSession], total: 1 })
+    doubles.getSession.mockResolvedValue(groupSession)
+    let attempt = 0
+    doubles.streamChatMessage.mockImplementation(async (_sessionId: string, _content: string, handlers: StreamHandlers) => {
+      attempt += 1
+      if (attempt === 1) {
+        handlers.onError('group preflight unavailable', { terminal: true, recovery: 'resend' })
+      } else {
+        handlers.onTurnDone?.({ spoke: 0 })
+      }
+    })
+    const user = userEvent.setup()
+    renderSession(groupSession.id)
+    const input = await screen.findByRole('textbox')
+
+    await user.type(input, 'group optimistic question')
+    await user.click(screen.getByRole('button', { name: 'input.send' }))
+    await user.click(await screen.findByRole('button', { name: 'stream.retry' }))
+
+    await waitFor(() => expect(doubles.streamChatMessage).toHaveBeenCalledTimes(2))
+    expect(screen.getAllByText('group optimistic question')).toHaveLength(1)
+    expect(screen.queryByText('stream.retryBoundary')).not.toBeInTheDocument()
+    expect(doubles.streamChatMessage).toHaveBeenLastCalledWith(
+      groupSession.id,
+      'group optimistic question',
+      expect.any(Object),
+      { retry: false },
     )
   })
 

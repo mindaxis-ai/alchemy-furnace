@@ -29,6 +29,9 @@ type Chat interface {
 	// FindMessages 分页查询会话消息(按时间正序)
 	FindMessages(ctx context.Context, sessionID uint, page int, size int) (int64, []*model.ChatMessage, errors.Error)
 
+	// TakeLatestUserMessage 查询会话最新用户消息(created_at/id 倒序)，不受历史分页影响。
+	TakeLatestUserMessage(ctx context.Context, sessionID uint) (*model.ChatMessage, errors.Error)
+
 	// SaveMessage 写入消息并刷新所属会话 updated_at
 	SaveMessage(ctx context.Context, message *model.ChatMessage) errors.Error
 

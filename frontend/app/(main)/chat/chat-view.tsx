@@ -177,14 +177,18 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
 
   const retryMessage = async (messageIndex: number) => {
     if (!currentSession || chatState.streaming || readOnlyReason) return
+    const recovery = messages[messageIndex]?.recovery || 'none'
+    if (recovery === 'none') return
+    const persistedRetry = recovery === 'persisted_retry'
     for (let i = messageIndex - 1; i >= 0; i -= 1) {
       if (messages[i].role === 'user') {
         stickyToBottomRef.current = true
         setShowJumpToBottom(false)
         await streamMessage(currentSession.id, messages[i].content, {
-          retry: true,
+          retry: persistedRetry,
+          reuseUserMessage: true,
           interruptedText: t('stream.interrupted'),
-          retryBoundaryText: currentSession.type === 'group' ? t('stream.retryBoundary') : undefined,
+          retryBoundaryText: currentSession.type === 'group' && persistedRetry ? t('stream.retryBoundary') : undefined,
         })
         return
       }

@@ -171,6 +171,9 @@ export interface AgentDetail extends Agent {
 
 // ========== 对话 ==========
 
+/** 流终止后的显式恢复协议；none 为安全默认。 */
+export type ChatRecoveryMode = 'none' | 'resend' | 'persisted_retry'
+
 /** 对话会话 */
 /** 群成员 */
 export interface GroupMember {
@@ -213,6 +216,8 @@ export interface ChatMessage {
   is_error?: boolean
   /** 仅终止整个传输的错误/不完整回复允许重试；成员级错误不允许。 */
   retryable?: boolean
+  /** resend=正常重发但复用本地用户气泡；persisted_retry=复用后端用户行。 */
+  recovery?: ChatRecoveryMode
   /** 群聊: 发言道人 UUID */
   agent_id?: string
   /** 群聊: 发言道人名(气泡身份头) */

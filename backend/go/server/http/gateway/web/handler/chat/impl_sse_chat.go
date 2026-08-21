@@ -31,11 +31,12 @@ type sseChatRequest struct {
 //
 // 服务端 -> 客户端事件:
 //
-//	event: chunk   data: {"content": "回答片段"}
-//	event: done    data: {}                     （完整回复已入库）
-//	event: error   data: {"content": "可读中文错误"}
-//	event: stopped data: {}                     （客户端中断,尽力写出）
-//	: ping                                    （25s 注释心跳）
+//	event: accepted data: {}                     （用户消息已保存或确认复用）
+//	event: chunk    data: {"content": "回答片段"}
+//	event: done     data: {}                     （完整回复已入库）
+//	event: error    data: {"content": "可读中文错误"}
+//	event: stopped  data: {}                     （客户端中断,尽力写出）
+//	: ping                                      （25s 注释心跳）
 //
 // 停止生成: 客户端中断连接(AbortController.abort()),ctx 取消贯穿至上游 LLM 流;
 // 已生成的部分内容(非空时)保存为 assistant 消息。
@@ -56,6 +57,10 @@ func (cls *Chat) SSEChat(c *gin.Context) {
 		return
 	}
 	content := body.Content
+	preflightRecovery := chatservice.StreamRecoveryResend
+	if body.Retry {
+		preflightRecovery = chatservice.StreamRecoveryPersistedRetry
+	}
 
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
@@ -71,7 +76,7 @@ func (cls *Chat) SSEChat(c *gin.Context) {
 	// 获取会话关联的道人信息(session 预加载 Agent,边界: session 由 :uuid 解析)
 	session, err := cls.chat.GetSessionAgentInfo(ctx, sessionUID)
 	if err != nil {
-		sseWriteEvent(w, flusher, "error", sseErrorPayload(err, true))
+		sseWriteEvent(w, flusher, "error", sseErrorPayload(err, true, preflightRecovery))
 		return
 	}
 	// 群聊 Type=group 走专门通道(编排器驱动,带心跳保活)
@@ -81,14 +86,14 @@ func (cls *Chat) SSEChat(c *gin.Context) {
 	}
 	// 群聊 AgentID=nil 走单聊入口视为错误(防御性兜底)
 	if session.AgentID == nil {
-		sseWriteEvent(w, flusher, "error", ssePayload{Content: "该会话不支持单聊通道", Terminal: true})
+		sseWriteEvent(w, flusher, "error", ssePayload{Content: "该会话不支持单聊通道", Terminal: true, Recovery: preflightRecovery})
 		return
 	}
 	agentID := *session.AgentID
 	sessionID := session.ID
 	creds, err := cls.chat.AuthorizeSessionForStream(ctx, session)
 	if err != nil {
-		sseWriteEvent(w, flusher, "error", sseErrorPayload(err, false))
+		sseWriteEvent(w, flusher, "error", sseErrorPayload(err, false, preflightRecovery))
 		return
 	}
 	modelName := session.Agent.ModelName
@@ -96,29 +101,30 @@ func (cls *Chat) SSEChat(c *gin.Context) {
 	// 加载/合成道人的语言模式(系统提示词)
 	pattern, err := cls.chat.GetOrBuildPattern(ctx, agentID)
 	if err != nil {
-		sseWriteEvent(w, flusher, "error", ssePayload{Content: "暂时无法开始论道，请稍后重试", ErrorCode: "service.chat.stream_unavailable", Terminal: true})
+		sseWriteEvent(w, flusher, "error", ssePayload{Content: "暂时无法开始论道，请稍后重试", ErrorCode: "service.chat.stream_unavailable", Terminal: true, Recovery: preflightRecovery})
 		return
 	}
 
 	var recentMessages []*model.ChatMessage
 	if body.Retry {
 		// 重试复用最近一次同内容用户消息，避免前端重发导致本地与数据库各多一行。
-		_, recentMessages, err = cls.chat.GetMessages(ctx, sessionUID, 1, 20)
-		if err != nil {
+		latestUser, latestErr := cls.chat.TakeLatestUserMessage(ctx, sessionID)
+		if latestErr != nil {
 			sseWriteEvent(w, flusher, "error", ssePayload{Content: "获取历史消息失败", ErrorCode: "service.chat.retry_unavailable", Terminal: true})
 			return
 		}
-		if !canRetryUserMessage(recentMessages, content) {
+		if latestUser.Content != content {
 			sseWriteEvent(w, flusher, "error", ssePayload{Content: "无法重试该消息，请重新发送", ErrorCode: "service.chat.retry_unavailable", Terminal: true})
 			return
 		}
 	} else {
 		// 新回合才保存用户消息。
 		if _, err := cls.chat.SaveMessage(ctx, sessionID, "user", content); err != nil {
-			sseWriteEvent(w, flusher, "error", ssePayload{Content: "保存消息失败", ErrorCode: "service.chat.stream_unavailable", Terminal: true})
+			sseWriteEvent(w, flusher, "error", ssePayload{Content: "保存消息失败", ErrorCode: "service.chat.stream_unavailable", Terminal: true, Recovery: chatservice.StreamRecoveryResend})
 			return
 		}
 	}
+	sseWriteEvent(w, flusher, "accepted", struct{}{})
 
 	zap.L().Info("[炼丹炉] 收到论道问题",
 		zap.String("session_uuid", sessionUID.String()),
@@ -127,12 +133,10 @@ func (cls *Chat) SSEChat(c *gin.Context) {
 		zap.String("content", content))
 
 	// 获取历史消息(最近 20 条,用于上下文)
-	if !body.Retry {
-		_, recentMessages, err = cls.chat.GetMessages(ctx, sessionUID, 1, 20)
-		if err != nil {
-			sseWriteEvent(w, flusher, "error", ssePayload{Content: "获取历史消息失败", ErrorCode: "service.chat.stream_unavailable", Terminal: true})
-			return
-		}
+	_, recentMessages, err = cls.chat.GetMessages(ctx, sessionUID, 1, 20)
+	if err != nil {
+		sseWriteEvent(w, flusher, "error", ssePayload{Content: "获取历史消息失败", ErrorCode: "service.chat.stream_unavailable", Terminal: true, Recovery: chatservice.StreamRecoveryPersistedRetry})
+		return
 	}
 
 	// 构建消息列表(OpenAI 格式,首条为合成后的系统提示词)
@@ -189,29 +193,20 @@ func (cls *Chat) SSEChat(c *gin.Context) {
 	}
 }
 
-func sseErrorPayload(err ierr.Error, sessionLookup bool) ssePayload {
+func sseErrorPayload(err ierr.Error, sessionLookup bool, recovery chatservice.StreamRecoveryMode) ssePayload {
 	if sessionLookup && err.IsType(ierr.ErrorTypeRecordNotFound) {
-		return ssePayload{Content: "会话不存在或已删除", ErrorCode: "service.chat.session_not_found", Terminal: true}
+		return ssePayload{Content: "会话不存在或已删除", ErrorCode: "service.chat.session_not_found", Terminal: true, Recovery: recovery}
 	}
 	switch err.GetCode() {
 	case "service.chat.agent_inactive":
-		return ssePayload{Content: "道人已停用", ErrorCode: err.GetCode(), Terminal: true}
+		return ssePayload{Content: "道人已停用", ErrorCode: err.GetCode(), Terminal: true, Recovery: recovery}
 	case "service.chat.agent_not_found":
-		return ssePayload{Content: "道人不存在", ErrorCode: err.GetCode(), Terminal: true}
+		return ssePayload{Content: "道人不存在", ErrorCode: err.GetCode(), Terminal: true, Recovery: recovery}
 	case "service.chat.model_unavailable":
-		return ssePayload{Content: "道人使用的模型不可用", ErrorCode: err.GetCode(), Terminal: true}
+		return ssePayload{Content: "道人使用的模型不可用", ErrorCode: err.GetCode(), Terminal: true, Recovery: recovery}
 	default:
-		return ssePayload{Content: "暂时无法开始论道，请稍后重试", ErrorCode: "service.chat.stream_unavailable", Terminal: true}
+		return ssePayload{Content: "暂时无法开始论道，请稍后重试", ErrorCode: "service.chat.stream_unavailable", Terminal: true, Recovery: recovery}
 	}
-}
-
-func canRetryUserMessage(messages []*model.ChatMessage, content string) bool {
-	for i := len(messages) - 1; i >= 0; i-- {
-		if messages[i].Role == "user" {
-			return messages[i].Content == content
-		}
-	}
-	return false
 }
 
 // finishSSEStream 处理 StreamChat 正常收尾: done / error / 取消(恰好遇完成按 done 处理)
@@ -234,12 +229,12 @@ func (cls *Chat) finishSSEStream(ctx context.Context, sessionUID uuid.UUID, sess
 		var interrupted *chatservice.StreamInterruptedError
 		if stderrors.As(res.err, &interrupted) {
 			sseWriteEvent(w, flusher, "error", ssePayload{
-				Content: interrupted.Error(), ErrorCode: interrupted.StreamErrorCode(), Terminal: true,
+				Content: interrupted.Error(), ErrorCode: interrupted.StreamErrorCode(), Terminal: true, Recovery: chatservice.StreamRecoveryPersistedRetry,
 			})
 			return
 		}
 		// 未知上游错误不越过 HTTP 边界，避免原始 provider/凭证细节进入客户端。
-		sseWriteEvent(w, flusher, "error", ssePayload{Content: "语言引擎服务异常，请稍后重试", ErrorCode: "service.chat.stream_unavailable", Terminal: true})
+		sseWriteEvent(w, flusher, "error", ssePayload{Content: "语言引擎服务异常，请稍后重试", ErrorCode: "service.chat.stream_unavailable", Terminal: true, Recovery: chatservice.StreamRecoveryPersistedRetry})
 
 	default:
 		if res.full != "" {

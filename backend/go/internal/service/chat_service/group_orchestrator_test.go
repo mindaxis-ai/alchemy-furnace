@@ -6,13 +6,19 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	concretedao "github.com/alchemy-furnace/server/internal/dao"
 	"github.com/alchemy-furnace/server/internal/engineendpoint"
 	"github.com/alchemy-furnace/server/internal/errors"
 	"github.com/alchemy-furnace/server/model"
+	"github.com/glebarez/sqlite"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 // scriptEngine 按调用次序回放预设 SSE 响应;"|" 分隔 chunk
@@ -118,16 +124,19 @@ func TestInactiveGroupMemberStopsTurnBeforeEngine(t *testing.T) {
 	}
 	var errorCode string
 	var terminal bool
+	var recovery string
 	svc.RunGroupTurn(context.Background(), s.UUID, "诸位怎么看?", func(event string, payload any) {
 		if event == "error" {
 			data, _ := json.Marshal(payload)
 			var p struct {
 				ErrorCode string `json:"error_code"`
 				Terminal  bool   `json:"terminal"`
+				Recovery  string `json:"recovery"`
 			}
 			_ = json.Unmarshal(data, &p)
 			errorCode = p.ErrorCode
 			terminal = p.Terminal
+			recovery = p.Recovery
 		}
 	})
 
@@ -137,11 +146,70 @@ func TestInactiveGroupMemberStopsTurnBeforeEngine(t *testing.T) {
 	if !terminal {
 		t.Fatal("inactive preflight error must terminate a turn that cannot emit turn_done")
 	}
+	if recovery != "resend" {
+		t.Fatalf("recovery = %q, pre-persist group failure must offer normal resend", recovery)
+	}
 	if engine.calls != 0 {
 		t.Fatalf("engine calls = %d, want 0", engine.calls)
 	}
 	if len(chats.messages) != 0 {
 		t.Fatalf("messages saved before authorization: %+v", chats.messages)
+	}
+}
+
+func TestGroupUserSaveFailureOffersNormalResend(t *testing.T) {
+	svc, chats, engine, session := newGroupSvc(t, nil)
+	chats.saveErr = errors.ErrorServerInternalError("secret.group.user.save.failure")
+
+	var errorPayload GroupSpeakerPayload
+	svc.RunGroupTurn(context.Background(), session.UUID, "question that cannot be saved", func(event string, payload any) {
+		if event != "error" {
+			return
+		}
+		data, _ := json.Marshal(payload)
+		_ = json.Unmarshal(data, &errorPayload)
+	})
+
+	if errorPayload.Recovery != StreamRecoveryResend {
+		t.Fatalf("recovery = %q, failed group user persistence must offer normal resend", errorPayload.Recovery)
+	}
+	if strings.Contains(errorPayload.Content, "secret.group.user.save.failure") || engine.calls != 0 {
+		t.Fatalf("save failure leaked details or called engine: payload=%+v engine=%d", errorPayload, engine.calls)
+	}
+	if len(chats.messages) != 0 {
+		t.Fatalf("messages = %+v, failed user persistence must not leave a row", chats.messages)
+	}
+}
+
+func TestInactiveGroupMemberDuringPersistedRetryNeverOffersNormalResend(t *testing.T) {
+	svc, chats, _, session := newGroupSvc(t, nil)
+	chats.messages = append(chats.messages, &model.ChatMessage{SessionID: session.ID, Role: "user", Content: "persisted group question"})
+	for _, member := range chats.members[session.ID] {
+		if member.AgentID == 2 {
+			chats.agentByID[member.AgentID].Status = "inactive"
+			for _, agent := range svc.agent.(*fakeAgentDao).agents {
+				if agent.ID == member.AgentID {
+					agent.Status = "inactive"
+				}
+			}
+		}
+	}
+
+	var recovery string
+	svc.RetryGroupTurn(context.Background(), session.UUID, "persisted group question", func(event string, payload any) {
+		if event != "error" {
+			return
+		}
+		data, _ := json.Marshal(payload)
+		var decoded struct {
+			Recovery string `json:"recovery"`
+		}
+		_ = json.Unmarshal(data, &decoded)
+		recovery = decoded.Recovery
+	})
+
+	if recovery != "persisted_retry" {
+		t.Fatalf("recovery = %q, persisted group retry must never downgrade to normal resend", recovery)
 	}
 }
 
@@ -222,6 +290,7 @@ func TestGroupTransportInterruptionTerminatesTurnWithoutCorruptingCompletedSpeak
 	for _, event := range events {
 		if event.name == "error" && event.payload.ErrorCode == "service.chat.stream_interrupted" {
 			foundTerminalInterruption = event.payload.Terminal &&
+				event.payload.Recovery == StreamRecoveryPersistedRetry &&
 				event.payload.AgentID == wantInterruptedAgent.UUID.String() &&
 				event.payload.AgentName == wantInterruptedAgent.Name &&
 				event.payload.AgentAvatar == wantInterruptedAgent.Avatar
@@ -307,6 +376,113 @@ func TestRetryGroupTurnReusesPersistedUserMessage(t *testing.T) {
 	}
 	if usersAfter != usersBefore {
 		t.Fatalf("user message count = %d, want %d after group retry", usersAfter, usersBefore)
+	}
+}
+
+func TestRetryGroupTurnUsesLatestUserBeyondFirstHistoryPage(t *testing.T) {
+	db, err := gorm.Open(
+		sqlite.Open("file:"+filepath.Join(t.TempDir(), "latest-user.db")+"?_loc=Local&_fk=1"),
+		&gorm.Config{Logger: logger.Default.LogMode(logger.Silent)},
+	)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.DaoAgent{}, &model.ChatSession{}, &model.ChatMessage{}, &model.SessionMember{}); err != nil {
+		t.Fatalf("migrate sqlite: %v", err)
+	}
+	previousDB := concretedao.DB
+	concretedao.DB = db
+	t.Cleanup(func() { concretedao.DB = previousDB })
+
+	agentOne := model.DaoAgent{UUID: uuid.New(), Name: "Alpha", Status: "active", ModelName: "test-model", Proactivity: 50}
+	agentTwo := model.DaoAgent{UUID: uuid.New(), Name: "Beta", Status: "active", ModelName: "test-model", Proactivity: 50}
+	if err := db.Create(&agentOne).Error; err != nil {
+		t.Fatalf("create first agent: %v", err)
+	}
+	if err := db.Create(&agentTwo).Error; err != nil {
+		t.Fatalf("create second agent: %v", err)
+	}
+	session := model.ChatSession{UUID: uuid.New(), Type: model.SessionTypeGroup}
+	if err := db.Create(&session).Error; err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	members := []model.SessionMember{
+		{SessionID: session.ID, AgentID: agentOne.ID, SortOrder: 0},
+		{SessionID: session.ID, AgentID: agentTwo.ID, SortOrder: 1},
+	}
+	if err := db.Create(&members).Error; err != nil {
+		t.Fatalf("create members: %v", err)
+	}
+
+	createdAt := time.Date(2026, 8, 21, 0, 0, 0, 0, time.UTC)
+	history := []model.ChatMessage{{
+		SessionID: session.ID, Role: "user", Content: "stale old question", CreatedAt: createdAt,
+	}}
+	for i := 0; i < 20; i++ {
+		agentID := agentOne.ID
+		history = append(history, model.ChatMessage{
+			SessionID: session.ID, Role: "assistant", Content: fmt.Sprintf("old reply %d", i),
+			AgentID: &agentID, CreatedAt: createdAt.Add(time.Duration(i+1) * time.Second),
+		})
+	}
+	history = append(history, model.ChatMessage{
+		SessionID: session.ID, Role: "user", Content: "latest question", CreatedAt: createdAt.Add(21 * time.Second),
+	})
+	if err := db.Create(&history).Error; err != nil {
+		t.Fatalf("create history: %v", err)
+	}
+
+	engine := newScriptEngine([]string{"[PASS]", "[PASS]"})
+	t.Cleanup(engine.server.Close)
+	agents := &fakeAgentDao{agents: map[string]*model.DaoAgent{
+		agentOne.UUID.String(): &agentOne,
+		agentTwo.UUID.String(): &agentTwo,
+	}}
+	svc := New(concretedao.NewChatDao(), agents, fakePattern{}, availableCredentialResolver("test-model"), engine.server.URL)
+	var retryError string
+	turnDone := false
+	svc.RetryGroupTurn(context.Background(), session.UUID, "latest question", func(event string, payload any) {
+		if event == "turn_done" {
+			turnDone = true
+		}
+		if event != "error" {
+			return
+		}
+		data, _ := json.Marshal(payload)
+		var decoded struct {
+			ErrorCode string `json:"error_code"`
+		}
+		_ = json.Unmarshal(data, &decoded)
+		retryError = decoded.ErrorCode
+	})
+
+	if retryError == "service.chat.retry_unavailable" || !turnDone {
+		t.Fatalf("latest retry beyond page 1 failed: error=%q turn_done=%v", retryError, turnDone)
+	}
+	var userCount int64
+	if err := db.Model(&model.ChatMessage{}).
+		Where("session_id = ? AND role = ?", session.ID, "user").
+		Count(&userCount).Error; err != nil {
+		t.Fatalf("count users: %v", err)
+	}
+	if userCount != 2 {
+		t.Fatalf("user messages = %d, want 2 without retry duplicate", userCount)
+	}
+
+	staleRetryError := ""
+	svc.RetryGroupTurn(context.Background(), session.UUID, "stale old question", func(event string, payload any) {
+		if event != "error" {
+			return
+		}
+		data, _ := json.Marshal(payload)
+		var decoded struct {
+			ErrorCode string `json:"error_code"`
+		}
+		_ = json.Unmarshal(data, &decoded)
+		staleRetryError = decoded.ErrorCode
+	})
+	if staleRetryError != "service.chat.retry_unavailable" {
+		t.Fatalf("stale oldest-page retry error = %q, want retry_unavailable", staleRetryError)
 	}
 }
 

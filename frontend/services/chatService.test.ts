@@ -84,4 +84,40 @@ describe('chat SSE transport boundaries', () => {
     const request = fetchMock.mock.calls[0][1] as RequestInit
     expect(JSON.parse(String(request.body))).toEqual({ content: 'same question', retry: true })
   })
+
+  it('acknowledges persisted user state before later stream events', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse([
+      'event: accepted',
+      'data: {}',
+      '',
+      'event: done',
+      'data: {}',
+      '',
+      '',
+    ].join('\n'))))
+    const onAccepted = vi.fn()
+    const onDone = vi.fn()
+
+    await streamChatMessage('session', 'question', handlers({ onAccepted, onDone }))
+
+    expect(onAccepted).toHaveBeenCalledTimes(1)
+    expect(onAccepted.mock.invocationCallOrder[0]).toBeLessThan(onDone.mock.invocationCallOrder[0])
+  })
+
+  it('defaults an error without an explicit recovery mode to no recovery', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse([
+      'event: error',
+      'data: {"terminal":true,"content":"safe failure"}',
+      '',
+      '',
+    ].join('\n'))))
+    const onError = vi.fn()
+
+    await streamChatMessage('session', 'question', handlers({ onError }))
+
+    expect(onError).toHaveBeenCalledWith('safe failure', expect.objectContaining({
+      terminal: true,
+      recovery: 'none',
+    }))
+  })
 })

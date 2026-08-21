@@ -30,6 +30,9 @@ type Chat interface {
 	// GetMessages 分页查询会话消息历史(按时间正序),sessionUID 为会话对外 UUID
 	GetMessages(ctx context.Context, sessionUID uuid.UUID, page int, size int) (int64, []*model.ChatMessage, errors.Error)
 
+	// TakeLatestUserMessage 查询会话最新用户消息，不受历史列表分页影响。
+	TakeLatestUserMessage(ctx context.Context, sessionID uint) (*model.ChatMessage, errors.Error)
+
 	// GetSessionAgentInfo 按会话 UUID 取会话(预加载道人),供 SSE 构建对话请求(session.ID/AgentID/Agent.ModelName)
 	GetSessionAgentInfo(ctx context.Context, sessionUID uuid.UUID) (*model.ChatSession, errors.Error)
 

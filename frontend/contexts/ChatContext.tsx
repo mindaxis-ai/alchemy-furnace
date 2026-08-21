@@ -14,7 +14,7 @@ import * as chatService from '@/services/chatService'
 import type { StreamChunk, StreamSpeakerInfo } from '@/services/chatService'
 import { createStreamDispatcher } from '@/services/streamDispatcher'
 import { notifyDesktop } from '@/services/api'
-import type { ChatSession, ChatMessage } from '@/services/types'
+import type { ChatSession, ChatMessage, ChatRecoveryMode } from '@/services/types'
 
 /** 对话状态 */
 interface ChatState {
@@ -45,9 +45,9 @@ type ChatAction =
   | { type: 'FINISH_STREAM' }
   | { type: 'FINALIZE_STREAM' }
   | { type: 'STOP_STREAM' } // 流式输出被停止(保留部分内容)
-  | { type: 'MARK_STREAM_INCOMPLETE'; payload: { agent_id?: string; retryable: boolean } }
+  | { type: 'MARK_STREAM_INCOMPLETE'; payload: { agent_id?: string; recovery: ChatRecoveryMode } }
   | { type: 'DISCARD_EMPTY_STREAM'; payload?: { agent_id?: string } }
-  | { type: 'ADD_ERROR_MESSAGE'; payload: { text: string; retryable: boolean } }
+  | { type: 'ADD_ERROR_MESSAGE'; payload: { text: string; recovery: ChatRecoveryMode } }
   /** 回合内系统通知(群聊单道人失败等): 追加系统条,不动 streaming 状态 */
   | { type: 'ADD_SYSTEM_NOTICE'; payload: { text: string; isError: boolean; retryable?: boolean } }
   | { type: 'SPEAKER_START'; payload: { agent_id: string; agent_name: string; agent_avatar?: string } }
@@ -153,7 +153,7 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case 'MARK_STREAM_INCOMPLETE': {
       const messages = finalizeStreamMessage(
         state.messages,
-        { incomplete: true, retryable: action.payload.retryable },
+        { incomplete: true, retryable: action.payload.recovery !== 'none', recovery: action.payload.recovery },
         action.payload.agent_id,
       )
       return { ...state, messages }
@@ -175,7 +175,8 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
         content: action.payload.text,
         created_at: new Date().toISOString(),
         is_error: true,
-        retryable: action.payload.retryable,
+        retryable: action.payload.recovery !== 'none',
+        recovery: action.payload.recovery,
       }
       return { ...state, messages: [...state.messages, errorMessage], streaming: false }
     }
@@ -314,6 +315,7 @@ interface ChatContextType {
   clearCurrent: () => void
   streamMessage: (sessionId: string, content: string, opts?: {
     retry?: boolean
+    reuseUserMessage?: boolean
     retryBoundaryText?: string
     interruptedText?: string
   }) => Promise<void>
@@ -450,10 +452,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const streamMessage = useCallback(async (
     sessionId: string,
     content: string,
-    opts?: { retry?: boolean; retryBoundaryText?: string; interruptedText?: string },
+    opts?: { retry?: boolean; reuseUserMessage?: boolean; retryBoundaryText?: string; interruptedText?: string },
   ) => {
     const isGroup = sessionsRef.current.find(s => s.id === sessionId)?.type === 'group'
-    if (!opts?.retry) {
+    if (!opts?.reuseUserMessage) {
       dispatch({
         type: 'ADD_MESSAGE',
         payload: {
@@ -473,6 +475,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     let speakerPartial = false
     let activeSpeaker: StreamSpeakerInfo | null = null
     let turnTerminated = false
+    let accepted = false
     dispatch({ type: 'SET_STREAMING', payload: true })
 
     const chunker = createStreamDispatcher({
@@ -497,7 +500,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         dispatch({ type: 'FINISH_STREAM' })
       },
     })
-    const finishTerminal = (errorText: string) => {
+    const finishTerminal = (errorText: string, recovery: ChatRecoveryMode) => {
       if (turnTerminated) return
       turnTerminated = true
       chunker.flushNow()
@@ -505,17 +508,17 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       if (isGroup) {
         if (active) {
           if (speakerPartial) {
-            dispatch({ type: 'MARK_STREAM_INCOMPLETE', payload: { agent_id: active.agent_id, retryable: false } })
+            dispatch({ type: 'MARK_STREAM_INCOMPLETE', payload: { agent_id: active.agent_id, recovery: 'none' } })
           } else {
             dispatch({ type: 'DISCARD_EMPTY_STREAM', payload: { agent_id: active.agent_id } })
           }
         }
-        dispatch({ type: 'ADD_ERROR_MESSAGE', payload: { text: errorText, retryable: true } })
+        dispatch({ type: 'ADD_ERROR_MESSAGE', payload: { text: errorText, recovery } })
       } else if (turnPartial) {
-        dispatch({ type: 'MARK_STREAM_INCOMPLETE', payload: { retryable: true } })
+        dispatch({ type: 'MARK_STREAM_INCOMPLETE', payload: { recovery } })
         dispatch({ type: 'FINISH_STREAM' })
       } else {
-        dispatch({ type: 'ADD_ERROR_MESSAGE', payload: { text: errorText, retryable: true } })
+        dispatch({ type: 'ADD_ERROR_MESSAGE', payload: { text: errorText, recovery } })
       }
       activeSpeaker = null
       speakerPartial = false
@@ -555,13 +558,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       },
       onError: (error, info) => {
         if (info.terminal || !isGroup) {
-          finishTerminal(error)
+          finishTerminal(error, info.recovery)
           return
         }
         const active = activeSpeaker
         if (active && (!info.agent_id || info.agent_id === active.agent_id)) {
           if (speakerPartial) {
-            dispatch({ type: 'MARK_STREAM_INCOMPLETE', payload: { agent_id: active.agent_id, retryable: false } })
+            dispatch({ type: 'MARK_STREAM_INCOMPLETE', payload: { agent_id: active.agent_id, recovery: 'none' } })
           } else {
             dispatch({ type: 'DISCARD_EMPTY_STREAM', payload: { agent_id: active.agent_id } })
           }
@@ -570,7 +573,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         }
         chunker.pushNotice(error, true, false)
       },
-      onInterrupted: () => finishTerminal(opts?.interruptedText || ''),
+      onInterrupted: () => finishTerminal(opts?.interruptedText || '', accepted ? 'persisted_retry' : 'none'),
+      onAccepted: () => { accepted = true },
       onSpeakerStart: (info) => {
         activeSpeaker = info
         speakerPartial = false

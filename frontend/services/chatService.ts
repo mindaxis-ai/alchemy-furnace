@@ -11,7 +11,7 @@
  * - 请求级生命周期，无长驻连接，无需重连
  */
 import { get, post, put, del, buildApiUrl, authHeaders } from './api'
-import type { ChatSession, ChatMessage, GroupMember, CreateSessionRequest, PagedList, ListParams } from './types'
+import type { ChatSession, ChatMessage, ChatRecoveryMode, GroupMember, CreateSessionRequest, PagedList, ListParams } from './types'
 
 /**
  * 获取会话列表
@@ -87,6 +87,8 @@ export interface StreamErrorInfo extends Partial<StreamSpeakerInfo> {
   error_code?: string
   /** false=群成员本轮失败但流继续；true=整个请求终止。 */
   terminal: boolean
+  /** 缺失或未知值一律归一为 none，避免错误地重复持久化。 */
+  recovery: ChatRecoveryMode
 }
 
 export interface StreamOptions {
@@ -106,6 +108,8 @@ export interface StreamHandlers {
   onError: (error: string, info: StreamErrorInfo) => void
   /** 流式生成中网络中断（已收到部分内容，该条回复可能不完整） */
   onInterrupted: () => void
+  /** 服务端已保存或确认复用用户消息；后续传输中断可安全走 persisted_retry。 */
+  onAccepted?: () => void
   /** 群聊: 某道人开始发言(气泡身份头) */
   onSpeakerStart?: (info: StreamSpeakerInfo) => void
   /** 群聊: 某道人发言完毕(已入库) */
@@ -163,7 +167,7 @@ export async function streamChatMessage(
 
     if (!response.ok || !response.body) {
       const errorData = await response.json().catch(() => ({}))
-      terminate(() => handlers.onError(errorData.message || `请求失败（HTTP ${response.status}）`, { terminal: true }))
+      terminate(() => handlers.onError(errorData.message || `请求失败（HTTP ${response.status}）`, { terminal: true, recovery: 'none' }))
       return
     }
 
@@ -195,10 +199,15 @@ export async function streamChatMessage(
         terminate(handlers.onDone)
       } else if (type === 'error') {
         const terminal = payload.terminal !== false
-        const info = { ...payload, terminal } as unknown as StreamErrorInfo
+        const recovery: ChatRecoveryMode = payload.recovery === 'resend' || payload.recovery === 'persisted_retry'
+          ? payload.recovery
+          : 'none'
+        const info = { ...payload, terminal, recovery } as unknown as StreamErrorInfo
         const report = () => handlers.onError(typeof payload.content === 'string' ? payload.content : '论道出错了', info)
         if (terminal) terminate(report)
         else report()
+      } else if (type === 'accepted') {
+        handlers.onAccepted?.()
       } else if (type === 'speaker_start') {
         handlers.onSpeakerStart?.(payload as unknown as StreamSpeakerInfo)
       } else if (type === 'speaker_done') {

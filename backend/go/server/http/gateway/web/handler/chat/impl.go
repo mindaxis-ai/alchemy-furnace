@@ -10,6 +10,7 @@ import (
 
 	"github.com/alchemy-furnace/server/internal/errors"
 	"github.com/alchemy-furnace/server/internal/interface/service"
+	chatservice "github.com/alchemy-furnace/server/internal/service/chat_service"
 	"github.com/alchemy-furnace/server/model"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -200,9 +201,10 @@ func sseWriteComment(w http.ResponseWriter, flusher http.Flusher, comment string
 
 // ssePayload 事件数据载体(chunk: {"content": "..."}, done: {}, error/stopped: {"content": "..."})
 type ssePayload struct {
-	Content   string `json:"content,omitempty"`
-	ErrorCode string `json:"error_code,omitempty"`
-	Terminal  bool   `json:"terminal,omitempty"`
+	Content   string                         `json:"content,omitempty"`
+	ErrorCode string                         `json:"error_code,omitempty"`
+	Terminal  bool                           `json:"terminal,omitempty"`
+	Recovery  chatservice.StreamRecoveryMode `json:"recovery,omitempty"`
 }
 
 // streamResult StreamChat goroutine 的收尾结果
