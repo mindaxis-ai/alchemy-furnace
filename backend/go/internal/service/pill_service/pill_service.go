@@ -4,6 +4,7 @@ package pill_service
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/alchemy-furnace/server/internal/errors"
 	"github.com/alchemy-furnace/server/internal/interface/dao"
@@ -81,6 +82,9 @@ func (s *Pill) UpdatePill(ctx context.Context, uid uuid.UUID, name *string, desc
 	if err != nil {
 		return nil, err.Relation(errors.ErrorRecordNotFound("service.pill.update_take"))
 	}
+	if pill.IsBuiltin {
+		return nil, errors.ErrorConflict("service.pill.builtin_readonly", "内置金丹为只读示例，请制作副本后再编辑")
+	}
 
 	updates := map[string]any{}
 	if name != nil && *name != "" {
@@ -128,6 +132,9 @@ func (s *Pill) DeletePill(ctx context.Context, uid uuid.UUID) errors.Error {
 	if err != nil {
 		return err.Relation(errors.ErrorRecordNotFound("service.pill.delete_take"))
 	}
+	if pill.IsBuiltin {
+		return errors.ErrorConflict("service.pill.builtin_readonly", "内置金丹为只读示例，不可删除")
+	}
 
 	// 先失效缓存(必须在删除服用记录之前,否则找不到受影响道人)
 	s.invalidateByPill(ctx, pill)
@@ -138,6 +145,67 @@ func (s *Pill) DeletePill(ctx context.Context, uid uuid.UUID) errors.Error {
 
 	zap.L().Info("[炼丹炉] 金丹已销毁", zap.String("uuid", uid.String()), zap.String("name", pill.Name))
 	return nil
+}
+
+// ClonePill 深复制金丹为自定义副本:复制全部元数据与完整 schema/tags,
+// 但 UUID 全新、is_builtin=false、名称追加" 副本";副本 JSON 与原丹不共享任何引用
+func (s *Pill) ClonePill(ctx context.Context, uid uuid.UUID) (*model.ElixirPill, errors.Error) {
+	pill, err := s.pill.TakePillByUUID(ctx, uid)
+	if err != nil {
+		return nil, err.Relation(errors.ErrorRecordNotFound("service.pill.clone_take"))
+	}
+
+	schema, cerr := deepCopyMap(pill.SkillSchema)
+	if cerr != nil {
+		return nil, errors.ErrorServerInternalError("service.pill.clone_schema")
+	}
+	tags, cerr := deepCopyList(pill.Tags)
+	if cerr != nil {
+		return nil, errors.ErrorServerInternalError("service.pill.clone_tags")
+	}
+
+	clone := &model.ElixirPill{
+		UUID:        uuid.New(),
+		Name:        pill.Name + " 副本",
+		Description: pill.Description,
+		SkillSchema: schema,
+		Tags:        tags,
+		Author:      pill.Author,
+		Version:     pill.Version,
+		IsBuiltin:   false,
+	}
+	if err := s.pill.SavePill(ctx, clone); err != nil {
+		return nil, err.Relation(errors.ErrorServerInternalError("service.pill.clone"))
+	}
+
+	zap.L().Info("[炼丹炉] 金丹副本已制作", zap.String("source_uuid", uid.String()), zap.String("clone_uuid", clone.UUID.String()))
+	return clone, nil
+}
+
+// deepCopyMap/deepCopyList 经 JSON 往返深复制,保证副本与原丹不共享嵌套引用
+// (schema/tags 入库即 JSON 序列化,内容必然 JSON 兼容)
+func deepCopyMap(src model.JSONMap) (model.JSONMap, error) {
+	raw, err := json.Marshal(src)
+	if err != nil {
+		return nil, err
+	}
+	var out model.JSONMap
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func deepCopyList(src model.JSONList) (model.JSONList, error) {
+	raw, err := json.Marshal(src)
+	if err != nil {
+		return nil, err
+	}
+	var out model.JSONList
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // invalidateByPill 失效服用该金丹的全部道人缓存;失败仅告警不阻塞主流程
