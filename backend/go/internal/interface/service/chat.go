@@ -17,9 +17,19 @@ type LanguagePatternProvider interface {
 	GetOrBuildPattern(ctx context.Context, agentID uint) (*model.LanguagePattern, errors.Error)
 }
 
+// ChatReadiness 后端权威的可对话就绪状态:active 道人总数与通过正式凭证校验的道人 UUID 名单。
+// 不携带任何凭证内容;单个道人不可用只使其缺席名单,不导致整体失败。
+type ChatReadiness struct {
+	ActiveAgentCount int
+	ReadyAgentIDs    []uuid.UUID
+}
+
 // Chat 对话域业务逻辑接口(会话/消息/SSE 流式对话)
 // 对外以 UUID 标识会话;内部联结仍用自增 ID。SSE 入口按 session UUID 解析
 type Chat interface {
+	// GetReadiness 汇总可发起正式对话的道人就绪状态;仅道人列表读取失败才返回错误
+	GetReadiness(ctx context.Context) (*ChatReadiness, errors.Error)
+
 	// CreateSession 创建 1v1 会话;agentUID 为道人对外 UUID
 	// 标题一律留空,由首个问答自动命名;group 会话走 Service 扩展入口
 	CreateSession(ctx context.Context, agentUID uuid.UUID) (*model.ChatSession, errors.Error)

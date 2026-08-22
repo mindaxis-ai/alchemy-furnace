@@ -77,6 +77,7 @@ func Register(r *gin.Engine, isDesktop bool, guards ...gin.HandlerFunc) error {
 	// 对话管理(会话 UUID 对外标识;SSE 流式对话为 RAW handler,不经 Wrapper)
 	chatGroup := v1.Group("/chat")
 	{
+		chatGroup.GET("/readiness", router.Wrapper(chatHandler.GetReadiness))
 		chatGroup.POST("/sessions", router.Wrapper(chatHandler.CreateSession))
 		chatGroup.GET("/sessions", router.WrapperPage(chatHandler.ListSessions))
 		chatGroup.GET("/sessions/:uuid", router.Wrapper(chatHandler.GetSession))

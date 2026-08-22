@@ -90,6 +90,28 @@ func (s *Chat) validateChatAgent(ctx context.Context, agentUID uuid.UUID) (*mode
 	return agent, err
 }
 
+// GetReadiness 分页遍历全部 active 道人并逐个复用正式凭证校验,产出后端权威的就绪名单。
+// 单个道人模型不可用只使其缺席名单;仅道人列表读取失败才导致整体失败(5xx 安全文案)。
+func (s *Chat) GetReadiness(ctx context.Context) (*service.ChatReadiness, ierr.Error) {
+	readiness := &service.ChatReadiness{ReadyAgentIDs: []uuid.UUID{}}
+	for page := 1; ; page++ {
+		total, agents, err := s.agent.FindAgents(ctx, page, 100, "active")
+		if err != nil {
+			return nil, err.Relation(ierr.ErrorServerInternalError("service.chat.readiness_list"))
+		}
+		readiness.ActiveAgentCount = int(total)
+		for _, agent := range agents {
+			if _, _, verr := s.validateChatAgentAccess(ctx, agent.UUID); verr == nil {
+				readiness.ReadyAgentIDs = append(readiness.ReadyAgentIDs, agent.UUID)
+			}
+		}
+		if len(agents) == 0 || int64(page*100) >= total {
+			break
+		}
+	}
+	return readiness, nil
+}
+
 // CreateSession 创建 1v1 会话;agentUID 为道人对外 UUID
 // 标题一律留空,由首个问答自动命名(群聊/单聊统一);group 会话改由 GroupService 路径另建
 func (s *Chat) CreateSession(ctx context.Context, agentUID uuid.UUID) (*model.ChatSession, ierr.Error) {
