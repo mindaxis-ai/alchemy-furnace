@@ -4,7 +4,7 @@ import { createStreamDispatcher } from '../frontend/services/streamDispatcher.ts
 type Applied = { kind: string; value?: string }
 const applied: Applied[] = []
 const dispatcher = createStreamDispatcher({
-  onChunk: value => applied.push({ kind: 'chunk', value }),
+  onChunk: chunk => applied.push({ kind: 'chunk', value: chunk.content }),
   onSpeakerStart: info => applied.push({ kind: 'start', value: info.agent_id }),
   onSpeakerDone: info => applied.push({ kind: 'done', value: info.agent_id }),
   onNotice: value => applied.push({ kind: 'notice', value }),
@@ -12,11 +12,11 @@ const dispatcher = createStreamDispatcher({
 })
 
 dispatcher.pushSpeakerStart({ agent_id: 'A', agent_name: '甲' })
-dispatcher.pushChunk('第一片')
-dispatcher.pushChunk('第二片')
+dispatcher.pushChunk({ content: '第一片' })
+dispatcher.pushChunk({ content: '第二片' })
 dispatcher.pushSpeakerDone({ agent_id: 'A', message_id: 'm1' })
 dispatcher.pushSpeakerStart({ agent_id: 'B', agent_name: '乙' })
-dispatcher.pushChunk('第三片')
+dispatcher.pushChunk({ content: '第三片' })
 dispatcher.pushSpeakerDone({ agent_id: 'B', message_id: 'm2' })
 dispatcher.markDone()
 dispatcher.markDone()
