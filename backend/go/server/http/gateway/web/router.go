@@ -40,6 +40,7 @@ func Register(r *gin.Engine, isDesktop bool, guards ...gin.HandlerFunc) error {
 		pills.GET("/:uuid", router.Wrapper(pillHandler.Get))
 		pills.PUT("/:uuid", router.Wrapper(pillHandler.Update))
 		pills.DELETE("/:uuid", router.Wrapper(pillHandler.Delete))
+		pills.POST("/:uuid/clone", router.Wrapper(pillHandler.Clone))
 	}
 
 	// 道人管理(UUID 对外标识;服用记录路径参数 :pill_uuid)
