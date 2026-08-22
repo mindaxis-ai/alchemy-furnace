@@ -67,6 +67,26 @@ func (d *ChatDao) SaveSession(ctx context.Context, session *model.ChatSession) e
 	return nil
 }
 
+// SaveGroupSession 原子创建群聊会话与成员(单事务;失败整体回滚,不在事务外补偿删除)
+func (d *ChatDao) SaveGroupSession(ctx context.Context, session *model.ChatSession, members []*model.SessionMember) errors.Error {
+	err := GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(session).Error; err != nil {
+			return err
+		}
+		for _, member := range members {
+			member.SessionID = session.ID
+		}
+		if len(members) == 0 {
+			return nil
+		}
+		return tx.Create(members).Error
+	})
+	if err != nil {
+		return errors.ErrorServerInternalError("dao.chat.save_group_session")
+	}
+	return nil
+}
+
 // UpdateSession 按字段 map 部分更新会话(如标题)
 func (d *ChatDao) UpdateSession(ctx context.Context, session *model.ChatSession, updates map[string]any) errors.Error {
 	if err := GetDB().WithContext(ctx).Model(session).Updates(updates).Error; err != nil {

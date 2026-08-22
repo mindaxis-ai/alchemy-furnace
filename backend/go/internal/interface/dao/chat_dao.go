@@ -20,6 +20,10 @@ type Chat interface {
 	// SaveSession 新建会话
 	SaveSession(ctx context.Context, session *model.ChatSession) errors.Error
 
+	// SaveGroupSession 原子创建群聊会话与成员(单事务,任一步失败整体回滚);
+	// 成员 SessionID 由实现按新建会话 ID 回填
+	SaveGroupSession(ctx context.Context, session *model.ChatSession, members []*model.SessionMember) errors.Error
+
 	// UpdateSession 按字段 map 部分更新会话(如标题)
 	UpdateSession(ctx context.Context, session *model.ChatSession, updates map[string]any) errors.Error
 

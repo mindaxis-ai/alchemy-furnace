@@ -140,3 +140,99 @@ func TestChatDaoFindMessagesPagesBackwardFromNewestAndPresentsAscending(t *testi
 		})
 	}
 }
+
+// newChatDAOTestGroupDB 群聊原子创建测试库(含 session_members 表)
+func newChatDAOTestGroupDB(t *testing.T) *ChatDao {
+	t.Helper()
+	db := newSQLiteTestDB(t, filepath.Join(t.TempDir(), "chat-group-dao.db"))
+	if err := db.AutoMigrate(&model.DaoAgent{}, &model.ChatSession{}, &model.SessionMember{}); err != nil {
+		t.Fatalf("AutoMigrate group models: %v", err)
+	}
+	previousDB := DB
+	DB = db
+	t.Cleanup(func() { DB = previousDB })
+	return NewChatDao()
+}
+
+func TestChatDaoSaveGroupSessionRollsBackSessionWhenMemberInsertFails(t *testing.T) {
+	dao := newChatDAOTestGroupDB(t)
+	// 触发器强制成员写入失败,验证会话与成员整体回滚
+	trigger := `
+CREATE TRIGGER fail_session_member_insert
+BEFORE INSERT ON session_members
+BEGIN
+  SELECT RAISE(ABORT, 'forced member insert failure');
+END`
+	if err := DB.Exec(trigger).Error; err != nil {
+		t.Fatalf("create failure trigger: %v", err)
+	}
+
+	session := &model.ChatSession{UUID: uuid.New(), Type: model.SessionTypeGroup, Title: ""}
+	members := []*model.SessionMember{
+		{AgentID: 1, SortOrder: 0},
+		{AgentID: 2, SortOrder: 1},
+	}
+	err := dao.SaveGroupSession(context.Background(), session, members)
+	if err == nil || err.GetCode() != "dao.chat.save_group_session" {
+		t.Fatalf("SaveGroupSession error = %#v, want safe dao.chat.save_group_session", err)
+	}
+
+	var sessionCount, memberCount int64
+	if queryErr := DB.Model(&model.ChatSession{}).Count(&sessionCount).Error; queryErr != nil {
+		t.Fatalf("count sessions: %v", queryErr)
+	}
+	if queryErr := DB.Model(&model.SessionMember{}).Count(&memberCount).Error; queryErr != nil {
+		t.Fatalf("count members: %v", queryErr)
+	}
+	if sessionCount != 0 || memberCount != 0 {
+		t.Fatalf("persisted sessions=%d members=%d, want both 0 after member failure", sessionCount, memberCount)
+	}
+}
+
+func TestChatDaoSaveGroupSessionPersistsSessionAndMembersInOrder(t *testing.T) {
+	dao := newChatDAOTestGroupDB(t)
+	agents := []*model.DaoAgent{
+		{UUID: uuid.New(), Name: "太上老君", Status: "active", ModelName: "test-model"},
+		{UUID: uuid.New(), Name: "孙悟空", Status: "active", ModelName: "test-model"},
+	}
+	for _, agent := range agents {
+		if err := DB.Create(agent).Error; err != nil {
+			t.Fatalf("create agent: %v", err)
+		}
+	}
+
+	session := &model.ChatSession{UUID: uuid.New(), Type: model.SessionTypeGroup, Title: ""}
+	members := []*model.SessionMember{
+		{AgentID: agents[0].ID, SortOrder: 0},
+		{AgentID: agents[1].ID, SortOrder: 1},
+	}
+	if err := dao.SaveGroupSession(context.Background(), session, members); err != nil {
+		t.Fatalf("SaveGroupSession error = %v", err)
+	}
+
+	if session.ID == 0 {
+		t.Fatal("SaveGroupSession did not assign session ID")
+	}
+	for i, member := range members {
+		if member.SessionID != session.ID {
+			t.Fatalf("members[%d].SessionID = %d, want session FK %d", i, member.SessionID, session.ID)
+		}
+	}
+
+	var persisted model.ChatSession
+	if err := DB.Where("uuid = ?", session.UUID.String()).First(&persisted).Error; err != nil {
+		t.Fatalf("session not persisted: %v", err)
+	}
+	var persistedMembers []*model.SessionMember
+	if err := DB.Where("session_id = ?", session.ID).
+		Order("sort_order ASC, id ASC").
+		Find(&persistedMembers).Error; err != nil {
+		t.Fatalf("query members: %v", err)
+	}
+	if len(persistedMembers) != 2 {
+		t.Fatalf("persisted members = %d, want 2", len(persistedMembers))
+	}
+	if persistedMembers[0].AgentID != agents[0].ID || persistedMembers[1].AgentID != agents[1].ID {
+		t.Fatalf("member order/association wrong: %+v", persistedMembers)
+	}
+}

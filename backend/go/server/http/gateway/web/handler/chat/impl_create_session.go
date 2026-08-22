@@ -47,11 +47,8 @@ func (cls *Chat) CreateSession(c *gin.Context) (response.Code, any, error) {
 		if err != nil {
 			return 0, nil, err
 		}
-		members, merr := cls.chat.ListMembers(ctx, session.UUID)
-		if merr != nil {
-			return 0, nil, merr
-		}
-		return response.CodeCreated, toSessionResponseWithMembers(session, members), nil
+		// 成员随会话原子创建并由 service 带回,不再二次查询(消除第二个失败点)
+		return response.CodeCreated, toSessionResponse(session), nil
 	}
 
 	// single 分支

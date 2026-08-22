@@ -66,12 +66,13 @@ func (f *fakeAgentDao) SaveLanguagePattern(ctx context.Context, p *model.Languag
 }
 
 type fakeChatDao struct {
-	sessions  map[string]*model.ChatSession
-	members   map[uint][]*model.SessionMember
-	messages  []*model.ChatMessage
-	nextID    uint
-	agentByID map[uint]*model.DaoAgent // 模拟 GORM Preload("Agent")
-	saveErr   errors.Error
+	sessions       map[string]*model.ChatSession
+	members        map[uint][]*model.SessionMember
+	messages       []*model.ChatMessage
+	nextID         uint
+	agentByID      map[uint]*model.DaoAgent // 模拟 GORM Preload("Agent")
+	saveErr        errors.Error
+	groupSaveCalls int
 }
 
 func (f *fakeChatDao) TakeSessionByUUID(ctx context.Context, uid uuid.UUID) (*model.ChatSession, errors.Error) {
@@ -158,6 +159,19 @@ func (f *fakeChatDao) SaveMembers(ctx context.Context, ms []*model.SessionMember
 	}
 	return nil
 }
+
+// SaveGroupSession 原子建群 fake:记次数、回填成员 SessionID、入 sessions/members
+func (f *fakeChatDao) SaveGroupSession(ctx context.Context, s *model.ChatSession, ms []*model.SessionMember) errors.Error {
+	f.groupSaveCalls++
+	if err := f.SaveSession(ctx, s); err != nil {
+		return err
+	}
+	for _, m := range ms {
+		m.SessionID = s.ID
+		f.members[s.ID] = append(f.members[s.ID], m)
+	}
+	return nil
+}
 func (f *fakeChatDao) FindMembers(ctx context.Context, sessionID uint) ([]*model.SessionMember, errors.Error) {
 	// 填充 Agent(模拟 GORM Preload)
 	src := f.members[sessionID]
@@ -221,11 +235,25 @@ func TestCreateGroupSession(t *testing.T) {
 	if s.Type != model.SessionTypeGroup || s.Title != "" || s.AgentID != nil {
 		t.Fatalf("群会话字段不对: %+v", s)
 	}
+	if chats.groupSaveCalls != 1 {
+		t.Fatalf("建群应只调用一次原子保存, 实际 %d 次", chats.groupSaveCalls)
+	}
 	if len(chats.members[s.ID]) != 2 {
 		t.Fatalf("成员未去重: %d", len(chats.members[s.ID]))
 	}
 	if chats.members[s.ID][0].SortOrder != 0 || chats.members[s.ID][1].SortOrder != 1 {
 		t.Fatalf("SortOrder 未按邀请顺序赋值: %+v", chats.members[s.ID])
+	}
+	// 返回的会话直接携带去重后的成员(含已验证道人),响应无需二次查询
+	if len(s.Members) != 2 {
+		t.Fatalf("session.Members = %+v, want 2 members", s.Members)
+	}
+	if s.Members[0].Agent.UUID != u1 || s.Members[1].Agent.UUID != u2 {
+		t.Fatalf("成员 UUID 顺序 = [%s %s], want [%s %s]",
+			s.Members[0].Agent.UUID, s.Members[1].Agent.UUID, u1, u2)
+	}
+	if s.Members[0].Agent.Name != "太上老君" || s.Members[1].Agent.Name != "孙悟空" {
+		t.Fatalf("成员未携带已验证道人: %+v", s.Members)
 	}
 }
 
@@ -313,6 +341,9 @@ func TestCreateGroupSessionRejectsInvalidMemberBeforePersistence(t *testing.T) {
 			}
 			if len(chats.members) != 0 {
 				t.Fatalf("CreateGroupSession() persisted members after validation failure: %+v", chats.members)
+			}
+			if chats.groupSaveCalls != 0 {
+				t.Fatalf("CreateGroupSession() called atomic save %d times after validation failure", chats.groupSaveCalls)
 			}
 		})
 	}

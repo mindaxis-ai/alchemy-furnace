@@ -465,15 +465,16 @@ func (s *Chat) CreateGroupSession(ctx context.Context, agentUIDs []uuid.UUID) (*
 	}
 
 	session := &model.ChatSession{Type: model.SessionTypeGroup, Title: ""}
-	if err := s.chat.SaveSession(ctx, session); err != nil {
-		return nil, err.Relation(ierr.ErrorServerInternalError("service.chat.group_save"))
-	}
 	members := make([]*model.SessionMember, 0, len(agents))
 	for i, a := range agents {
-		members = append(members, &model.SessionMember{SessionID: session.ID, AgentID: a.ID, SortOrder: i})
+		// 携带已验证道人,响应直接从成员取 UUID/昵称/状态,无需二次查询
+		members = append(members, &model.SessionMember{AgentID: a.ID, SortOrder: i, Agent: *a})
 	}
-	if err := s.chat.SaveMembers(ctx, members); err != nil {
-		return nil, err.Relation(ierr.ErrorServerInternalError("service.chat.group_save_members"))
+	if err := s.chat.SaveGroupSession(ctx, session, members); err != nil {
+		return nil, err.Relation(ierr.ErrorServerInternalError("service.chat.group_save"))
+	}
+	for _, m := range members {
+		session.Members = append(session.Members, *m)
 	}
 	zap.L().Info("[炼丹炉] 群聊开坛", zap.String("session_uuid", session.UUID.String()), zap.Int("members", len(members)))
 	return session, nil
