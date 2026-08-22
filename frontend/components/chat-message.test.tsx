@@ -231,8 +231,11 @@ describe('recoverable chat history and streaming', () => {
 
   it('cancels the old generation on session switch and ignores every stale callback', async () => {
     let oldHandlers!: StreamHandlers
+    let newHandlers!: StreamHandlers
     let finishOldStream!: () => void
+    let finishNewStream!: () => void
     const oldStream = new Promise<void>(resolve => { finishOldStream = resolve })
+    const newStream = new Promise<void>(resolve => { finishNewStream = resolve })
     doubles.agents = [activeAgent('agent-1', 'Agent One'), activeAgent('agent-2', 'Agent Two')]
     doubles.listSessions.mockResolvedValue({ list: [singleSession, secondSingleSession], total: 2 })
     doubles.getMessages
@@ -262,17 +265,44 @@ describe('recoverable chat history and streaming', () => {
 
     expect(await screen.findByText('current session history')).toBeInTheDocument()
     expect(doubles.stopStream).toHaveBeenCalledTimes(stopCallsBeforeSwitch + 1)
+
+    // B 会话发起自己的流式回合:流进行中发送按钮变为停止按钮
+    doubles.streamChatMessage.mockImplementationOnce(async (_sessionId: string, _content: string, handlers: StreamHandlers) => {
+      newHandlers = handlers
+      await newStream
+    })
+    const inputB = await screen.findByRole('textbox')
+    await user.type(inputB, 'question in new session')
+    await user.click(screen.getByRole('button', { name: 'input.send' }))
+    expect(await screen.findByRole('button', { name: 'input.stop' })).toBeInTheDocument()
+
+    // 旧会话全部回调类别(chunk/error/stopped/done/title)都不得影响 B
     await act(async () => {
       oldHandlers.onChunk({ content: 'stale old answer' })
       oldHandlers.onError('stale old failure', { terminal: true, recovery: 'persisted_retry' })
       oldHandlers.onStopped()
+      oldHandlers.onDone()
+      oldHandlers.onTitle('stale injected title')
       finishOldStream()
       await oldStream
     })
 
     expect(screen.queryByText('stale old answer')).not.toBeInTheDocument()
     expect(screen.queryByText('stale old failure')).not.toBeInTheDocument()
+    expect(screen.queryByText('stale injected title')).not.toBeInTheDocument()
+    expect(screen.getByText('Old discourse')).toBeInTheDocument()
     expect(screen.getByText('current session history')).toBeInTheDocument()
+    // 旧 done 不得终止 B 的进行中途合(停止按钮仍在)
+    expect(screen.getByRole('button', { name: 'input.stop' })).toBeInTheDocument()
+
+    // B 自己的回调在旧回调风暴后仍正常工作
+    await act(async () => {
+      newHandlers.onChunk({ content: 'new session answer' })
+      newHandlers.onDone()
+      finishNewStream()
+      await newStream
+    })
+    expect(screen.getByText('new session answer')).toBeInTheDocument()
     expect(screen.getByRole('textbox')).toBeEnabled()
   })
 
