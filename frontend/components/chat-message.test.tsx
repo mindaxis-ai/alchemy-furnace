@@ -282,7 +282,7 @@ describe('recoverable chat history and streaming', () => {
       oldHandlers.onError('stale old failure', { terminal: true, recovery: 'persisted_retry' })
       oldHandlers.onStopped()
       oldHandlers.onDone()
-      oldHandlers.onTitle('stale injected title')
+      oldHandlers.onTitle!('stale injected title')
       finishOldStream()
       await oldStream
     })
