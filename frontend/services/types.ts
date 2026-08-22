@@ -70,6 +70,21 @@ export interface SkillSchema {
   [key: string]: unknown
 }
 
+/**
+ * 金丹编辑器草稿：仅含编辑器已知区块（pill-schema-editor/section-registry 负责读写）
+ * 序列化时以原始 skill_schema 为底合并已知字段，未知键（fusion_lineage、未来字段）原样保留
+ */
+export interface PillSchemaDraft {
+  identity_card: string
+  expression_dna: ExpressionDNA
+  mental_models: MentalModel[]
+  decision_heuristics: DecisionHeuristic[]
+  values: string[]
+  anti_patterns: string[]
+  honest_limits: string[]
+  example_dialogues: ExampleDialogue[]
+}
+
 /** 女娲蒸馏产生的可编辑草稿（不会自动落库） */
 export interface DistillationSource {
   title: string

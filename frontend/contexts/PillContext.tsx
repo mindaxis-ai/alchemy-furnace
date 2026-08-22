@@ -73,11 +73,12 @@ interface PillContextType {
   // 异步操作
   fetchPills: (params?: PillListParams) => Promise<void>
   fetchPill: (id: string) => Promise<void>
-  /** 创建金丹，返回创建的金丹（失败返回 null） */
-  addPill: (data: CreatePillRequest) => Promise<Pill | null>
-  /** 更新金丹，返回更新后的金丹（失败返回 null） */
-  editPill: (id: string, data: UpdatePillRequest) => Promise<Pill | null>
-  removePill: (id: string) => Promise<boolean>
+  /** 创建金丹；失败 dispatch SET_ERROR 并原样抛出错误（ApiError），不得以 null 静默 */
+  addPill: (data: CreatePillRequest) => Promise<Pill>
+  /** 更新金丹；失败 dispatch SET_ERROR 并原样抛出错误（ApiError），不得以 null 静默 */
+  editPill: (id: string, data: UpdatePillRequest) => Promise<Pill>
+  /** 删除金丹；失败 dispatch SET_ERROR 并原样抛出错误（ApiError），不得以 false 静默 */
+  removePill: (id: string) => Promise<void>
 }
 
 const PillContext = createContext<PillContextType | null>(null)
@@ -115,8 +116,8 @@ export function PillProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  /** 创建金丹 */
-  const addPill = useCallback(async (data: CreatePillRequest): Promise<Pill | null> => {
+  /** 创建金丹（失败抛错，调用方必须自行捕获） */
+  const addPill = useCallback(async (data: CreatePillRequest): Promise<Pill> => {
     dispatch({ type: 'SET_LOADING', payload: true })
     try {
       const pill = await pillService.createPill(data)
@@ -125,31 +126,30 @@ export function PillProvider({ children }: { children: React.ReactNode }) {
       return pill
     } catch (error) {
       dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '创建金丹失败' })
-      return null
+      throw error
     }
   }, [])
 
-  /** 更新金丹 */
-  const editPill = useCallback(async (id: string, data: UpdatePillRequest): Promise<Pill | null> => {
+  /** 更新金丹（失败抛错，调用方必须自行捕获） */
+  const editPill = useCallback(async (id: string, data: UpdatePillRequest): Promise<Pill> => {
     try {
       const pill = await pillService.updatePill(id, data)
       dispatch({ type: 'UPDATE_PILL', payload: pill })
       return pill
     } catch (error) {
       dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '更新金丹失败' })
-      return null
+      throw error
     }
   }, [])
 
-  /** 删除金丹 */
-  const removePill = useCallback(async (id: string): Promise<boolean> => {
+  /** 删除金丹（失败抛错，调用方必须自行捕获） */
+  const removePill = useCallback(async (id: string): Promise<void> => {
     try {
       await pillService.deletePill(id)
       dispatch({ type: 'REMOVE_PILL', payload: id })
-      return true
     } catch (error) {
       dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '删除金丹失败' })
-      return false
+      throw error
     }
   }, [])
 

@@ -65,20 +65,23 @@ export default function PillsPage() {
     e.preventDefault()
     if (!name.trim()) return
     setCreating(true)
-    const pill = await addPill({
-      name: name.trim(),
-      description: description.trim() || undefined,
-      skill_schema: distilledDraft?.skill_schema || emptySkillSchema(),
-      tags: distilledDraft?.tags || [],
-      version: '1.0.0',
-    })
-    setCreating(false)
-    if (pill) {
+    try {
+      const pill = await addPill({
+        name: name.trim(),
+        description: description.trim() || undefined,
+        skill_schema: distilledDraft?.skill_schema || emptySkillSchema(),
+        tags: distilledDraft?.tags || [],
+        version: '1.0.0',
+      })
       setShowCreate(false)
       setName('')
       setDescription('')
       setDistilledDraft(null)
       router.push(`/pills/${pill.id}`)
+    } catch {
+      // 失败原因已由 Context SET_ERROR 展示，留在创建面板
+    } finally {
+      setCreating(false)
     }
   }
 

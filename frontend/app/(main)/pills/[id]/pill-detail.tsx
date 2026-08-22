@@ -295,27 +295,34 @@ export default function PillDetailPage() {
   const handleSave = async () => {
     if (!form || !form.name.trim()) return
     setSaving(true)
-    const updated = await editPill(pillId, {
-      name: form.name.trim(),
-      description: form.description.trim(),
-      author: form.author.trim(),
-      version: form.version.trim() || '1.0.0',
-      tags: parseList(form.tagsText),
-      skill_schema: buildSchema(form),
-    })
-    setSaving(false)
-    if (updated) {
+    try {
+      await editPill(pillId, {
+        name: form.name.trim(),
+        description: form.description.trim(),
+        author: form.author.trim(),
+        version: form.version.trim() || '1.0.0',
+        tags: parseList(form.tagsText),
+        skill_schema: buildSchema(form),
+      })
       setSaved(true)
       setIsEditing(false)
       setTimeout(() => setSaved(false), 2000)
+    } catch {
+      // 失败原因已由 Context SET_ERROR 展示，表单内容保留在编辑态
+    } finally {
+      setSaving(false)
     }
   }
 
   /** 删除金丹 */
   const handleDelete = async () => {
     if (!window.confirm(t('deleteConfirm'))) return
-    const ok = await removePill(pillId)
-    if (ok) router.push('/pills')
+    try {
+      await removePill(pillId)
+      router.push('/pills')
+    } catch {
+      // 失败原因已由 Context SET_ERROR 展示，停留在详情页
+    }
   }
 
   if (!pill && state.loading) {

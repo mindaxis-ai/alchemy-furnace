@@ -46,6 +46,13 @@ export function deletePill(id: string): Promise<void> {
 }
 
 /**
+ * 制作副本：深复制指定金丹为自定义副本（新 UUID、is_builtin=false、名称追加「副本」）
+ */
+export function clonePill(id: string): Promise<Pill> {
+  return post<Pill>(`/pills/${id}/clone`)
+}
+
+/**
  * 新建金丹时的默认空 skill_schema
  */
 export function emptySkillSchema(): SkillSchema {
