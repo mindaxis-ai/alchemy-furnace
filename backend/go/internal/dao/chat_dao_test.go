@@ -154,6 +154,64 @@ func newChatDAOTestGroupDB(t *testing.T) *ChatDao {
 	return NewChatDao()
 }
 
+func TestChatDaoFindMembersBySessionIDsGroupsOrdersAndSkipsEmptyInput(t *testing.T) {
+	dao := newChatDAOTestGroupDB(t)
+	agents := []*model.DaoAgent{
+		{UUID: uuid.New(), Name: "太上老君", Status: "active", ModelName: "test-model"},
+		{UUID: uuid.New(), Name: "孙悟空", Status: "active", ModelName: "test-model"},
+	}
+	for _, agent := range agents {
+		if err := DB.Create(agent).Error; err != nil {
+			t.Fatalf("create agent: %v", err)
+		}
+	}
+	sessions := []*model.ChatSession{
+		{UUID: uuid.New(), Type: model.SessionTypeGroup},
+		{UUID: uuid.New(), Type: model.SessionTypeGroup},
+	}
+	for _, session := range sessions {
+		if err := DB.Create(session).Error; err != nil {
+			t.Fatalf("create session: %v", err)
+		}
+	}
+	// 故意逆序写入,证明结果按 sort_order 排序而非插入顺序
+	seed := []*model.SessionMember{
+		{SessionID: sessions[0].ID, AgentID: agents[1].ID, SortOrder: 1},
+		{SessionID: sessions[0].ID, AgentID: agents[0].ID, SortOrder: 0},
+		{SessionID: sessions[1].ID, AgentID: agents[1].ID, SortOrder: 0},
+	}
+	for _, member := range seed {
+		if err := DB.Create(member).Error; err != nil {
+			t.Fatalf("create member: %v", err)
+		}
+	}
+
+	grouped, err := dao.FindMembersBySessionIDs(context.Background(), []uint{sessions[0].ID, sessions[1].ID})
+	if err != nil {
+		t.Fatalf("FindMembersBySessionIDs error = %v", err)
+	}
+	if len(grouped) != 2 {
+		t.Fatalf("grouped sessions = %d, want 2", len(grouped))
+	}
+	first := grouped[sessions[0].ID]
+	if len(first) != 2 || first[0].AgentID != agents[0].ID || first[1].AgentID != agents[1].ID {
+		t.Fatalf("session[0] members = %+v, want sorted by sort_order", first)
+	}
+	if first[0].Agent.Name != "太上老君" {
+		t.Fatalf("Agent 未预加载: %+v", first[0].Agent)
+	}
+	second := grouped[sessions[1].ID]
+	if len(second) != 1 || second[0].AgentID != agents[1].ID {
+		t.Fatalf("session[1] members = %+v, want single member", second)
+	}
+
+	// 空输入直接返回空 map,不访问数据库
+	empty, err := dao.FindMembersBySessionIDs(context.Background(), nil)
+	if err != nil || len(empty) != 0 {
+		t.Fatalf("empty input = %v, %v; want empty map, nil error", empty, err)
+	}
+}
+
 func TestChatDaoSaveGroupSessionRollsBackSessionWhenMemberInsertFails(t *testing.T) {
 	dao := newChatDAOTestGroupDB(t)
 	// 触发器强制成员写入失败,验证会话与成员整体回滚

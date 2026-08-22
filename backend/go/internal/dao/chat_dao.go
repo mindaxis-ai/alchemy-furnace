@@ -193,6 +193,26 @@ func (d *ChatDao) FindMembers(ctx context.Context, sessionID uint) ([]*model.Ses
 	return members, nil
 }
 
+// FindMembersBySessionIDs 批量查询多会话成员,预加载道人,按会话分组(消除列表 N+1)
+func (d *ChatDao) FindMembersBySessionIDs(ctx context.Context, sessionIDs []uint) (map[uint][]*model.SessionMember, errors.Error) {
+	grouped := map[uint][]*model.SessionMember{}
+	if len(sessionIDs) == 0 {
+		return grouped, nil
+	}
+	var members []*model.SessionMember
+	if err := GetDB().WithContext(ctx).
+		Preload("Agent").
+		Where("session_id IN ?", sessionIDs).
+		Order("session_id ASC, sort_order ASC, id ASC").
+		Find(&members).Error; err != nil {
+		return nil, errors.ErrorServerInternalError("dao.chat.find_members_by_session_ids")
+	}
+	for _, member := range members {
+		grouped[member.SessionID] = append(grouped[member.SessionID], member)
+	}
+	return grouped, nil
+}
+
 // DeleteMember 移出群成员
 func (d *ChatDao) DeleteMember(ctx context.Context, sessionID uint, agentID uint) errors.Error {
 	res := GetDB().WithContext(ctx).

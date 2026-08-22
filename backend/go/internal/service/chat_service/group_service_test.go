@@ -73,6 +73,7 @@ type fakeChatDao struct {
 	agentByID      map[uint]*model.DaoAgent // 模拟 GORM Preload("Agent")
 	saveErr        errors.Error
 	groupSaveCalls int
+	batchFindCalls int
 }
 
 func (f *fakeChatDao) TakeSessionByUUID(ctx context.Context, uid uuid.UUID) (*model.ChatSession, errors.Error) {
@@ -172,6 +173,20 @@ func (f *fakeChatDao) SaveGroupSession(ctx context.Context, s *model.ChatSession
 	}
 	return nil
 }
+
+// FindMembersBySessionIDs 批量成员查询 fake:记次数,复用 FindMembers 的 Preload 模拟
+func (f *fakeChatDao) FindMembersBySessionIDs(ctx context.Context, ids []uint) (map[uint][]*model.SessionMember, errors.Error) {
+	f.batchFindCalls++
+	out := map[uint][]*model.SessionMember{}
+	for _, id := range ids {
+		members, err := f.FindMembers(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		out[id] = members
+	}
+	return out, nil
+}
 func (f *fakeChatDao) FindMembers(ctx context.Context, sessionID uint) ([]*model.SessionMember, errors.Error) {
 	// 填充 Agent(模拟 GORM Preload)
 	src := f.members[sessionID]
@@ -254,6 +269,51 @@ func TestCreateGroupSession(t *testing.T) {
 	}
 	if s.Members[0].Agent.Name != "太上老君" || s.Members[1].Agent.Name != "孙悟空" {
 		t.Fatalf("成员未携带已验证道人: %+v", s.Members)
+	}
+}
+
+func TestListSessionsBatchesMemberLoading(t *testing.T) {
+	ctx := context.Background()
+	u1, u2 := uuid.New(), uuid.New()
+	agents := &fakeAgentDao{agents: map[string]*model.DaoAgent{
+		u1.String(): {ID: 1, UUID: u1, Name: "太上老君", Status: "active", ModelName: "test-model"},
+		u2.String(): {ID: 2, UUID: u2, Name: "孙悟空", Status: "active", ModelName: "test-model"},
+	}}
+	chats := &fakeChatDao{
+		sessions:  map[string]*model.ChatSession{},
+		members:   map[uint][]*model.SessionMember{},
+		agentByID: map[uint]*model.DaoAgent{1: agents.agents[u1.String()], 2: agents.agents[u2.String()]},
+	}
+	// 50 个群会话: 每个两位成员,直接写 fake 存储
+	for i := 0; i < 50; i++ {
+		session := &model.ChatSession{Type: model.SessionTypeGroup}
+		if err := chats.SaveSession(ctx, session); err != nil {
+			t.Fatalf("seed session %d: %v", i, err)
+		}
+		chats.members[session.ID] = []*model.SessionMember{
+			{SessionID: session.ID, AgentID: 1, SortOrder: 0},
+			{SessionID: session.ID, AgentID: 2, SortOrder: 1},
+		}
+	}
+	svc := New(chats, agents, nil, availableCredentialResolver("test-model"), "http://unused")
+
+	_, sessions, err := svc.ListSessions(ctx, uuid.Nil, 1, 100)
+	if err != nil {
+		t.Fatalf("ListSessions() error = %v", err)
+	}
+	if len(sessions) != 50 {
+		t.Fatalf("ListSessions() = %d sessions, want 50", len(sessions))
+	}
+	if chats.batchFindCalls != 1 {
+		t.Fatalf("成员查询次数 = %d, want exactly 1 batch call for 50 groups", chats.batchFindCalls)
+	}
+	for _, session := range sessions {
+		if len(session.Members) != 2 {
+			t.Fatalf("session %s members = %+v, want 2", session.UUID, session.Members)
+		}
+		if session.Members[0].Agent.Name != "太上老君" || session.Members[1].Agent.Name != "孙悟空" {
+			t.Fatalf("session %s member order/preload wrong: %+v", session.UUID, session.Members)
+		}
 	}
 }
 

@@ -163,17 +163,27 @@ func (s *Chat) ListSessions(ctx context.Context, agentUID uuid.UUID, page int, s
 	if err != nil {
 		return 0, nil, err
 	}
+	// 群成员批量加载: 整页一次 IN 查询,消除逐会话 N+1
+	groupIDs := make([]uint, 0, len(sessions))
 	for _, session := range sessions {
-		if session.Type != model.SessionTypeGroup {
-			continue
+		if session.Type == model.SessionTypeGroup {
+			groupIDs = append(groupIDs, session.ID)
 		}
-		members, memberErr := s.chat.FindMembers(ctx, session.ID)
+	}
+	if len(groupIDs) > 0 {
+		bySession, memberErr := s.chat.FindMembersBySessionIDs(ctx, groupIDs)
 		if memberErr != nil {
 			return 0, nil, memberErr.Relation(ierr.ErrorServerInternalError("service.chat.list_members"))
 		}
-		session.Members = make([]model.SessionMember, 0, len(members))
-		for _, member := range members {
-			session.Members = append(session.Members, *member)
+		for _, session := range sessions {
+			if session.Type != model.SessionTypeGroup {
+				continue
+			}
+			members := bySession[session.ID]
+			session.Members = make([]model.SessionMember, 0, len(members))
+			for _, member := range members {
+				session.Members = append(session.Members, *member)
+			}
 		}
 	}
 	return total, sessions, nil

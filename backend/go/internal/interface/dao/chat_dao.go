@@ -45,6 +45,10 @@ type Chat interface {
 	// FindMembers 按发言顺序(SortOrder ASC)查询群成员,预加载 Agent
 	FindMembers(ctx context.Context, sessionID uint) ([]*model.SessionMember, errors.Error)
 
+	// FindMembersBySessionIDs 批量查询多会话成员(WHERE session_id IN),预加载 Agent,
+	// 按 session_id/sort_order/id 排序后按会话分组;空输入直接返回空 map 不访问数据库
+	FindMembersBySessionIDs(ctx context.Context, sessionIDs []uint) (map[uint][]*model.SessionMember, errors.Error)
+
 	// DeleteMember 移出群成员;不存在返回 ErrorTypeRecordNotFound
 	DeleteMember(ctx context.Context, sessionID uint, agentID uint) errors.Error
 }
