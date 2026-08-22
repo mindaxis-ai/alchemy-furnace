@@ -10,7 +10,7 @@ const boundaries = vi.hoisted(() => ({
   listSessions: vi.fn(),
   createSession: vi.fn(),
   fetchAgents: vi.fn(),
-  listProviders: vi.fn(),
+  getChatReadiness: vi.fn(),
 }))
 
 vi.mock('next/navigation', () => ({
@@ -27,12 +27,9 @@ vi.mock('@/services/chatService', async (importOriginal) => {
     ...actual,
     listSessions: boundaries.listSessions,
     createSession: boundaries.createSession,
+    getChatReadiness: boundaries.getChatReadiness,
   }
 })
-
-vi.mock('@/services/modelService', () => ({
-  listProviders: boundaries.listProviders,
-}))
 
 vi.mock('@/contexts/AgentContext', () => ({
   useAgent: () => ({
@@ -59,7 +56,12 @@ describe('ChatView with ChatProvider state', () => {
     vi.resetAllMocks()
     boundaries.listSessions.mockResolvedValue({ list: [], total: 0 })
     boundaries.fetchAgents.mockResolvedValue(undefined)
-    boundaries.listProviders.mockResolvedValue({ list: [{}] })
+    boundaries.getChatReadiness.mockResolvedValue({
+      active_agent_count: 1,
+      ready_agent_ids: ['agent-1'],
+      can_create_single: true,
+      can_create_group: false,
+    })
   })
 
   it('does not leak a closed launch failure into session-list readiness', async () => {

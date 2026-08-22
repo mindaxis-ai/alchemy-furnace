@@ -200,6 +200,14 @@ export interface ChatSession {
   members?: GroupMember[]
 }
 
+/** 后端权威的可对话就绪状态(GET /chat/readiness);ready_agent_ids 是允许发起会话的唯一名单 */
+export interface ChatReadiness {
+  active_agent_count: number
+  ready_agent_ids: string[]
+  can_create_single: boolean
+  can_create_group: boolean
+}
+
 /** 对话消息（无 RAG 引用来源） */
 export interface ChatMessage {
   id: string

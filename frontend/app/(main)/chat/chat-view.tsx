@@ -42,22 +42,23 @@ import { ChatMessage } from '@/components/chat-message'
 import { GroupMembersPanel } from '@/components/group-members-panel'
 import { TopTabs } from '@/components/interaction/top-tabs'
 import { MentionSuggest } from '@/components/mention-suggest'
-import { OnboardingCard } from '@/components/onboarding-card'
 import { ActionFeedback } from '@/components/interaction/action-feedback'
 import { useChatLaunchFlow, type LaunchState } from '@/hooks/use-chat-launch-flow'
-import { listProviders } from '@/services/modelService'
-import type { Agent } from '@/services/types'
+import { getChatReadiness } from '@/services/chatService'
+import type { Agent, ChatReadiness } from '@/services/types'
 
 type ChatMode = 'single' | 'group'
-type ProviderReadiness =
+
+/** 后端权威就绪状态的加载面: loading / ready / error 三态互不遮蔽 sessions 与 agents */
+type ChatReadinessState =
   | { status: 'loading' }
-  | { status: 'ready'; empty: boolean }
+  | { status: 'ready'; readiness: ChatReadiness }
   | { status: 'error'; message: string }
 
-async function fetchProviderReadiness(): Promise<ProviderReadiness> {
+async function fetchChatReadiness(): Promise<ChatReadinessState> {
   try {
-    const res = await listProviders({ page: 1, page_size: 1 })
-    return { status: 'ready', empty: (res?.list?.length ?? 0) === 0 }
+    const readiness = await getChatReadiness()
+    return { status: 'ready', readiness }
   } catch (error) {
     return {
       status: 'error',
@@ -87,8 +88,8 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
   const [showJumpToBottom, setShowJumpToBottom] = useState(false)
   /** 离底多少 px 算粘底(给用户一点容差,避免边界值抖动) */
   const STICKY_THRESHOLD_PX = 80
-  /** 供应商列表是否为空(用于显示首启引导) */
-  const [providerReadiness, setProviderReadiness] = useState<ProviderReadiness>({ status: 'loading' })
+  /** 后端权威的可对话就绪状态(决定创建入口与可选道人名单) */
+  const [chatReadiness, setChatReadiness] = useState<ChatReadinessState>({ status: 'loading' })
 
   const currentSession = chatState.currentSession
   const messages = chatState.messages
@@ -112,29 +113,37 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
     fetchAgents()
   }, [fetchSessions, fetchAgents])
 
-  // 首启引导: 仅在供应商请求明确成功且列表为空时显示。
+  // 就绪状态: 独立于 sessions/agents 加载,失败只锁定创建入口,不遮蔽另两个加载面
   useEffect(() => {
     const requestId = ++providerRequestRef.current
-    void fetchProviderReadiness().then(readiness => {
-      if (requestId === providerRequestRef.current) setProviderReadiness(readiness)
+    void fetchChatReadiness().then(readiness => {
+      if (requestId === providerRequestRef.current) setChatReadiness(readiness)
     })
     return () => { providerRequestRef.current += 1 }
   }, [])
 
-  const retryProviderReadiness = () => {
+  const retryChatReadiness = () => {
     const requestId = ++providerRequestRef.current
-    setProviderReadiness({ status: 'loading' })
-    void fetchProviderReadiness().then(readiness => {
-      if (requestId === providerRequestRef.current) setProviderReadiness(readiness)
+    setChatReadiness({ status: 'loading' })
+    void fetchChatReadiness().then(readiness => {
+      if (requestId === providerRequestRef.current) setChatReadiness(readiness)
     })
   }
 
-  // T4 快捷键 ⌘N: desktop-guards 在 window 派发 alchemy:new-session → 此处复用现有 setShowAgentSelect
+  const readiness = chatReadiness.status === 'ready' ? chatReadiness.readiness : null
+  // 仅当后端明确"无可创建"(can_create_single=false)时锁死入口;
+  // loading/error 仍可打开选择器查看道人,但名单为空时所有发起都被禁用
+  const creationBlocked = readiness !== null && !readiness.can_create_single
+  const openAgentSelect = useCallback(() => {
+    if (!creationBlocked) setShowAgentSelect(true)
+  }, [creationBlocked])
+
+  // T4 快捷键 ⌘N: desktop-guards 在 window 派发 alchemy:new-session → 与按钮共用同一 readiness 门禁
   useEffect(() => {
-    const onNewSession = () => setShowAgentSelect(true)
+    const onNewSession = () => openAgentSelect()
     window.addEventListener('alchemy:new-session', onNewSession)
     return () => window.removeEventListener('alchemy:new-session', onNewSession)
-  }, [])
+  }, [openAgentSelect])
 
   // 根据 URL 参数加载会话
   useEffect(() => {
@@ -305,17 +314,8 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
     )
   }
 
-  // 如果没有选择会话: 先看是否需要首启引导(无供应商)
+  // 如果没有选择会话: 大厅。readiness 决定创建入口,但不遮蔽已有会话列表
   if (!currentSession) {
-    if (providerReadiness.status === 'ready' && providerReadiness.empty) {
-      return (
-        <div className="mx-auto max-w-6xl px-4 sm:px-6">
-          <div className="flex flex-col items-center justify-center h-[60vh]">
-            <OnboardingCard />
-          </div>
-        </div>
-      )
-    }
     return (
       <div className="mx-auto flex h-[calc(100vh-4rem)] max-w-6xl px-4 sm:px-6 relative">
         <div className="flex-1 flex flex-col items-center justify-center text-center px-4">
@@ -326,20 +326,37 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
           </p>
 
           <button
-            onClick={() => setShowAgentSelect(true)}
-            className="dao-btn-primary"
+            onClick={openAgentSelect}
+            disabled={creationBlocked}
+            className="dao-btn-primary disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Plus className="w-4 h-4" />
             {t('newSession')}
           </button>
 
           <div className="mt-4 flex w-full max-w-md flex-col gap-2 text-left">
-            {providerReadiness.status === 'error' && (
+            {chatReadiness.status === 'error' && (
               <LoadNotice
-                title={t('load.providerError')}
-                message={providerReadiness.message || t('load.providerError')}
+                title={t('load.readinessError')}
+                message={chatReadiness.message || t('load.readinessError')}
                 retryLabel={t('load.retry')}
-                onRetry={retryProviderReadiness}
+                onRetry={retryChatReadiness}
+              />
+            )}
+            {readiness && readiness.active_agent_count === 0 && (
+              <GateNotice
+                title={t('gate.noAgentsTitle')}
+                message={t('gate.noAgentsDesc')}
+                linkHref="/agents"
+                linkLabel={t('gate.createAgent')}
+              />
+            )}
+            {readiness && readiness.active_agent_count > 0 && readiness.ready_agent_ids.length === 0 && (
+              <GateNotice
+                title={t('gate.noReadyTitle')}
+                message={t('gate.noReadyDesc')}
+                linkHref="/models"
+                linkLabel={t('gate.configureModel')}
               />
             )}
             {chatState.sessionsError && (
@@ -382,12 +399,14 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
           <AgentSelectModal
             agents={agents.filter(a => a.status === 'active')}
             agentError={agentState.error}
+            readiness={chatReadiness}
             launchState={launchFlow.state}
             onClose={closeAgentSelect}
             onSelectSingle={handleCreateSession}
             onSelectGroup={handleCreateGroupSession}
             onRetry={launchFlow.retry}
             onRetryAgents={fetchAgents}
+            onRetryReadiness={retryChatReadiness}
             onSelectionChange={launchFlow.reset}
           />
         )}
@@ -411,7 +430,7 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
             <span className="text-sm font-medium text-gold">会话列表</span>
             <button
               aria-label="新建会话"
-              onClick={() => setShowAgentSelect(true)}
+              onClick={openAgentSelect}
               className="p-1.5 rounded hover:bg-gold/10 text-gold transition-colors"
             >
               <Plus className="w-4 h-4" />
@@ -459,7 +478,7 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
               <div className="flex items-center gap-2">
                 <button
                   aria-label="新建会话"
-                  onClick={() => { setSidebarOpen(false); setShowAgentSelect(true) }}
+                  onClick={() => { setSidebarOpen(false); openAgentSelect() }}
                   className="p-1.5 rounded hover:bg-gold/10 text-gold"
                 >
                   <Plus className="w-4 h-4" />
@@ -571,7 +590,7 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
 
           {/* 新对话按钮 */}
           <button
-            onClick={() => setShowAgentSelect(true)}
+            onClick={openAgentSelect}
             className="p-1.5 rounded hover:bg-gold/10 text-gold transition-colors"
             title="新建对话"
           >
@@ -698,12 +717,14 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
         <AgentSelectModal
           agents={agents.filter(a => a.status === 'active')}
           agentError={agentState.error}
+          readiness={chatReadiness}
           launchState={launchFlow.state}
           onClose={closeAgentSelect}
           onSelectSingle={handleCreateSession}
           onSelectGroup={handleCreateGroupSession}
           onRetry={launchFlow.retry}
           onRetryAgents={fetchAgents}
+          onRetryReadiness={retryChatReadiness}
           onSelectionChange={launchFlow.reset}
         />
       )}
@@ -735,6 +756,31 @@ function LoadNotice({
         <button type="button" onClick={onRetry} className="dao-btn-ghost shrink-0 text-xs">
           {retryLabel}
         </button>
+      </div>
+    </div>
+  )
+}
+
+/** 就绪门禁引导: 无道人→/agents;有道人但无就绪→/models */
+function GateNotice({
+  title,
+  message,
+  linkHref,
+  linkLabel,
+}: {
+  title: string
+  message: string
+  linkHref: string
+  linkLabel: string
+}) {
+  return (
+    <div className="rounded-lg border border-gold/30 bg-card px-3 py-2.5 text-sm" role="alert">
+      <p className="font-medium text-foreground">{title}</p>
+      <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+        <p className="min-w-0 flex-1 break-words text-xs text-muted-foreground">{message}</p>
+        <Link href={linkHref} className="dao-btn-ghost shrink-0 text-xs">
+          {linkLabel}
+        </Link>
       </div>
     </div>
   )
@@ -781,28 +827,36 @@ function SessionLoadState({
 function AgentSelectModal({
   agents,
   agentError,
+  readiness,
   launchState,
   onClose,
   onSelectSingle,
   onSelectGroup,
   onRetry,
   onRetryAgents,
+  onRetryReadiness,
   onSelectionChange,
 }: {
   agents: Agent[]
   agentError: string | null
+  readiness: ChatReadinessState
   launchState: LaunchState
   onClose: () => void
   onSelectSingle: (agentId: string) => Promise<boolean>
   onSelectGroup: (agentIds: string[]) => Promise<boolean>
   onRetry: () => Promise<boolean>
   onRetryAgents: () => void | Promise<void>
+  onRetryReadiness: () => void | Promise<void>
   onSelectionChange: () => void
 }) {
   const t = useTranslations('chatView')
   const [mode, setMode] = useState<ChatMode>('single')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const submitting = launchState.status === 'submitting'
+  /** 后端权威就绪名单;loading/error 时为 null → 所有道人不可发起 */
+  const readyIds = readiness.status === 'ready' ? new Set(readiness.readiness.ready_agent_ids) : null
+  const canCreateGroup = readiness.status === 'ready' && readiness.readiness.can_create_group
+  const isReady = (id: string) => readyIds !== null && readyIds.has(id)
 
   const toggleSelect = (id: string) => {
     onSelectionChange()
@@ -879,7 +933,7 @@ function AgentSelectModal({
           </button>
           <button
             type="button"
-            disabled={submitting}
+            disabled={submitting || !canCreateGroup}
             onClick={() => changeMode('group')}
             className={`
               inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-xs font-medium transition-all
@@ -887,6 +941,7 @@ function AgentSelectModal({
                 ? 'bg-gradient-to-br from-gold to-primary text-primary-foreground shadow-sm'
                 : 'text-muted-foreground hover:text-foreground'
               }
+              disabled:cursor-not-allowed disabled:opacity-40
             `}
           >
             <Users className="w-3.5 h-3.5" />
@@ -894,9 +949,24 @@ function AgentSelectModal({
           </button>
         </div>
 
-        <p className="text-[10px] text-muted-foreground mb-3 -mt-2">
+        <p className="text-[10px] text-muted-foreground mb-1 -mt-2">
           {mode === 'single' ? t('mode.singleHint') : t('mode.groupHint')}
         </p>
+        {!canCreateGroup && (
+          <p className="text-[10px] text-gold/80 mb-2">{t('mode.groupUnavailable')}</p>
+        )}
+
+        {/* readiness 加载失败: 不遮蔽道人列表,但所有发起禁用,可重试 */}
+        {readiness.status === 'error' && (
+          <div className="mb-3">
+            <LoadNotice
+              title={t('load.readinessError')}
+              message={readiness.message || t('load.readinessError')}
+              retryLabel={t('load.retry')}
+              onRetry={onRetryReadiness}
+            />
+          </div>
+        )}
 
         {/* 提示:无道人 */}
         {agents.length === 0 && (
@@ -925,7 +995,7 @@ function AgentSelectModal({
                 key={agent.id}
                 type="button"
                 aria-pressed={checked}
-                disabled={submitting}
+                disabled={submitting || !isReady(agent.id)}
                 onClick={() => {
                   if (mode === 'single') {
                     onSelectionChange()
@@ -959,6 +1029,9 @@ function AgentSelectModal({
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-foreground">{agent.name}</p>
                   <p className="text-xs text-muted-foreground truncate">{agent.model_name}</p>
+                  {readyIds !== null && !readyIds.has(agent.id) && (
+                    <p className="text-[10px] text-gold/80">{t('mode.agentNotReady')}</p>
+                  )}
                 </div>
                 {mode === 'single' && <Sparkles className="w-4 h-4 text-gold/50" />}
               </button>

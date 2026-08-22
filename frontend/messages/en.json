@@ -751,7 +751,7 @@
   "chatView": {
     "newSession": "New Session",
     "load": {
-      "providerError": "Could not check model readiness",
+      "readinessError": "Could not load chat readiness",
       "sessionsError": "Could not load sessions",
       "agentsError": "Could not load agents",
       "retry": "Load again",
@@ -800,7 +800,17 @@
       "selectAtLeast": "Select at least {n} agents",
       "noAgents": "No agents yet. Recruit one first.",
       "confirm": "Open",
-      "backToList": "Back"
+      "backToList": "Back",
+      "agentNotReady": "Needs a formal model",
+      "groupUnavailable": "At least two ready agents are required for a group discussion"
+    },
+    "gate": {
+      "noAgentsTitle": "No agents available yet",
+      "noAgentsDesc": "Create an agent before starting a conversation.",
+      "createAgent": "Manage agents",
+      "noReadyTitle": "No agent has a working model",
+      "noReadyDesc": "Configure a formal model for an agent to start chatting.",
+      "configureModel": "Manage models"
     }
   },
   "mention": {

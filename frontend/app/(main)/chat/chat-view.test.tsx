@@ -1,11 +1,30 @@
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import AgentDetailPage from '@/app/(main)/agents/[id]/agent-detail'
 import { ChatView } from '@/app/(main)/chat/chat-view'
 import { ApiError } from '@/services/api'
-import type { ChatSession } from '@/services/types'
+import type { Agent, ChatSession } from '@/services/types'
+
+const defaultAgents: Agent[] = [
+  {
+    id: 'agent-1',
+    name: 'Agent One',
+    model_name: 'model-one',
+    status: 'active',
+    proactivity: 50,
+    created_at: '2026-08-20T00:00:00Z',
+  },
+  {
+    id: 'agent-2',
+    name: 'Agent Two',
+    model_name: 'model-two',
+    status: 'active',
+    proactivity: 50,
+    created_at: '2026-08-20T00:00:00Z',
+  },
+]
 
 const testDoubles = vi.hoisted(() => ({
   push: vi.fn(),
@@ -27,8 +46,8 @@ const testDoubles = vi.hoisted(() => ({
   agentDispatch: vi.fn(),
   fetchPills: vi.fn(),
   pillDispatch: vi.fn(),
-  listProviders: vi.fn(),
   modelOptions: vi.fn(),
+  getChatReadiness: vi.fn(),
   chatState: {
     sessions: [] as ChatSession[],
     currentSession: null as ChatSession | null,
@@ -48,24 +67,7 @@ const testDoubles = vi.hoisted(() => ({
     },
   },
   agentState: {
-    agents: [
-      {
-        id: 'agent-1',
-        name: 'Agent One',
-        model_name: 'model-one',
-        status: 'active',
-        proactivity: 50,
-        created_at: '2026-08-20T00:00:00Z',
-      },
-      {
-        id: 'agent-2',
-        name: 'Agent Two',
-        model_name: 'model-two',
-        status: 'active',
-        proactivity: 50,
-        created_at: '2026-08-20T00:00:00Z',
-      },
-    ],
+    agents: [] as Agent[],
     total: 2,
     currentAgent: {
       id: 'agent-1',
@@ -140,9 +142,16 @@ vi.mock('@/contexts/PillContext', () => ({
 }))
 
 vi.mock('@/services/modelService', () => ({
-  listProviders: testDoubles.listProviders,
   options: testDoubles.modelOptions,
 }))
+
+vi.mock('@/services/chatService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/services/chatService')>()
+  return {
+    ...actual,
+    getChatReadiness: testDoubles.getChatReadiness,
+  }
+})
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -181,19 +190,25 @@ describe('chat launch surfaces', () => {
     testDoubles.chatState.currentSession = null
     testDoubles.chatState.error = null
     testDoubles.chatState.sessionsError = null
+    testDoubles.agentState.agents = [...defaultAgents]
     testDoubles.agentState.error = null
     testDoubles.fetchSessions.mockResolvedValue(undefined)
     testDoubles.fetchAgents.mockResolvedValue(undefined)
     testDoubles.fetchAgent.mockResolvedValue(undefined)
     testDoubles.fetchPills.mockResolvedValue(undefined)
-    testDoubles.listProviders.mockResolvedValue({ list: [{}] })
     testDoubles.modelOptions.mockResolvedValue([])
+    testDoubles.getChatReadiness.mockResolvedValue({
+      active_agent_count: 2,
+      ready_agent_ids: ['agent-1', 'agent-2'],
+      can_create_single: true,
+      can_create_group: true,
+    })
   })
 
   it('renders the lobby skeleton immediately while readiness calls remain pending', () => {
     testDoubles.fetchSessions.mockReturnValue(new Promise(() => undefined))
     testDoubles.fetchAgents.mockReturnValue(new Promise(() => undefined))
-    testDoubles.listProviders.mockReturnValue(new Promise(() => undefined))
+    testDoubles.getChatReadiness.mockReturnValue(new Promise(() => undefined))
 
     render(<ChatView />)
 
@@ -201,18 +216,115 @@ describe('chat launch surfaces', () => {
     expect(screen.getByRole('button', { name: 'newSession' })).toBeEnabled()
   })
 
-  it('keeps readiness failures independent and does not treat a provider failure as configured', async () => {
-    testDoubles.chatState.sessionsError = 'session list unavailable'
-    testDoubles.agentState.error = 'agent list unavailable'
-    testDoubles.listProviders.mockRejectedValueOnce(new Error('provider API unavailable'))
+  it('links to agent management when no active agents exist', async () => {
+    testDoubles.agentState.agents = []
+    testDoubles.agentState.total = 0
+    testDoubles.getChatReadiness.mockResolvedValueOnce({
+      active_agent_count: 0,
+      ready_agent_ids: [],
+      can_create_single: false,
+      can_create_group: false,
+    })
 
     render(<ChatView />)
 
+    expect(await screen.findByRole('link', { name: 'gate.createAgent' })).toHaveAttribute('href', '/agents')
+    expect(screen.getByRole('button', { name: 'newSession' })).toBeDisabled()
+  })
+
+  it('links to model management and blocks creation when no agent has formal credentials', async () => {
+    testDoubles.getChatReadiness.mockResolvedValueOnce({
+      active_agent_count: 2,
+      ready_agent_ids: [],
+      can_create_single: false,
+      can_create_group: false,
+    })
+
+    render(<ChatView />)
+
+    expect(await screen.findByRole('link', { name: 'gate.configureModel' })).toHaveAttribute('href', '/models')
+    expect(screen.getByRole('button', { name: 'newSession' })).toBeDisabled()
+  })
+
+  it('allows single but disables group when exactly one agent is ready', async () => {
+    testDoubles.getChatReadiness.mockResolvedValueOnce({
+      active_agent_count: 2,
+      ready_agent_ids: ['agent-1'],
+      can_create_single: true,
+      can_create_group: false,
+    })
+    const user = userEvent.setup()
+    render(<ChatView />)
+
+    await user.click(screen.getByRole('button', { name: 'newSession' }))
+
+    expect(await screen.findByRole('dialog', { name: 'mode.selectAgent' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Agent One/ })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /Agent Two/ })).toBeDisabled()
+    expect(screen.getByText('mode.agentNotReady')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'mode.group' })).toBeDisabled()
+    expect(screen.getByText('mode.groupUnavailable')).toBeInTheDocument()
+  })
+
+  it('filters or disables ineligible agents using ready_agent_ids', async () => {
+    testDoubles.getChatReadiness.mockResolvedValueOnce({
+      active_agent_count: 2,
+      ready_agent_ids: ['agent-2'],
+      can_create_single: true,
+      can_create_group: false,
+    })
+    testDoubles.createSession.mockResolvedValueOnce(singleSession)
+    const user = userEvent.setup()
+    render(<ChatView />)
+
+    await user.click(screen.getByRole('button', { name: 'newSession' }))
+    await screen.findByRole('dialog', { name: 'mode.selectAgent' })
+
+    const blocked = screen.getByRole('button', { name: /Agent One/ })
+    expect(blocked).toBeDisabled()
+    await user.click(blocked)
+    expect(testDoubles.createSession).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: /Agent Two/ }))
+    expect(testDoubles.createSession).toHaveBeenCalledWith('agent-2')
+  })
+
+  it('keeps sessions and agents visible when readiness alone fails', async () => {
+    testDoubles.chatState.sessions = [{ ...singleSession, title: 'Existing Chat' }]
+    testDoubles.agentState.error = 'agent list unavailable'
+    testDoubles.getChatReadiness.mockRejectedValueOnce(new Error('readiness API unavailable'))
+    const user = userEvent.setup()
+    render(<ChatView />)
+
+    // 会话列表不被 readiness 失败遮蔽
     expect(screen.getByRole('heading', { name: '论道' })).toBeInTheDocument()
-    expect(await screen.findByText('provider API unavailable')).toBeInTheDocument()
-    expect(screen.getByText('session list unavailable')).toBeInTheDocument()
-    await userEvent.setup().click(screen.getByRole('button', { name: 'newSession' }))
+    expect(screen.getByText('Existing Chat')).toBeInTheDocument()
+    expect(await screen.findByText('readiness API unavailable')).toBeInTheDocument()
+
+    // readiness 失败时仍可打开选择器查看道人,但所有道人都不可发起
+    await user.click(screen.getByRole('button', { name: 'newSession' }))
+    const dialog = await screen.findByRole('dialog', { name: 'mode.selectAgent' })
     expect(screen.getByText('agent list unavailable')).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: /Agent One/ })).toBeDisabled()
+    expect(within(dialog).getByRole('button', { name: /Agent Two/ })).toBeDisabled()
+  })
+
+  it('does not open the picker through the new-session shortcut while not ready', async () => {
+    testDoubles.getChatReadiness.mockResolvedValueOnce({
+      active_agent_count: 2,
+      ready_agent_ids: [],
+      can_create_single: false,
+      can_create_group: false,
+    })
+    render(<ChatView />)
+
+    // 等 readiness 落地(出现模型管理入口)再发快捷键
+    await screen.findByRole('link', { name: 'gate.configureModel' })
+    act(() => {
+      window.dispatchEvent(new Event('alchemy:new-session'))
+    })
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
   it('exposes the picker as a modal dialog named by its ritual heading', async () => {

@@ -11,7 +11,14 @@
  * - 请求级生命周期，无长驻连接，无需重连
  */
 import { get, post, put, del, buildApiUrl, authHeaders } from './api'
-import type { ChatSession, ChatMessage, ChatRecoveryMode, GroupMember, CreateSessionRequest, PagedList, ListParams } from './types'
+import type { ChatSession, ChatMessage, ChatReadiness, ChatRecoveryMode, GroupMember, CreateSessionRequest, PagedList, ListParams } from './types'
+
+/**
+ * 获取后端权威的可对话就绪状态(active 道人数 / 通过正式凭证校验的道人名单 / 可创建类型)
+ */
+export function getChatReadiness(): Promise<ChatReadiness> {
+  return get<ChatReadiness>('/chat/readiness')
+}
 
 /**
  * 获取会话列表

@@ -750,7 +750,7 @@
   "chatView": {
     "newSession": "新建对话",
     "load": {
-      "providerError": "模型可用性加载失败",
+      "readinessError": "对话就绪状态加载失败",
       "sessionsError": "会话列表加载失败",
       "agentsError": "道人列表加载失败",
       "retry": "重新加载",
@@ -799,7 +799,17 @@
       "selectAtLeast": "请至少选择 {n} 位道人",
       "noAgents": "道人府尚无道人,先去招募一位",
       "confirm": "开坛",
-      "backToList": "返回"
+      "backToList": "返回",
+      "agentNotReady": "需配置正式模型",
+      "groupUnavailable": "至少需要两位可用道人才能围炉论道"
+    },
+    "gate": {
+      "noAgentsTitle": "道人府尚无可用道人",
+      "noAgentsDesc": "先创建一位道人，再开坛论道。",
+      "createAgent": "前往道人管理",
+      "noReadyTitle": "道人尚未配置可用模型",
+      "noReadyDesc": "为道人配置正式模型后即可发起对话。",
+      "configureModel": "前往模型管理"
     }
   },
   "mention": {
