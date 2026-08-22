@@ -28,12 +28,19 @@ type scriptEngine struct {
 	replies         []string
 	calls           int
 	completionReply string
+	streamMessages  [][]map[string]string
 }
 
 func newScriptEngine(replies []string) *scriptEngine {
 	e := &scriptEngine{replies: replies}
 	e.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/chat/completions/stream") {
+			var request struct {
+				Messages []map[string]string `json:"messages"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err == nil {
+				e.streamMessages = append(e.streamMessages, request.Messages)
+			}
 			reply := ""
 			if e.calls < len(e.replies) {
 				reply = e.replies[e.calls]
@@ -458,6 +465,19 @@ func TestRetryGroupTurnUsesLatestUserBeyondFirstHistoryPage(t *testing.T) {
 
 	if retryError == "service.chat.retry_unavailable" || !turnDone {
 		t.Fatalf("latest retry beyond page 1 failed: error=%q turn_done=%v", retryError, turnDone)
+	}
+	if len(engine.streamMessages) == 0 {
+		t.Fatal("group retry did not send a model request")
+	}
+	for requestIndex, requestMessages := range engine.streamMessages {
+		var contents []string
+		for _, message := range requestMessages {
+			contents = append(contents, message["content"])
+		}
+		joined := strings.Join(contents, "\n")
+		if !strings.Contains(joined, "latest question") || strings.Contains(joined, "stale old question") {
+			t.Fatalf("model request %d history = %q, want latest question without stale oldest page", requestIndex, joined)
+		}
 	}
 	var userCount int64
 	if err := db.Model(&model.ChatMessage{}).

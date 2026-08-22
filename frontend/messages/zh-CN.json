@@ -770,6 +770,10 @@
       "interrupted": "连接在回复完成前中断。可重试并开始一次新的尝试。",
       "retryBoundary": "群聊中断后开始新的尝试；上方已完成的回复会继续保留。"
     },
+    "history": {
+      "loadOlder": "加载更早消息",
+      "loadingOlder": "正在加载更早消息..."
+    },
     "input": {
       "messageLabel": "消息",
       "placeholder": "向道人请教...",

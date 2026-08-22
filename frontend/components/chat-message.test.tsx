@@ -13,6 +13,7 @@ const doubles = vi.hoisted(() => ({
   getSession: vi.fn(),
   getMessages: vi.fn(),
   streamChatMessage: vi.fn(),
+  stopStream: vi.fn(),
   fetchAgents: vi.fn(),
   listProviders: vi.fn(),
   agents: [] as Agent[],
@@ -31,7 +32,7 @@ vi.mock('@/services/chatService', () => ({
   getSession: doubles.getSession,
   getMessages: doubles.getMessages,
   streamChatMessage: doubles.streamChatMessage,
-  stopStream: vi.fn(),
+  stopStream: doubles.stopStream,
   createSession: vi.fn(),
   createGroupSession: vi.fn(),
   renameSession: vi.fn(),
@@ -95,6 +96,23 @@ const groupSession: ChatSession = {
   updated_at: '2026-08-20T00:00:00Z',
 }
 
+const secondSingleSession: ChatSession = {
+  ...singleSession,
+  id: '33333333-3333-4333-8333-333333333333',
+  agent_id: 'agent-2',
+  title: 'Current discourse',
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
 function renderSession(sessionId: string) {
   return render(
     <ChatProvider>
@@ -155,6 +173,42 @@ describe('recoverable chat history and streaming', () => {
     expect(doubles.getSession).toHaveBeenCalledWith(deepSession.id)
   })
 
+  it('keeps deep-linked group metadata authoritative after a late empty list response', async () => {
+    const pendingList = deferred<{ list: ChatSession[]; total: number }>()
+    const deepGroup = { ...groupSession, id: '44444444-4444-4444-8444-444444444445', title: 'Deferred deep group' }
+    doubles.agents = [activeAgent('agent-a', 'Alpha'), activeAgent('agent-b', 'Beta')]
+    doubles.listSessions.mockReturnValueOnce(pendingList.promise)
+    doubles.getSession.mockResolvedValueOnce(deepGroup)
+    doubles.getMessages.mockResolvedValueOnce({ list: [], total: 0, page: 1, page_size: 200 })
+    doubles.streamChatMessage.mockImplementationOnce(async (_sessionId: string, _content: string, handlers: StreamHandlers) => {
+      handlers.onAccepted?.()
+      handlers.onSpeakerStart?.({ agent_id: 'agent-a', agent_name: 'Alpha' })
+      handlers.onChunk({ agent_id: 'agent-a', agent_name: 'Alpha', content: 'partial group answer' })
+      handlers.onError('group terminal failure', {
+        terminal: true,
+        recovery: 'persisted_retry',
+        agent_id: 'agent-a',
+        agent_name: 'Alpha',
+      })
+    })
+    const user = userEvent.setup()
+
+    renderSession(deepGroup.id)
+    const input = await screen.findByRole('textbox')
+    await act(async () => {
+      pendingList.resolve({ list: [], total: 0 })
+      await pendingList.promise
+    })
+
+    expect(screen.getByRole('button', { name: /Deferred deep group/ })).toBeInTheDocument()
+    await user.type(input, 'deep group question')
+    await user.click(screen.getByRole('button', { name: 'input.send' }))
+
+    expect(await screen.findByText('partial group answer')).toBeInTheDocument()
+    expect(screen.getByText('group terminal failure')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'stream.retry' })).toBeInTheDocument()
+  })
+
   it('does not repopulate a cleared lobby from a late history response', async () => {
     let resolveMessages!: (value: { list: ChatMessage[]; total: number }) => void
     doubles.getMessages.mockReturnValue(new Promise(resolve => { resolveMessages = resolve }))
@@ -173,6 +227,86 @@ describe('recoverable chat history and streaming', () => {
 
     await waitFor(() => expect(screen.queryByText('late stale history')).not.toBeInTheDocument())
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+  })
+
+  it('cancels the old generation on session switch and ignores every stale callback', async () => {
+    let oldHandlers!: StreamHandlers
+    let finishOldStream!: () => void
+    const oldStream = new Promise<void>(resolve => { finishOldStream = resolve })
+    doubles.agents = [activeAgent('agent-1', 'Agent One'), activeAgent('agent-2', 'Agent Two')]
+    doubles.listSessions.mockResolvedValue({ list: [singleSession, secondSingleSession], total: 2 })
+    doubles.getMessages
+      .mockResolvedValueOnce({ list: [], total: 0, page: 1, page_size: 200 })
+      .mockResolvedValueOnce({
+        list: [{ id: 'current-history', role: 'assistant', content: 'current session history', created_at: singleSession.created_at }],
+        total: 1,
+        page: 1,
+        page_size: 200,
+      })
+    doubles.streamChatMessage.mockImplementationOnce(async (_sessionId: string, _content: string, handlers: StreamHandlers) => {
+      oldHandlers = handlers
+      await oldStream
+    })
+    const user = userEvent.setup()
+    const view = renderSession(singleSession.id)
+    const input = await screen.findByRole('textbox')
+    await user.type(input, 'question in old session')
+    await user.click(screen.getByRole('button', { name: 'input.send' }))
+    const stopCallsBeforeSwitch = doubles.stopStream.mock.calls.length
+
+    view.rerender(
+      <ChatProvider>
+        <ChatView sessionId={secondSingleSession.id} />
+      </ChatProvider>,
+    )
+
+    expect(await screen.findByText('current session history')).toBeInTheDocument()
+    expect(doubles.stopStream).toHaveBeenCalledTimes(stopCallsBeforeSwitch + 1)
+    await act(async () => {
+      oldHandlers.onChunk({ content: 'stale old answer' })
+      oldHandlers.onError('stale old failure', { terminal: true, recovery: 'persisted_retry' })
+      oldHandlers.onStopped()
+      finishOldStream()
+      await oldStream
+    })
+
+    expect(screen.queryByText('stale old answer')).not.toBeInTheDocument()
+    expect(screen.queryByText('stale old failure')).not.toBeInTheDocument()
+    expect(screen.getByText('current session history')).toBeInTheDocument()
+    expect(screen.getByRole('textbox')).toBeEnabled()
+  })
+
+  it('loads the latest history first and prepends older pages on demand', async () => {
+    doubles.getMessages
+      .mockResolvedValueOnce({
+        list: [
+          { id: 'message-2', role: 'assistant', content: 'newer history', created_at: '2026-08-20T00:00:02Z' },
+          { id: 'message-3', role: 'assistant', content: 'newest history', created_at: '2026-08-20T00:00:03Z' },
+        ],
+        total: 3,
+        page: 1,
+        page_size: 2,
+      })
+      .mockResolvedValueOnce({
+        list: [
+          { id: 'message-1', role: 'assistant', content: 'oldest history', created_at: '2026-08-20T00:00:01Z' },
+        ],
+        total: 3,
+        page: 2,
+        page_size: 2,
+      })
+    const user = userEvent.setup()
+
+    renderSession(singleSession.id)
+
+    expect(await screen.findByText('newest history')).toBeInTheDocument()
+    expect(screen.queryByText('oldest history')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'history.loadOlder' }))
+
+    const oldest = await screen.findByText('oldest history')
+    const newer = screen.getByText('newer history')
+    expect(doubles.getMessages).toHaveBeenNthCalledWith(2, singleSession.id, { page: 2, page_size: 2 })
+    expect(oldest.compareDocumentPosition(newer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('shows a retryable session error instead of leaking it into generic operation state', async () => {

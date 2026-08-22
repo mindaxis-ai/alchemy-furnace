@@ -26,7 +26,7 @@ type Chat interface {
 	// DeleteSession 删除会话(消息由 FK CASCADE 清理)
 	DeleteSession(ctx context.Context, session *model.ChatSession) errors.Error
 
-	// FindMessages 分页查询会话消息(按时间正序)
+	// FindMessages 从最新消息向前分页，每页内部按时间正序呈现(page=1 为最新一页)
 	FindMessages(ctx context.Context, sessionID uint, page int, size int) (int64, []*model.ChatMessage, errors.Error)
 
 	// TakeLatestUserMessage 查询会话最新用户消息(created_at/id 倒序)，不受历史分页影响。

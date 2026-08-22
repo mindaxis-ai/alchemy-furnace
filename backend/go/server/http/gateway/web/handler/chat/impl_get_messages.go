@@ -7,7 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// GetMessages 获取会话消息历史(分页,按时间正序)
+// GetMessages 获取会话消息历史(page=1 为最新一页,页内按时间正序)
 // GET /api/v1/chat/sessions/:uuid/messages?page=1&page_size=20
 func (cls *Chat) GetMessages(c *gin.Context) (int64, int, int, any, error) {
 	sessionUID, err := parseUUID(c)

@@ -71,7 +71,7 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
   const t = useTranslations('chatView')
   const launchFlow = useChatLaunchFlow()
 
-  const { state: chatState, dispatch, fetchSessions, loadMessages, clearCurrent, streamMessage, renameSession, stopStream } = useChat()
+  const { state: chatState, dispatch, fetchSessions, loadMessages, loadOlderMessages, clearCurrent, streamMessage, renameSession, stopStream } = useChat()
   const { state: agentState, fetchAgents } = useAgent()
 
   const [input, setInput] = useState('')
@@ -257,6 +257,18 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
     stickyToBottomRef.current = true
     setShowJumpToBottom(false)
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+  }
+
+  const handleLoadOlder = async () => {
+    if (!currentSession) return
+    const scroll = messagesScrollRef.current
+    const previousHeight = scroll?.scrollHeight || 0
+    const previousTop = scroll?.scrollTop || 0
+    stickyToBottomRef.current = false
+    await loadOlderMessages(currentSession.id)
+    requestAnimationFrame(() => {
+      if (scroll) scroll.scrollTop = previousTop + scroll.scrollHeight - previousHeight
+    })
   }
 
   if (sessionId && (!currentSession || currentSession.id !== sessionId)) {
@@ -570,6 +582,21 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
         {/* 消息列表 */}
         <div ref={messagesScrollRef} onScroll={handleMessagesScroll} className="flex-1 overflow-y-auto relative px-4 py-5">
           <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
+          {(chatState.history.hasOlder || chatState.history.olderError) && (
+            <div className="flex flex-col items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => { void handleLoadOlder() }}
+                disabled={chatState.history.loadingOlder}
+                className="text-xs font-medium text-gold hover:text-foreground disabled:cursor-wait disabled:opacity-60"
+              >
+                {chatState.history.loadingOlder ? t('history.loadingOlder') : t('history.loadOlder')}
+              </button>
+              {chatState.history.olderError && (
+                <p role="alert" className="text-xs text-primary">{chatState.history.olderError}</p>
+              )}
+            </div>
+          )}
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full text-center">
               <Sparkles className="w-10 h-10 text-sage/50 mb-3" />

@@ -24,8 +24,11 @@ type sseChatStub struct {
 	sessionErr     errors.Error
 	patternErr     errors.Error
 	saveErr        errors.Error
+	saveErrors     map[string]errors.Error
 	engineCalls    int
 	patternCalls   int
+	titleCalls     int
+	generatedTitle string
 	savedRoles     []string
 	recentMessages []*model.ChatMessage
 	streamChunks   []string
@@ -54,6 +57,9 @@ func (s *sseChatStub) AuthorizeSessionForStream(_ context.Context, session *mode
 }
 
 func (s *sseChatStub) SaveMessage(_ context.Context, sessionID uint, role, content string) (*model.ChatMessage, errors.Error) {
+	if err := s.saveErrors[role]; err != nil {
+		return nil, err
+	}
 	if s.saveErr != nil {
 		return nil, s.saveErr
 	}
@@ -92,7 +98,8 @@ func (s *sseChatStub) StreamChat(_ context.Context, _ []map[string]string, _ *cr
 }
 
 func (s *sseChatStub) GenerateSessionTitle(context.Context, uuid.UUID, string, string) string {
-	return ""
+	s.titleCalls++
+	return s.generatedTitle
 }
 
 func (s *sseChatStub) ListMembers(context.Context, uuid.UUID) ([]*model.SessionMember, errors.Error) {
@@ -173,6 +180,48 @@ func TestSSEChatInterruptedUpstreamRetainsPartialAndNeverEmitsDone(t *testing.T)
 	}
 	if strings.Join(stub.savedRoles, ",") != "user" {
 		t.Fatalf("SaveMessage roles = %v, want user only (partial assistant stays client-side)", stub.savedRoles)
+	}
+}
+
+func TestSSEChatAssistantSaveFailureTerminatesWithSanitizedPersistedRetry(t *testing.T) {
+	sessionUID := uuid.New()
+	agentID := uint(7)
+	stub := &sseChatStub{
+		session: &model.ChatSession{
+			ID: 3, UUID: sessionUID, Type: model.SessionTypeSingle, AgentID: &agentID,
+			Agent: model.DaoAgent{ID: agentID, UUID: uuid.New(), Status: "active", ModelName: "test-model"},
+		},
+		streamChunks:   []string{"complete answer"},
+		streamFull:     "complete answer",
+		generatedTitle: "must not be emitted",
+		saveErrors: map[string]errors.Error{
+			"assistant": errors.ErrorServerInternalError("secret.database.assistant_write"),
+		},
+	}
+
+	w := performSSEChat(t, stub, sessionUID)
+	body := w.Body.String()
+
+	if !strings.Contains(body, "event: accepted") {
+		t.Fatalf("SSE body = %q, want accepted after persisted user message", body)
+	}
+	if !strings.Contains(body, "event: error") ||
+		!strings.Contains(body, `"error_code":"service.chat.stream_unavailable"`) ||
+		!strings.Contains(body, `"terminal":true`) ||
+		!strings.Contains(body, `"recovery":"persisted_retry"`) {
+		t.Fatalf("SSE body = %q, want terminal persisted_retry persistence error", body)
+	}
+	if strings.Contains(body, "secret.database") || strings.Contains(body, "must not be emitted") {
+		t.Fatalf("SSE body leaked persistence details or generated a title: %q", body)
+	}
+	if strings.Contains(body, "event: done") || strings.Contains(body, "event: title") {
+		t.Fatalf("SSE body = %q, failed assistant persistence must not emit title/done", body)
+	}
+	if stub.titleCalls != 0 {
+		t.Fatalf("GenerateSessionTitle calls = %d, want 0 after assistant save failure", stub.titleCalls)
+	}
+	if len(stub.savedRoles) != 1 || stub.savedRoles[0] != "user" {
+		t.Fatalf("persisted roles = %v, want only the successful user row", stub.savedRoles)
 	}
 }
 

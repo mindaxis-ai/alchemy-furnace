@@ -93,3 +93,50 @@ func TestChatDaoSaveMessagePersistsAndTouchesSession(t *testing.T) {
 		t.Fatalf("updated_at = %s, want after %s", storedSession.UpdatedAt, oldUpdatedAt)
 	}
 }
+
+func TestChatDaoFindMessagesPagesBackwardFromNewestAndPresentsAscending(t *testing.T) {
+	dao, session := newChatDAOTestSession(t)
+	createdAt := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
+	messages := make([]model.ChatMessage, 0, 25)
+	for i := 1; i <= 25; i++ {
+		messages = append(messages, model.ChatMessage{
+			UUID:      uuid.New(),
+			SessionID: session.ID,
+			Role:      "assistant",
+			Content:   fmt.Sprintf("message-%02d", i),
+			CreatedAt: createdAt,
+		})
+	}
+	if err := DB.Create(&messages).Error; err != nil {
+		t.Fatalf("create message history: %v", err)
+	}
+
+	tests := []struct {
+		page int
+		want []string
+	}{
+		{page: 1, want: []string{"message-16", "message-17", "message-18", "message-19", "message-20", "message-21", "message-22", "message-23", "message-24", "message-25"}},
+		{page: 2, want: []string{"message-06", "message-07", "message-08", "message-09", "message-10", "message-11", "message-12", "message-13", "message-14", "message-15"}},
+		{page: 3, want: []string{"message-01", "message-02", "message-03", "message-04", "message-05"}},
+		{page: 4, want: nil},
+	}
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("page_%d", tt.page), func(t *testing.T) {
+			total, got, err := dao.FindMessages(context.Background(), session.ID, tt.page, 10)
+			if err != nil {
+				t.Fatalf("FindMessages() error = %v", err)
+			}
+			if total != 25 {
+				t.Fatalf("FindMessages() total = %d, want 25", total)
+			}
+			if len(got) != len(tt.want) {
+				t.Fatalf("FindMessages() len = %d, want %d", len(got), len(tt.want))
+			}
+			for i, message := range got {
+				if message.Content != tt.want[i] {
+					t.Fatalf("FindMessages()[%d] = %q, want %q", i, message.Content, tt.want[i])
+				}
+			}
+		})
+	}
+}

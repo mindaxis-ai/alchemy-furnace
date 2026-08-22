@@ -27,7 +27,7 @@ type Chat interface {
 	// ListSessions 分页查询会话列表(agentUID 非零时按道人过滤),按更新时间倒序
 	ListSessions(ctx context.Context, agentUID uuid.UUID, page int, size int) (int64, []*model.ChatSession, errors.Error)
 
-	// GetMessages 分页查询会话消息历史(按时间正序),sessionUID 为会话对外 UUID
+	// GetMessages 从最新消息向前分页，每页内部按时间正序呈现(page=1 为最新一页)
 	GetMessages(ctx context.Context, sessionUID uuid.UUID, page int, size int) (int64, []*model.ChatMessage, errors.Error)
 
 	// TakeLatestUserMessage 查询会话最新用户消息，不受历史列表分页影响。

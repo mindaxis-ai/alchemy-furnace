@@ -133,6 +133,30 @@ describe('ChatProvider session creation', () => {
     expect(result.current.state.error).toBe('道人不可用')
     expect(result.current.state.loading).toBe(false)
   })
+
+  it('preserves a newly created group when an older session list resolves late', async () => {
+    const pendingList = deferred<{ list: ChatSession[]; total: number }>()
+    listSessions.mockReturnValueOnce(pendingList.promise)
+    createGroupSession.mockResolvedValueOnce(groupSession)
+    const { result } = renderHook(() => useChat(), { wrapper })
+
+    let listRequest!: Promise<void>
+    act(() => {
+      listRequest = result.current.fetchSessions()
+    })
+    await act(async () => {
+      await result.current.createGroupSession(['agent-1', 'agent-2'])
+    })
+    expect(result.current.state.sessions.map(session => session.id)).toEqual([groupSession.id])
+
+    await act(async () => {
+      pendingList.resolve({ list: [], total: 0 })
+      await listRequest
+    })
+
+    expect(result.current.state.sessions.map(session => session.id)).toEqual([groupSession.id])
+    expect(result.current.state.currentSession).toEqual(groupSession)
+  })
 })
 
 describe('useChatLaunchFlow', () => {

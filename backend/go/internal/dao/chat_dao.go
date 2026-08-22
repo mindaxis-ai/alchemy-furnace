@@ -83,7 +83,7 @@ func (d *ChatDao) DeleteSession(ctx context.Context, session *model.ChatSession)
 	return nil
 }
 
-// FindMessages 分页查询会话消息(按时间正序)
+// FindMessages 从最新消息向前分页，每页内部按时间正序呈现(page=1 为最新一页)
 func (d *ChatDao) FindMessages(ctx context.Context, sessionID uint, page int, size int) (int64, []*model.ChatMessage, errors.Error) {
 	db := GetDB().WithContext(ctx).Model(&model.ChatMessage{}).Where("session_id = ?", sessionID)
 
@@ -91,14 +91,25 @@ func (d *ChatDao) FindMessages(ctx context.Context, sessionID uint, page int, si
 	if err := db.Count(&total).Error; err != nil {
 		return 0, nil, errors.ErrorServerInternalError("dao.chat.find_messages_count")
 	}
-	if total == 0 || size <= 0 || int64((page-1)*size) >= total {
+	if page < 1 {
+		page = 1
+	}
+	if total == 0 || size <= 0 {
 		return total, nil, nil
+	}
+	pageEnd := total - int64((page-1)*size)
+	if pageEnd <= 0 {
+		return total, nil, nil
+	}
+	pageStart := pageEnd - int64(size)
+	if pageStart < 0 {
+		pageStart = 0
 	}
 
 	var messages []*model.ChatMessage
 	if err := db.Preload("Agent").
-		Order("created_at ASC").
-		Offset((page - 1) * size).Limit(size).
+		Order("created_at ASC").Order("id ASC").
+		Offset(int(pageStart)).Limit(int(pageEnd - pageStart)).
 		Find(&messages).Error; err != nil {
 		return 0, nil, errors.ErrorServerInternalError("dao.chat.find_messages")
 	}

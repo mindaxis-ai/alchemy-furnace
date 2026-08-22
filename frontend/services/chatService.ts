@@ -36,7 +36,7 @@ export function createSession(data: CreateSessionRequest): Promise<ChatSession> 
 }
 
 /**
- * 获取会话消息历史（按时间正序）
+ * 获取会话消息历史（page=1 为最新一页，每页内部按时间正序）
  */
 export function getMessages(sessionId: string, params: ListParams = {}): Promise<PagedList<ChatMessage>> {
   return get<PagedList<ChatMessage>>(`/chat/sessions/${sessionId}/messages`, {

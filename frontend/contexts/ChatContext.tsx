@@ -31,6 +31,14 @@ interface ChatState {
     status: 'idle' | 'loading' | 'ready' | 'not-found' | 'error'
     message?: string
   }
+  history: {
+    page: number
+    pageSize: number
+    total: number
+    hasOlder: boolean
+    loadingOlder: boolean
+    olderError: string | null
+  }
   /** 群聊: 当前正在发言的道人(用于 typing 指示器显示名字/头像) */
   currentSpeaker: { agent_id: string; agent_name: string; agent_avatar?: string } | null
 }
@@ -38,6 +46,7 @@ interface ChatState {
 /** 操作类型 */
 type ChatAction =
   | { type: 'SET_SESSIONS'; payload: ChatSession[] }
+  | { type: 'MERGE_SESSIONS'; payload: { remote: ChatSession[]; preserveIds: string[] } }
   | { type: 'SET_CURRENT_SESSION'; payload: ChatSession | null }
   | { type: 'SET_MESSAGES'; payload: ChatMessage[] }
   | { type: 'ADD_MESSAGE'; payload: ChatMessage }
@@ -64,9 +73,12 @@ type ChatAction =
   | { type: 'SET_ERROR'; payload: string | null }
   | { type: 'SET_SESSIONS_ERROR'; payload: string | null }
   | { type: 'SESSION_LOAD_START' }
-  | { type: 'SESSION_LOAD_READY'; payload: { session: ChatSession; messages: ChatMessage[] } }
+  | { type: 'SESSION_LOAD_READY'; payload: { session: ChatSession; messages: ChatMessage[]; page: number; pageSize: number; total: number } }
   | { type: 'SESSION_LOAD_NOT_FOUND' }
   | { type: 'SESSION_LOAD_ERROR'; payload: string }
+  | { type: 'HISTORY_LOAD_OLDER_START' }
+  | { type: 'HISTORY_LOAD_OLDER_SUCCESS'; payload: { messages: ChatMessage[]; page: number; pageSize: number; total: number } }
+  | { type: 'HISTORY_LOAD_OLDER_ERROR'; payload: string }
   | { type: 'CLEAR_CURRENT' }
 
 /** 初始状态 */
@@ -79,6 +91,7 @@ const initialState: ChatState = {
   error: null,
   sessionsError: null,
   sessionLoad: { status: 'idle' },
+  history: { page: 1, pageSize: 200, total: 0, hasOlder: false, loadingOlder: false, olderError: null },
   currentSpeaker: null,
 }
 
@@ -111,6 +124,16 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
   switch (action.type) {
     case 'SET_SESSIONS':
       return { ...state, sessions: action.payload, sessionsError: null, loading: false }
+    case 'MERGE_SESSIONS': {
+      const preserve = new Set(action.payload.preserveIds)
+      const localById = new Map(state.sessions.map(session => [session.id, session]))
+      const remoteIds = new Set(action.payload.remote.map(session => session.id))
+      const preservedMissing = state.sessions.filter(session => preserve.has(session.id) && !remoteIds.has(session.id))
+      const mergedRemote = action.payload.remote.map(session => preserve.has(session.id)
+        ? localById.get(session.id) || session
+        : session)
+      return { ...state, sessions: [...preservedMissing, ...mergedRemote], sessionsError: null, loading: false }
+    }
     case 'SET_CURRENT_SESSION':
       return { ...state, currentSession: action.payload, messages: [] }
     case 'SET_MESSAGES':
@@ -275,7 +298,10 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
         currentSession: null,
         messages: [],
         loading: true,
+        streaming: false,
+        currentSpeaker: null,
         sessionLoad: { status: 'loading' },
+        history: { page: 1, pageSize: 200, total: 0, hasOlder: false, loadingOlder: false, olderError: null },
       }
     case 'SESSION_LOAD_READY':
       return {
@@ -283,7 +309,17 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
         currentSession: action.payload.session,
         messages: action.payload.messages,
         loading: false,
+        streaming: false,
+        currentSpeaker: null,
         sessionLoad: { status: 'ready' },
+        history: {
+          page: action.payload.page,
+          pageSize: action.payload.pageSize,
+          total: action.payload.total,
+          hasOlder: action.payload.page * action.payload.pageSize < action.payload.total,
+          loadingOlder: false,
+          olderError: null,
+        },
       }
     case 'SESSION_LOAD_NOT_FOUND':
       return {
@@ -291,7 +327,10 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
         currentSession: null,
         messages: [],
         loading: false,
+        streaming: false,
+        currentSpeaker: null,
         sessionLoad: { status: 'not-found' },
+        history: { page: 1, pageSize: 200, total: 0, hasOlder: false, loadingOlder: false, olderError: null },
       }
     case 'SESSION_LOAD_ERROR':
       return {
@@ -299,10 +338,42 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
         currentSession: null,
         messages: [],
         loading: false,
+        streaming: false,
+        currentSpeaker: null,
         sessionLoad: { status: 'error', message: action.payload },
+        history: { page: 1, pageSize: 200, total: 0, hasOlder: false, loadingOlder: false, olderError: null },
       }
+    case 'HISTORY_LOAD_OLDER_START':
+      return { ...state, history: { ...state.history, loadingOlder: true, olderError: null } }
+    case 'HISTORY_LOAD_OLDER_SUCCESS': {
+      const existing = new Set(state.messages.map(message => message.id))
+      const older = action.payload.messages.filter(message => !existing.has(message.id))
+      return {
+        ...state,
+        messages: [...older, ...state.messages],
+        history: {
+          page: action.payload.page,
+          pageSize: action.payload.pageSize,
+          total: action.payload.total,
+          hasOlder: action.payload.page * action.payload.pageSize < action.payload.total,
+          loadingOlder: false,
+          olderError: null,
+        },
+      }
+    }
+    case 'HISTORY_LOAD_OLDER_ERROR':
+      return { ...state, history: { ...state.history, loadingOlder: false, olderError: action.payload } }
     case 'CLEAR_CURRENT':
-      return { ...state, currentSession: null, messages: [], loading: false, sessionLoad: { status: 'idle' } }
+      return {
+        ...state,
+        currentSession: null,
+        messages: [],
+        loading: false,
+        streaming: false,
+        currentSpeaker: null,
+        sessionLoad: { status: 'idle' },
+        history: { page: 1, pageSize: 200, total: 0, hasOlder: false, loadingOlder: false, olderError: null },
+      }
     default:
       return state
   }
@@ -320,6 +391,7 @@ interface ChatContextType {
   inviteMembers: (sessionId: string, agentIds: string[]) => Promise<void>
   kickMember: (sessionId: string, agentId: string) => Promise<void>
   loadMessages: (sessionId: string) => Promise<void>
+  loadOlderMessages: (sessionId: string) => Promise<void>
   clearCurrent: () => void
   streamMessage: (sessionId: string, content: string, opts?: {
     retry?: boolean
@@ -341,20 +413,52 @@ const ChatContext = createContext<ChatContextType | null>(null)
 export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(chatReducer, initialState)
   const sessionsRef = useRef<ChatSession[]>([])
+  const currentSessionRef = useRef<ChatSession | null>(null)
+  const historyRef = useRef(initialState.history)
   const sessionLoadRequestRef = useRef(0)
+  const streamGenerationRef = useRef(0)
+  const sessionListRequestRef = useRef(0)
+  const sessionMutationVersionRef = useRef(0)
+  const sessionMutationByIDRef = useRef(new Map<string, number>())
+
+  const markSessionMutation = useCallback((sessionId: string) => {
+    const version = ++sessionMutationVersionRef.current
+    sessionMutationByIDRef.current.set(sessionId, version)
+  }, [])
 
   // 同步会话列表引用,供 loadMessages 查找当前会话
   useEffect(() => {
     sessionsRef.current = state.sessions
   }, [state.sessions])
 
+  useEffect(() => {
+    currentSessionRef.current = state.currentSession
+  }, [state.currentSession])
+
+  useEffect(() => {
+    historyRef.current = state.history
+  }, [state.history])
+
   /** 获取会话列表 */
   const fetchSessions = useCallback(async () => {
+    const requestId = ++sessionListRequestRef.current
+    const startedAtVersion = sessionMutationVersionRef.current
     dispatch({ type: 'SET_LOADING', payload: true })
     try {
       const data = await chatService.listSessions()
-      dispatch({ type: 'SET_SESSIONS', payload: data.list || [] })
+      if (requestId !== sessionListRequestRef.current) return
+      const preserveIds = new Set<string>()
+      for (const [sessionId, version] of sessionMutationByIDRef.current) {
+        if (version > startedAtVersion) preserveIds.add(sessionId)
+      }
+      if (currentSessionRef.current) preserveIds.add(currentSessionRef.current.id)
+      if (preserveIds.size > 0) {
+        dispatch({ type: 'MERGE_SESSIONS', payload: { remote: data.list || [], preserveIds: [...preserveIds] } })
+      } else {
+        dispatch({ type: 'SET_SESSIONS', payload: data.list || [] })
+      }
     } catch (error) {
+      if (requestId !== sessionListRequestRef.current) return
       dispatch({
         type: 'SET_SESSIONS_ERROR',
         payload: error instanceof Error ? error.message : '获取会话列表失败',
@@ -368,61 +472,71 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     try {
       // title 参数保留但忽略(后端自动命名)
       const session = await chatService.createSession({ agent_id: agentId, title })
+      markSessionMutation(session.id)
+      currentSessionRef.current = session
       dispatch({ type: 'ADD_SESSION', payload: session })
       return session
     } catch (error) {
       dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '创建会话失败' })
       throw error
     }
-  }, [])
+  }, [markSessionMutation])
 
   /** 建群(≥2 位道人;首问答自动命名) */
   const createGroupSession = useCallback(async (memberAgentIds: string[]): Promise<ChatSession> => {
     try {
       const session = await chatService.createGroupSession(memberAgentIds)
+      markSessionMutation(session.id)
+      currentSessionRef.current = session
       dispatch({ type: 'ADD_SESSION', payload: session })
       return session
     } catch (error) {
       dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '建群失败' })
       throw error
     }
-  }, [])
+  }, [markSessionMutation])
 
   /** 重命名会话 */
   const renameSession = useCallback(async (sessionId: string, title: string): Promise<ChatSession | null> => {
     try {
       const session = await chatService.renameSession(sessionId, title)
+      markSessionMutation(sessionId)
       dispatch({ type: 'SET_SESSION_TITLE', payload: { sessionId, title: session.title || title } })
       return session
     } catch (error) {
       dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '改名失败' })
       return null
     }
-  }, [])
+  }, [markSessionMutation])
 
   /** 邀请入群(已在群静默跳过);更新本地 members */
   const inviteMembers = useCallback(async (sessionId: string, agentIds: string[]) => {
     try {
       const { members } = await chatService.addMembers(sessionId, agentIds)
+      markSessionMutation(sessionId)
       dispatch({ type: 'UPDATE_SESSION_MEMBERS', payload: { sessionId, members } })
     } catch (error) {
       dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '邀请失败' })
     }
-  }, [])
+  }, [markSessionMutation])
 
   /** 移出群成员;更新本地 members */
   const kickMember = useCallback(async (sessionId: string, agentId: string) => {
     try {
       const { members } = await chatService.removeMember(sessionId, agentId)
+      markSessionMutation(sessionId)
       dispatch({ type: 'UPDATE_SESSION_MEMBERS', payload: { sessionId, members } })
     } catch (error) {
       dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '踢人失败' })
     }
-  }, [])
+  }, [markSessionMutation])
 
   /** 加载消息历史并定位当前会话 */
   const loadMessages = useCallback(async (sessionId: string) => {
     const requestId = ++sessionLoadRequestRef.current
+    streamGenerationRef.current += 1
+    currentSessionRef.current = null
+    chatService.stopStream()
     dispatch({ type: 'SESSION_LOAD_START' })
     try {
       // 定位会话:先查已有列表,查不到则按 UUID 直取；不受列表 100 条上限影响。
@@ -430,13 +544,24 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       if (!session) {
         session = await chatService.getSession(sessionId)
         if (requestId !== sessionLoadRequestRef.current) return
+        markSessionMutation(session.id)
         sessionsRef.current = [session, ...sessionsRef.current.filter(item => item.id !== sessionId)]
         dispatch({ type: 'UPSERT_SESSION', payload: session })
       }
 
       const data = await chatService.getMessages(sessionId)
       if (requestId !== sessionLoadRequestRef.current) return
-      dispatch({ type: 'SESSION_LOAD_READY', payload: { session, messages: data.list || [] } })
+      currentSessionRef.current = session
+      dispatch({
+        type: 'SESSION_LOAD_READY',
+        payload: {
+          session,
+          messages: data.list || [],
+          page: data.page || 1,
+          pageSize: data.page_size || 200,
+          total: data.total || 0,
+        },
+      })
     } catch (error) {
       if (requestId !== sessionLoadRequestRef.current) return
       const status = typeof error === 'object' && error !== null && 'status' in error
@@ -448,11 +573,42 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         dispatch({ type: 'SESSION_LOAD_ERROR', payload: error instanceof Error ? error.message : '加载消息失败' })
       }
     }
+  }, [markSessionMutation])
+
+  /** 向前加载一页更早历史，并保持页内及跨页时间正序。 */
+  const loadOlderMessages = useCallback(async (sessionId: string) => {
+    const history = historyRef.current
+    if (!history.hasOlder || history.loadingOlder) return
+    const requestId = sessionLoadRequestRef.current
+    const nextPage = history.page + 1
+    dispatch({ type: 'HISTORY_LOAD_OLDER_START' })
+    try {
+      const data = await chatService.getMessages(sessionId, { page: nextPage, page_size: history.pageSize })
+      if (requestId !== sessionLoadRequestRef.current) return
+      dispatch({
+        type: 'HISTORY_LOAD_OLDER_SUCCESS',
+        payload: {
+          messages: data.list || [],
+          page: data.page || nextPage,
+          pageSize: data.page_size || history.pageSize,
+          total: data.total || history.total,
+        },
+      })
+    } catch (error) {
+      if (requestId !== sessionLoadRequestRef.current) return
+      dispatch({
+        type: 'HISTORY_LOAD_OLDER_ERROR',
+        payload: error instanceof Error ? error.message : '加载更早消息失败',
+      })
+    }
   }, [])
 
   /** 离开会话时同时让所有在途元数据/历史响应失效。 */
   const clearCurrent = useCallback(() => {
     sessionLoadRequestRef.current += 1
+    streamGenerationRef.current += 1
+    currentSessionRef.current = null
+    chatService.stopStream()
     dispatch({ type: 'CLEAR_CURRENT' })
   }, [])
 
@@ -462,7 +618,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     content: string,
     opts?: { retry?: boolean; reuseUserMessage?: boolean; retryBoundaryText?: string; interruptedText?: string },
   ) => {
-    const isGroup = sessionsRef.current.find(s => s.id === sessionId)?.type === 'group'
+    const generation = ++streamGenerationRef.current
+    const session = currentSessionRef.current?.id === sessionId
+      ? currentSessionRef.current
+      : sessionsRef.current.find(item => item.id === sessionId)
+    const isGroup = session?.type === 'group'
+    const isActiveStream = () => generation === streamGenerationRef.current && currentSessionRef.current?.id === sessionId
     if (!opts?.reuseUserMessage) {
       dispatch({
         type: 'ADD_MESSAGE',
@@ -487,9 +648,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'SET_STREAMING', payload: true })
 
     const chunker = createStreamDispatcher({
-      onChunk: (chunk) => dispatch({ type: 'ADD_STREAM_CHUNK', payload: chunk }),
-      onSpeakerStart: (info) => dispatch({ type: 'SPEAKER_START', payload: info }),
+      onChunk: (chunk) => {
+        if (isActiveStream()) dispatch({ type: 'ADD_STREAM_CHUNK', payload: chunk })
+      },
+      onSpeakerStart: (info) => {
+        if (isActiveStream()) dispatch({ type: 'SPEAKER_START', payload: info })
+      },
       onSpeakerDone: (info) => {
+        if (!isActiveStream()) return
         if (info.message_id) {
           dispatch({
             type: 'FINALIZE_STREAM_WITH_ID',
@@ -499,17 +665,18 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           dispatch({ type: 'SPEAKER_DONE', payload: info })
         }
       },
-      onNotice: (text, isError, retryable) => dispatch({
-        type: 'ADD_SYSTEM_NOTICE',
-        payload: { text, isError, retryable },
-      }),
+      onNotice: (text, isError, retryable) => {
+        if (!isActiveStream()) return
+        dispatch({ type: 'ADD_SYSTEM_NOTICE', payload: { text, isError, retryable } })
+      },
       onDrained: () => {
+        if (!isActiveStream()) return
         dispatch({ type: 'FINALIZE_STREAM' })
         dispatch({ type: 'FINISH_STREAM' })
       },
     })
     const finishTerminal = (errorText: string, recovery: ChatRecoveryMode) => {
-      if (turnTerminated) return
+      if (!isActiveStream() || turnTerminated) return
       turnTerminated = true
       chunker.flushNow()
       const active = activeSpeaker
@@ -535,6 +702,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
     await chatService.streamChatMessage(sessionId, content, {
       onChunk: (chunk) => {
+        if (!isActiveStream()) return
         turnPartial = true
         if (isGroup) {
           speakerPartial = true
@@ -549,14 +717,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         chunker.pushChunk(chunk)
       },
       onDone: () => {
-        if (turnTerminated) return
+        if (!isActiveStream() || turnTerminated) return
         turnTerminated = true
         turnPartial = false
         chunker.markDone()
         notifyDesktop()
       },
       onStopped: () => {
-        if (turnTerminated) return
+        if (!isActiveStream() || turnTerminated) return
         turnTerminated = true
         chunker.flushNow()
         activeSpeaker = null
@@ -565,6 +733,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         dispatch({ type: 'STOP_STREAM' })
       },
       onError: (error, info) => {
+        if (!isActiveStream()) return
         if (info.terminal || !isGroup) {
           finishTerminal(error, info.recovery)
           return
@@ -582,13 +751,17 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         chunker.pushNotice(error, true, false)
       },
       onInterrupted: () => finishTerminal(opts?.interruptedText || '', accepted ? 'persisted_retry' : 'none'),
-      onAccepted: () => { accepted = true },
+      onAccepted: () => {
+        if (isActiveStream()) accepted = true
+      },
       onSpeakerStart: (info) => {
+        if (!isActiveStream()) return
         activeSpeaker = info
         speakerPartial = false
         chunker.pushSpeakerStart(info)
       },
       onSpeakerDone: (info) => {
+        if (!isActiveStream()) return
         chunker.pushSpeakerDone(info)
         if (activeSpeaker?.agent_id === info.agent_id) {
           activeSpeaker = null
@@ -596,7 +769,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         }
       },
       onTurnDone: () => {
-        if (turnTerminated) return
+        if (!isActiveStream() || turnTerminated) return
         turnTerminated = true
         activeSpeaker = null
         speakerPartial = false
@@ -604,9 +777,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         chunker.markDone()
         notifyDesktop()
       },
-      onTitle: (title) => dispatch({ type: 'SET_SESSION_TITLE', payload: { sessionId, title } }),
+      onTitle: (title) => {
+        if (isActiveStream()) {
+          markSessionMutation(sessionId)
+          dispatch({ type: 'SET_SESSION_TITLE', payload: { sessionId, title } })
+        }
+      },
     }, { retry: opts?.retry })
-  }, [])
+  }, [markSessionMutation])
 
   /** 停止当前流式生成(中断连接,服务端保存部分内容) */
   const stopStream = useCallback(() => {
@@ -625,6 +803,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         inviteMembers,
         kickMember,
         loadMessages,
+        loadOlderMessages,
         clearCurrent,
         streamMessage,
         stopStream,

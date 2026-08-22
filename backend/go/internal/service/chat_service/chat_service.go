@@ -157,7 +157,7 @@ func (s *Chat) ListSessions(ctx context.Context, agentUID uuid.UUID, page int, s
 	return total, sessions, nil
 }
 
-// GetMessages 分页查询会话消息历史(按时间正序),sessionUID 为会话对外 UUID
+// GetMessages 从最新消息向前分页，每页内部按时间正序呈现(page=1 为最新一页)
 func (s *Chat) GetMessages(ctx context.Context, sessionUID uuid.UUID, page int, size int) (int64, []*model.ChatMessage, ierr.Error) {
 	if page < 1 {
 		page = 1

@@ -38,6 +38,14 @@ const testDoubles = vi.hoisted(() => ({
     error: null as string | null,
     sessionsError: null as string | null,
     currentSpeaker: null,
+    history: {
+      page: 1,
+      pageSize: 200,
+      total: 0,
+      hasOlder: false,
+      loadingOlder: false,
+      olderError: null as string | null,
+    },
   },
   agentState: {
     agents: [

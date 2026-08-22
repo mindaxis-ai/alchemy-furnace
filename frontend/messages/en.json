@@ -771,6 +771,10 @@
       "interrupted": "The connection ended before this response completed. Retry to start a new attempt.",
       "retryBoundary": "New attempt after an interrupted group turn; completed replies remain above."
     },
+    "history": {
+      "loadOlder": "Load earlier messages",
+      "loadingOlder": "Loading earlier messages..."
+    },
     "input": {
       "messageLabel": "Message",
       "placeholder": "Ask the daoist...",

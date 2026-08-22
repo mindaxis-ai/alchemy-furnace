@@ -240,6 +240,11 @@ func (cls *Chat) finishSSEStream(ctx context.Context, sessionUID uuid.UUID, sess
 		if res.full != "" {
 			if _, err := cls.chat.SaveMessage(saveCtx, sessionID, "assistant", res.full); err != nil {
 				zap.L().Error("[炼丹炉] 保存助手回复失败", zap.Error(err))
+				sseWriteEvent(w, flusher, "error", ssePayload{
+					Content: "回复保存失败，请重试", ErrorCode: "service.chat.stream_unavailable",
+					Terminal: true, Recovery: chatservice.StreamRecoveryPersistedRetry,
+				})
+				return
 			}
 		}
 		// 首问答自动命名(单聊触发点): 失败静默
