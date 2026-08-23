@@ -2,10 +2,10 @@
 
 /**
  * 金丹卡片组件 - 浅色宣纸风
- * 显示金丹名称、标签、作者/版本、内置标识
- * 支持「赠予道人」快捷绑定操作
+ * 整卡为单一键盘可访问的导航容器(role="link"),点击/Enter/Space 进入详情;
+ * 内部「赠予道人」按钮阻止冒泡,避免双重导航。
  */
-import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { CircleDot, Clock, ChevronRight, FlaskConical, Tag, UserPlus } from 'lucide-react'
 import type { Pill } from '@/services/types'
@@ -19,55 +19,62 @@ interface PillCardProps {
 
 export function PillCard({ pill, onBind }: PillCardProps) {
   const t = useTranslations('pillCard')
+  const router = useRouter()
+  const href = `/pills/${pill.id}`
+
+  const navigate = () => router.push(href)
+
   return (
-    <div className="dao-card flex flex-col p-5 group h-full relative">
+    <div
+      role="link"
+      tabIndex={0}
+      aria-label={pill.name}
+      onClick={navigate}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          navigate()
+        }
+      }}
+      className="dao-card group relative flex h-full cursor-pointer flex-col p-5 transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60"
+    >
       {/* 顶部：图标 + 内置标识 */}
-      <div className="flex items-start justify-between gap-2 mb-3">
-        <div className={`
-          w-14 h-14 rounded-2xl flex items-center justify-center shrink-0
-          bg-gold/15 text-gold shadow-[0_15px_30px_-12px_rgba(201,169,110,0.4)]
-          transition-all duration-300 group-hover:scale-110
-        `}>
-          <FlaskConical className="w-7 h-7" />
+      <div className="mb-3 flex items-start justify-between gap-2">
+        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gold/15 text-gold shadow-[0_15px_30px_-12px_rgba(201,169,110,0.4)] transition-all duration-300 group-hover:scale-110">
+          <FlaskConical className="h-7 w-7" />
         </div>
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="flex min-w-0 items-center gap-2">
           {pill.is_builtin && (
-            <span className="text-[10px] px-2 py-0.5 rounded-full border bg-sage/20 text-sage border-sage/30 whitespace-nowrap shrink-0">
+            <span className="shrink-0 whitespace-nowrap rounded-full border border-sage/30 bg-sage/20 px-2 py-0.5 text-[10px] text-sage">
               {t('builtInBadge')}
             </span>
           )}
-          <span className="text-[10px] px-2 py-0.5 rounded-full border bg-muted text-muted-foreground border-border/70 whitespace-nowrap shrink-0">
+          <span className="shrink-0 whitespace-nowrap rounded-full border border-border/70 bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
             v{pill.version || '1.0.0'}
           </span>
         </div>
       </div>
 
       {/* 名称 */}
-      <Link href={`/pills/${pill.id}`} className="min-w-0">
-        <h3 className="font-serif font-bold text-lg text-foreground group-hover:text-gold transition-colors mb-1.5 truncate">
-          {pill.name}
-        </h3>
-      </Link>
+      <h3 className="mb-1.5 min-w-0 truncate font-serif text-lg font-bold text-foreground transition-colors group-hover:text-gold">
+        {pill.name}
+      </h3>
 
       {/* 描述 */}
       {pill.description ? (
-        <p className="text-sm text-muted-foreground line-clamp-2 mb-3 flex-1">
-          {pill.description}
-        </p>
+        <p className="mb-3 line-clamp-2 flex-1 text-sm text-muted-foreground">{pill.description}</p>
       ) : (
-        <p className="text-sm text-muted-foreground/60 italic mb-3 flex-1">
-          {t('noDescription')}
-        </p>
+        <p className="mb-3 flex-1 text-sm italic text-muted-foreground/60">{t('noDescription')}</p>
       )}
 
       {/* 标签 */}
       {pill.tags && pill.tags.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 mb-3">
-          <Tag className="w-3 h-3 text-sage" />
-          {pill.tags.slice(0, 4).map(tag => (
+        <div className="mb-3 flex flex-wrap items-center gap-1.5">
+          <Tag className="h-3 w-3 text-sage" />
+          {pill.tags.slice(0, 4).map((tag) => (
             <span
               key={tag}
-              className="text-[10px] px-1.5 py-0.5 rounded bg-accent text-sage border border-border/70"
+              className="rounded border border-border/70 bg-accent px-1.5 py-0.5 text-[10px] text-sage"
             >
               {tag}
             </span>
@@ -77,32 +84,32 @@ export function PillCard({ pill, onBind }: PillCardProps) {
 
       {/* 底部分隔 */}
       <div className="dao-divider my-3 text-[10px]">
-        <CircleDot className="w-3 h-3" />
+        <CircleDot className="h-3 w-3" />
       </div>
 
       {/* 底部信息 */}
       <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-        <span className="flex items-center gap-1 min-w-0 truncate">
-          <Clock className="w-3.5 h-3.5 shrink-0" />
+        <span className="flex min-w-0 items-center gap-1 truncate">
+          <Clock className="h-3.5 w-3.5 shrink-0" />
           <span className="truncate">{formatDateTime(pill.created_at)}</span>
         </span>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex shrink-0 items-center gap-2">
           {onBind && (
             <button
-              onClick={() => onBind(pill)}
-              className="flex items-center gap-1 text-xs text-gold/80 hover:text-gold transition-colors whitespace-nowrap"
+              type="button"
+              onClick={(event) => {
+                // 阻止冒泡到整卡导航容器,避免双重导航
+                event.stopPropagation()
+                onBind(pill)
+              }}
+              className="flex items-center gap-1 whitespace-nowrap text-xs text-gold/80 transition-colors hover:text-gold"
               title={t('bestowTitle')}
             >
-              <UserPlus className="w-3.5 h-3.5" />
+              <UserPlus className="h-3.5 w-3.5" />
               {t('bestowCta')}
             </button>
           )}
-          <Link
-            href={`/pills/${pill.id}`}
-            className="flex items-center text-sage group-hover:text-gold transition-colors"
-          >
-            <ChevronRight className="w-5 h-5" />
-          </Link>
+          <ChevronRight className="h-5 w-5 text-sage transition-colors group-hover:text-gold" />
         </div>
       </div>
     </div>

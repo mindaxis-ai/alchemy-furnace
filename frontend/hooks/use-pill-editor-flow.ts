@@ -8,7 +8,7 @@
  * - 保存成功后必须重新 GET，只有 GET 成功才算保存完成
  * - 提交中去重：连续触发只产生一次写请求
  */
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { usePill } from '@/contexts/PillContext'
 import { clonePill, getPill } from '@/services/pillService'
@@ -75,7 +75,10 @@ export function usePillEditorFlow(pill: Pill | null, options?: PillEditorFlowOpt
   /** 提交中去重（双击/重复触发只产生一次写请求） */
   const submittingRef = useRef(false)
   const onCopiedRef = useRef(options?.onCopied)
-  onCopiedRef.current = options?.onCopied
+  // 最新回调存入 ref(在 effect 中更新,避免渲染期写 ref)
+  useEffect(() => {
+    onCopiedRef.current = options?.onCopied
+  })
 
   // 切换到另一颗金丹时整体复位（渲染期间派生调整，React 官方推荐模式）
   const [prevPillId, setPrevPillId] = useState(pill?.id)
