@@ -82,20 +82,41 @@ func (s *Agent) CreateAgent(ctx context.Context, name string, avatar string, per
 }
 
 // UpdateAgent 部分更新道人;性格变化时失效语言模式缓存
-// proactivity 合法区间 0-100;nil=不更新
+// proactivity 合法区间 0-100;nil=不更新;status 仅接受 active/inactive
+// 最终状态为 active 时,最终模型必须可用(即使本次未改 model_name)
 func (s *Agent) UpdateAgent(ctx context.Context, uid uuid.UUID, name *string, avatar *string, personality *string, modelName *string, status *string, proactivity *int) (*model.DaoAgent, errors.Error) {
+	if proactivity != nil && (*proactivity < 0 || *proactivity > 100) {
+		return nil, errors.New(errors.ErrorTypeInvalidRequest, "service.agent.update_proactivity", "主动性需在 0-100 之间")
+	}
+	// status 仅接受 active/inactive
+	if status != nil && *status != "" && *status != "active" && *status != "inactive" {
+		return nil, errors.New(errors.ErrorTypeInvalidRequest, "service.agent.update_status", "状态仅支持 active/inactive")
+	}
+	// 显式更换模型时校验新模型可用
 	if modelName != nil && *modelName != "" {
 		if err := s.validateModelName(ctx, *modelName); err != nil {
 			return nil, err
 		}
 	}
-	if proactivity != nil && (*proactivity < 0 || *proactivity > 100) {
-		return nil, errors.New(errors.ErrorTypeInvalidRequest, "service.agent.update_proactivity", "主动性需在 0-100 之间")
-	}
 
 	agent, err := s.agent.TakeAgentByUUID(ctx, uid)
 	if err != nil {
 		return nil, err.Relation(errors.ErrorRecordNotFound("service.agent.update_take"))
+	}
+
+	// 校验「更新后的最终状态 + 最终模型」: 最终为 active 时最终模型必须可用
+	finalStatus := agent.Status
+	if status != nil && *status != "" {
+		finalStatus = *status
+	}
+	finalModel := agent.ModelName
+	if modelName != nil && *modelName != "" {
+		finalModel = *modelName
+	}
+	if finalStatus == "active" {
+		if err := s.validateModelName(ctx, finalModel); err != nil {
+			return nil, err
+		}
 	}
 
 	updates := map[string]any{}
@@ -138,11 +159,25 @@ func (s *Agent) UpdateAgent(ctx context.Context, uid uuid.UUID, name *string, av
 }
 
 // DeleteAgent 删除道人
+// 有会话历史(单聊/群聊)时禁止硬删除,返回 409 并携带 session_count,引导前端改停用
 func (s *Agent) DeleteAgent(ctx context.Context, uid uuid.UUID) errors.Error {
 	agent, err := s.agent.TakeAgentByUUID(ctx, uid)
 	if err != nil {
 		return err.Relation(errors.ErrorRecordNotFound("service.agent.delete_take"))
 	}
+
+	// 历史感知: 有会话历史只能停用不能删
+	sessionCount, err := s.agent.CountSessionsByAgentID(ctx, agent.ID)
+	if err != nil {
+		return err.Relation(errors.ErrorServerInternalError("service.agent.delete_count_sessions"))
+	}
+	if sessionCount > 0 {
+		return errors.ErrorConflictWithData(
+			"service.agent.delete_has_history",
+			map[string]any{"session_count": sessionCount},
+			"道人有 %d 段会话历史，只能停用不能删除", sessionCount)
+	}
+
 	if err := s.agent.DeleteAgent(ctx, agent); err != nil {
 		return err.Relation(errors.ErrorServerInternalError("service.agent.delete"))
 	}

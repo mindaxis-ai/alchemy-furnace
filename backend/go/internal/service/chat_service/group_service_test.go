@@ -68,6 +68,9 @@ func (f *fakeAgentDao) SaveLanguagePattern(ctx context.Context, p *model.Languag
 func (f *fakeAgentDao) ReplaceAgentPills(ctx context.Context, agentID uint, pills []idao.AgentPillInput) errors.Error {
 	panic("unused")
 }
+func (f *fakeAgentDao) CountSessionsByAgentID(ctx context.Context, agentID uint) (int64, errors.Error) {
+	panic("unused")
+}
 
 type fakeChatDao struct {
 	sessions       map[string]*model.ChatSession

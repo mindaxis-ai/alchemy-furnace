@@ -259,3 +259,68 @@ END`
 		t.Fatalf("rows after insert-failure rollback = %+v, want only pill %d preserved", rows, pills[0].ID)
 	}
 }
+
+// newAgentHistoryTestDB 迁移道人/会话/群成员,用于会话历史计数测试
+func newAgentHistoryTestDB(t *testing.T) *AgentDao {
+	t.Helper()
+	db := newSQLiteTestDB(t, filepath.Join(t.TempDir(), "agent-history.db"))
+	if err := db.AutoMigrate(&model.DaoAgent{}, &model.ChatSession{}, &model.SessionMember{}); err != nil {
+		t.Fatalf("AutoMigrate history models: %v", err)
+	}
+	previousDB := DB
+	DB = db
+	t.Cleanup(func() { DB = previousDB })
+	return NewAgentDao()
+}
+
+func TestCountSessionsByAgentIDCountsSingleAndGroupDistinct(t *testing.T) {
+	dao := newAgentHistoryTestDB(t)
+	agent := &model.DaoAgent{UUID: uuid.New(), Name: "计数道人", Status: "active", ModelName: "m"}
+	if err := DB.Create(agent).Error; err != nil {
+		t.Fatalf("create agent: %v", err)
+	}
+	other := &model.DaoAgent{UUID: uuid.New(), Name: "旁观道人", Status: "active", ModelName: "m"}
+	if err := DB.Create(other).Error; err != nil {
+		t.Fatalf("create other agent: %v", err)
+	}
+
+	// 1 个单聊会话(agent_id 直挂)
+	single := &model.ChatSession{UUID: uuid.New(), Type: model.SessionTypeSingle, AgentID: &agent.ID}
+	if err := DB.Create(single).Error; err != nil {
+		t.Fatalf("create single session: %v", err)
+	}
+	// 2 个群聊会话(经 session_members 关联);其中一个群里 other 也在,确保按 session 去重
+	for i := 0; i < 2; i++ {
+		g := &model.ChatSession{UUID: uuid.New(), Type: model.SessionTypeGroup}
+		if err := DB.Create(g).Error; err != nil {
+			t.Fatalf("create group session %d: %v", i, err)
+		}
+		if err := DB.Create(&model.SessionMember{SessionID: g.ID, AgentID: agent.ID, SortOrder: 0}).Error; err != nil {
+			t.Fatalf("add member: %v", err)
+		}
+		if err := DB.Create(&model.SessionMember{SessionID: g.ID, AgentID: other.ID, SortOrder: 1}).Error; err != nil {
+			t.Fatalf("add other member: %v", err)
+		}
+	}
+	// other 自己的一个单聊(不计入 agent)
+	if err := DB.Create(&model.ChatSession{UUID: uuid.New(), Type: model.SessionTypeSingle, AgentID: &other.ID}).Error; err != nil {
+		t.Fatalf("create other single session: %v", err)
+	}
+
+	count, err := dao.CountSessionsByAgentID(context.Background(), agent.ID)
+	if err != nil {
+		t.Fatalf("CountSessionsByAgentID error = %v", err)
+	}
+	if count != 3 {
+		t.Fatalf("count = %d, want 3(1 单聊 + 2 群聊)", count)
+	}
+
+	// 无会话的道人计数为 0
+	zero, err := dao.CountSessionsByAgentID(context.Background(), 999999)
+	if err != nil {
+		t.Fatalf("CountSessionsByAgentID(empty) error = %v", err)
+	}
+	if zero != 0 {
+		t.Fatalf("empty count = %d, want 0", zero)
+	}
+}

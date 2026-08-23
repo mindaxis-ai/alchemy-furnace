@@ -174,3 +174,40 @@ func TestGetMessagesKeepsInactiveAgentHistoryReadable(t *testing.T) {
 		t.Fatalf("GetMessages() = %+v, want preserved history", messages)
 	}
 }
+
+// TestAuthorizeSessionForStreamRejectsInactiveAgent 回归: 停用道人不能继续发送(单聊发送授权)
+// 历史可读性由 TestGetMessagesKeepsInactiveAgentHistoryReadable 覆盖
+func TestAuthorizeSessionForStreamRejectsInactiveAgent(t *testing.T) {
+	agentUID := uuid.New()
+	agentID := uint(11)
+	agents := &fakeAgentDao{agents: map[string]*model.DaoAgent{
+		agentUID.String(): {ID: agentID, UUID: agentUID, Name: "将睡道人", Status: "active", ModelName: "formal-model"},
+	}}
+	chats := &fakeChatDao{
+		sessions: map[string]*model.ChatSession{},
+		members:  map[uint][]*model.SessionMember{},
+	}
+	svc := New(chats, agents, nil, availableCredentialResolver("formal-model"), "http://unused")
+
+	session := &model.ChatSession{
+		UUID:    uuid.New(),
+		Type:    model.SessionTypeSingle,
+		AgentID: &agentID,
+		Agent:   model.DaoAgent{ID: agentID, UUID: agentUID},
+	}
+
+	// active 时发送授权通过
+	if _, err := svc.AuthorizeSessionForStream(context.Background(), session); err != nil {
+		t.Fatalf("active 道人发送授权应通过,实际 %v", err)
+	}
+
+	// 停用后发送授权被拒
+	agents.agents[agentUID.String()].Status = "inactive"
+	_, err := svc.AuthorizeSessionForStream(context.Background(), session)
+	if err == nil {
+		t.Fatal("inactive 道人发送授权应被拒绝")
+	}
+	if err.GetCode() != "service.chat.agent_inactive" {
+		t.Fatalf("错误码 = %s, 期望 service.chat.agent_inactive", err.GetCode())
+	}
+}

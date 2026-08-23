@@ -116,6 +116,26 @@ func (d *AgentDao) DeleteAgent(ctx context.Context, agent *model.DaoAgent) error
 	return nil
 }
 
+// CountSessionsByAgentID 统计道人参与的去重会话数(单聊 + 群聊成员)
+func (d *AgentDao) CountSessionsByAgentID(ctx context.Context, agentID uint) (int64, errors.Error) {
+	// 单聊: chat_sessions.agent_id 直挂
+	var singleCount int64
+	if err := GetDB().WithContext(ctx).Model(&model.ChatSession{}).
+		Where("agent_id = ?", agentID).
+		Count(&singleCount).Error; err != nil {
+		return 0, errors.ErrorServerInternalError("dao.agent.count_sessions_single")
+	}
+	// 群聊: session_members 按 session 去重(一个会话只算一次)
+	var groupCount int64
+	if err := GetDB().WithContext(ctx).Model(&model.SessionMember{}).
+		Where("agent_id = ?", agentID).
+		Distinct("session_id").
+		Count(&groupCount).Error; err != nil {
+		return 0, errors.ErrorServerInternalError("dao.agent.count_sessions_group")
+	}
+	return singleCount + groupCount, nil
+}
+
 // TakeAgentPill 查询单条服用记录
 func (d *AgentDao) TakeAgentPill(ctx context.Context, agentID uint, pillID uint) (*model.AgentPill, errors.Error) {
 	var ap model.AgentPill

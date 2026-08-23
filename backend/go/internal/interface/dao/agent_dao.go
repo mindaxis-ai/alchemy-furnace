@@ -41,6 +41,10 @@ type Agent interface {
 	// DeleteAgent 删除道人(会话/服用记录/语言缓存由 FK CASCADE 清理)
 	DeleteAgent(ctx context.Context, agent *model.DaoAgent) errors.Error
 
+	// CountSessionsByAgentID 统计道人参与的去重会话数
+	// 单聊经 chat_sessions.agent_id,群聊经 session_members.agent_id(按 session 去重)
+	CountSessionsByAgentID(ctx context.Context, agentID uint) (int64, errors.Error)
+
 	// TakeAgentPill 查询单条服用记录,不存在返回 ErrorTypeRecordNotFound
 	TakeAgentPill(ctx context.Context, agentID uint, pillID uint) (*model.AgentPill, errors.Error)
 
