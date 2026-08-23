@@ -74,6 +74,17 @@ describe('PillCard', () => {
     expect(push).not.toHaveBeenCalled()
   })
 
+  it('键盘焦点落在内部赠予按钮上时,Enter/Space 不触发卡片导航', () => {
+    const onBind = vi.fn()
+    render(<PillCard pill={customPill} onBind={onBind} />)
+    const bestowBtn = screen.getByRole('button', { name: 'bestowCta' })
+
+    // keydown 源自内部按钮:卡片导航容器不得截获(否则键盘用户无法激活按钮)
+    fireEvent.keyDown(bestowBtn, { key: 'Enter' })
+    fireEvent.keyDown(bestowBtn, { key: ' ' })
+    expect(push).not.toHaveBeenCalled()
+  })
+
   it('内置金丹显示内置徽标', () => {
     render(<PillCard pill={builtinPill} />)
     expect(screen.getByText('builtInBadge')).toBeInTheDocument()

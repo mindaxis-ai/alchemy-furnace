@@ -427,6 +427,24 @@ describe('PillDetailPage', () => {
       // 仍在详情页(标题仍在)
       expect(screen.getByRole('heading', { name: '丹心妙语' })).toBeInTheDocument()
     })
+
+    it('删除失败后点「重试」直接重发删除请求(不再停在待确认态)', async () => {
+      setPill(customPill)
+      td.removePill.mockRejectedValueOnce(new ApiError('服务器内部错误', 500))
+      const user = userEvent.setup()
+      render(<PillDetailPage />)
+
+      await user.click(screen.getByRole('button', { name: '销毁' }))
+      await user.click(screen.getByRole('button', { name: '再点一次确认销毁' }))
+      expect(await screen.findByRole('alert')).toHaveTextContent('删除失败，请重试')
+      expect(td.removePill).toHaveBeenCalledTimes(1)
+
+      // 用户已二次确认过,「重试」应直接重发删除,成功后返回列表
+      td.removePill.mockResolvedValue(undefined)
+      await user.click(screen.getByRole('button', { name: '重试' }))
+      await waitFor(() => expect(td.removePill).toHaveBeenCalledTimes(2))
+      await waitFor(() => expect(td.push).toHaveBeenCalledWith('/pills'))
+    })
   })
 
   describe('未保存保护', () => {

@@ -247,13 +247,9 @@ export default function PillDetailPage() {
     void flow.makeCopy()
   }
 
-  /** 自定义删除:二次确认 */
-  const handleDelete = async () => {
+  /** 真正执行删除(二次确认后或失败重试时调用) */
+  const performDelete = async () => {
     if (!pill) return
-    if (!deleteArmed) {
-      setDeleteArmed(true)
-      return
-    }
     setDeleteStatus('submitting')
     try {
       await removePill(pill.id)
@@ -263,6 +259,15 @@ export default function PillDetailPage() {
       setDeleteStatus('error')
       setDeleteArmed(false)
     }
+  }
+
+  /** 自定义删除:二次确认(第一次点击仅进入待确认态) */
+  const handleDelete = () => {
+    if (!deleteArmed) {
+      setDeleteArmed(true)
+      return
+    }
+    void performDelete()
   }
 
   // ========== 加载 / 错误 / 空 三态 ==========
@@ -437,10 +442,7 @@ export default function PillDetailPage() {
               <ActionFeedback
                 status="error"
                 message={t('deleteFailed')}
-                onRetry={() => {
-                  setDeleteArmed(true)
-                  void handleDelete()
-                }}
+                onRetry={() => void performDelete()}
                 retryLabel={tCommon('retry')}
               />
             </div>

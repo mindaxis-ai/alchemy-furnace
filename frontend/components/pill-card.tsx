@@ -31,6 +31,9 @@ export function PillCard({ pill, onBind }: PillCardProps) {
       aria-label={pill.name}
       onClick={navigate}
       onKeyDown={(event) => {
+        // 仅当按键源自卡片本身才导航;焦点在内部「赠予道人」等按钮上时放行,
+        // 交由按钮自身的键盘激活(Enter/Space→click,其 onClick 已 stopPropagation)
+        if (event.target !== event.currentTarget) return
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault()
           navigate()
