@@ -26,4 +26,6 @@ const (
 	CodeUnbindPillFailed Code = 4002
 	// CodeUpdateAgentPillFailed 更新服用记录失败(业务码,沿用)
 	CodeUpdateAgentPillFailed Code = 4003
+	// CodeReplacePillsFailed 完整服丹编排失败(业务码)
+	CodeReplacePillsFailed Code = 4004
 )

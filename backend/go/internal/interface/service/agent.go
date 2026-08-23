@@ -8,6 +8,13 @@ import (
 	"github.com/google/uuid"
 )
 
+// PillCompositionItem 完整服丹编排项(对外金丹 UUID + 权重)
+// 供 ReplacePillComposition 一次性替换道人全部服用关系
+type PillCompositionItem struct {
+	PillUUID uuid.UUID
+	Weight   float64
+}
+
 // Agent 道人业务逻辑接口
 type Agent interface {
 	// ListAgents 分页查询道人列表(status 为空不过滤)
@@ -38,4 +45,9 @@ type Agent interface {
 
 	// ListAgentPills 道人已服用金丹列表(按服用顺序)
 	ListAgentPills(ctx context.Context, agentUID uuid.UUID) ([]*model.ElixirPill, errors.Error)
+
+	// ReplacePillComposition 用完整服丹编排一次性替换道人服用关系(原子)
+	// 校验: 权重 (0,10]、金丹 UUID 不重复、金丹全部存在;全部通过才调一次 DAO 原子替换
+	// 空数组 = 清空全部服用关系;成功后返回服务端确认的道人详情
+	ReplacePillComposition(ctx context.Context, agentUID uuid.UUID, items []PillCompositionItem) (*model.DaoAgent, errors.Error)
 }

@@ -52,6 +52,7 @@ func Register(r *gin.Engine, isDesktop bool, guards ...gin.HandlerFunc) error {
 		agents.PUT("/:uuid", router.Wrapper(agentHandler.Update))
 		agents.DELETE("/:uuid", router.Wrapper(agentHandler.Delete))
 		agents.POST("/:uuid/pills", router.Wrapper(agentHandler.BindPill))
+		agents.PUT("/:uuid/pills", router.Wrapper(agentHandler.ReplacePills))
 		agents.PUT("/:uuid/pills/:pill_uuid", router.Wrapper(agentHandler.UpdateAgentPill))
 		agents.DELETE("/:uuid/pills/:pill_uuid", router.Wrapper(agentHandler.UnbindPill))
 		agents.GET("/:uuid/pills", router.Wrapper(agentHandler.ListPills))

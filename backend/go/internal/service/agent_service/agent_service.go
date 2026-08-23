@@ -7,6 +7,7 @@ import (
 
 	"github.com/alchemy-furnace/server/internal/errors"
 	"github.com/alchemy-furnace/server/internal/interface/dao"
+	"github.com/alchemy-furnace/server/internal/interface/service"
 	"github.com/alchemy-furnace/server/model"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -261,6 +262,67 @@ func (s *Agent) ListAgentPills(ctx context.Context, agentUID uuid.UUID) ([]*mode
 		return nil, err.Relation(errors.ErrorServerInternalError("service.agent.list_pills"))
 	}
 	return pills, nil
+}
+
+// ReplacePillComposition 用完整服丹编排一次性替换道人服用关系(原子)
+// 顺序: 先全部校验(权重区间/UUID 去重/批量解析金丹),通过后才调一次原子 DAO;成功回读详情
+func (s *Agent) ReplacePillComposition(ctx context.Context, agentUID uuid.UUID, items []service.PillCompositionItem) (*model.DaoAgent, errors.Error) {
+	// 1) 解析道人
+	agent, err := s.agent.TakeAgentByUUID(ctx, agentUID)
+	if err != nil {
+		return nil, err.Relation(errors.ErrorRecordNotFound("service.agent.replace_pills_take_agent"))
+	}
+
+	// 2) 校验权重区间 + UUID 去重,收集待解析的 UUID
+	seen := make(map[uuid.UUID]struct{}, len(items))
+	uids := make([]uuid.UUID, 0, len(items))
+	for _, item := range items {
+		if item.Weight <= 0 || item.Weight > 10 {
+			return nil, errors.New(errors.ErrorTypeInvalidRequest, "service.agent.replace_pills_weight", "剂量需在 0-10 之间")
+		}
+		if _, dup := seen[item.PillUUID]; dup {
+			return nil, errors.New(errors.ErrorTypeInvalidRequest, "service.agent.replace_pills_duplicate", "同一枚金丹不能重复服用")
+		}
+		seen[item.PillUUID] = struct{}{}
+		uids = append(uids, item.PillUUID)
+	}
+
+	// 3) 批量解析金丹 UUID → 内部 ID(一次查询,避免逐项往返)
+	pills, err := s.pill.FindPillsByUUIDs(ctx, uids)
+	if err != nil {
+		return nil, err.Relation(errors.ErrorServerInternalError("service.agent.replace_pills_find"))
+	}
+	byUUID := make(map[uuid.UUID]*model.ElixirPill, len(pills))
+	for _, p := range pills {
+		byUUID[p.UUID] = p
+	}
+
+	// 4) 按请求顺序映射为 DAO 输入;任一缺失即 404(整体不落库)
+	daoInputs := make([]dao.AgentPillInput, 0, len(items))
+	for _, item := range items {
+		p, ok := byUUID[item.PillUUID]
+		if !ok {
+			return nil, errors.ErrorRecordNotFound("service.agent.replace_pills_pill_not_found")
+		}
+		daoInputs = append(daoInputs, dao.AgentPillInput{PillID: p.ID, Weight: item.Weight})
+	}
+
+	// 5) 一次原子替换(事务内删旧写新 + 失效缓存)
+	if err := s.agent.ReplaceAgentPills(ctx, agent.ID, daoInputs); err != nil {
+		return nil, err.Relation(errors.ErrorServerInternalError("service.agent.replace_pills"))
+	}
+
+	// 6) 回读服务端确认详情
+	detail, err := s.agent.TakeAgentDetailByUUID(ctx, agentUID)
+	if err != nil {
+		return nil, err.Relation(errors.ErrorServerInternalError("service.agent.replace_pills_retake"))
+	}
+
+	zap.L().Info("[炼丹炉] 道人服丹编排已更新",
+		zap.String("agent_uuid", agentUID.String()),
+		zap.String("agent_name", agent.Name),
+		zap.Int("pill_count", len(daoInputs)))
+	return detail, nil
 }
 
 // takeAgentAndPill 绑定类操作公共前置: 按 UUID 解析道人与金丹
