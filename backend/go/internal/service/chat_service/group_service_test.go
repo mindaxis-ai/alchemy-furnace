@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/alchemy-furnace/server/internal/errors"
+	idao "github.com/alchemy-furnace/server/internal/interface/dao"
 	"github.com/alchemy-furnace/server/internal/service/credential"
 	"github.com/alchemy-furnace/server/model"
 	"github.com/google/uuid"
@@ -62,6 +63,9 @@ func (f *fakeAgentDao) InvalidateLanguagePattern(ctx context.Context, agentID ui
 	panic("unused")
 }
 func (f *fakeAgentDao) SaveLanguagePattern(ctx context.Context, p *model.LanguagePattern) errors.Error {
+	panic("unused")
+}
+func (f *fakeAgentDao) ReplaceAgentPills(ctx context.Context, agentID uint, pills []idao.AgentPillInput) errors.Error {
 	panic("unused")
 }
 

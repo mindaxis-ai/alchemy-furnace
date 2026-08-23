@@ -10,6 +10,13 @@ import (
 	"github.com/google/uuid"
 )
 
+// AgentPillInput 服丹编排输入项(已解析的内部金丹 ID + 权重)
+// DAO 只接受内部自增 ID,不解析 UUID、不做产品文案校验
+type AgentPillInput struct {
+	PillID uint
+	Weight float64
+}
+
 // Agent 道人数据访问接口
 type Agent interface {
 	// TakeAgentByUUID 按对外 UUID 查询道人,不存在返回 ErrorTypeRecordNotFound
@@ -51,6 +58,11 @@ type Agent interface {
 
 	// FindPillsByAgentID 道人已服用金丹列表(按 sort_order,id 升序)
 	FindPillsByAgentID(ctx context.Context, agentID uint) ([]*model.ElixirPill, errors.Error)
+
+	// ReplaceAgentPills 原子替换道人的完整服丹编排
+	// 单个事务: 删除全部旧关系 → 按请求顺序写新关系(sort_order=1..n) → 失效语言模式缓存
+	// 任一步失败整体回滚,旧关系与缓存失效保持不变
+	ReplaceAgentPills(ctx context.Context, agentID uint, pills []AgentPillInput) errors.Error
 
 	// InvalidateLanguagePattern 将道人语言模式缓存标记为失效
 	InvalidateLanguagePattern(ctx context.Context, agentID uint) errors.Error

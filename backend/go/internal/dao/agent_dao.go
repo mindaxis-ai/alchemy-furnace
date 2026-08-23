@@ -3,8 +3,10 @@ package dao
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/alchemy-furnace/server/internal/errors"
+	idao "github.com/alchemy-furnace/server/internal/interface/dao"
 	"github.com/alchemy-furnace/server/model"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -175,6 +177,62 @@ func (d *AgentDao) FindPillsByAgentID(ctx context.Context, agentID uint) ([]*mod
 		return nil, errors.ErrorServerInternalError("dao.agent.find_pills_by_agent")
 	}
 	return pills, nil
+}
+
+// ReplaceAgentPills 原子替换道人的完整服丹编排
+// 单事务内: 删除全部旧关系 → 按请求顺序写新关系(sort_order=1..n) → 失效语言模式缓存
+// 任一步失败由 GORM Transaction 回滚,旧关系与缓存状态保持不变
+func (d *AgentDao) ReplaceAgentPills(ctx context.Context, agentID uint, pills []idao.AgentPillInput) errors.Error {
+	txErr := GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 1) 删除旧关系
+		if err := tx.Where("agent_id = ?", agentID).Delete(&model.AgentPill{}).Error; err != nil {
+			return err
+		}
+		// 2) 校验 + 按请求顺序批量写新关系(sort_order 从 1 开始)
+		if len(pills) > 0 {
+			// 数据完整性: 重复 pill 拒绝、缺失 pill 回滚(不依赖各驱动 FK 配置差异)
+			ids := make([]uint, 0, len(pills))
+			seen := make(map[uint]struct{}, len(pills))
+			for _, p := range pills {
+				if _, dup := seen[p.PillID]; dup {
+					return fmt.Errorf("duplicate pill id %d", p.PillID)
+				}
+				seen[p.PillID] = struct{}{}
+				ids = append(ids, p.PillID)
+			}
+			var existCount int64
+			if err := tx.Model(&model.ElixirPill{}).Where("id IN ?", ids).Count(&existCount).Error; err != nil {
+				return err
+			}
+			if existCount != int64(len(ids)) {
+				return fmt.Errorf("pill not found")
+			}
+
+			rows := make([]model.AgentPill, 0, len(pills))
+			for i, p := range pills {
+				rows = append(rows, model.AgentPill{
+					AgentID:   agentID,
+					PillID:    p.PillID,
+					Weight:    p.Weight,
+					SortOrder: i + 1,
+				})
+			}
+			if err := tx.Create(&rows).Error; err != nil {
+				return err
+			}
+		}
+		// 3) 同事务失效语言模式缓存(无记录时影响 0 行,不视为错误)
+		if err := tx.Model(&model.LanguagePattern{}).
+			Where("agent_id = ?", agentID).
+			Update("is_valid", false).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+	if txErr != nil {
+		return errors.ErrorServerInternalError("dao.agent.replace_pills")
+	}
+	return nil
 }
 
 // InvalidateLanguagePattern 失效道人语言模式缓存
