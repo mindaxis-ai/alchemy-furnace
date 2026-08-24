@@ -1,44 +1,50 @@
 'use client'
 
 /**
- * 道人详情页面 - Agent 配置
- * 道人信息编辑（基础性格 + 模型选择）
- * 已服用金丹列表：权重(0-10)编辑、拖拽排序（服用顺序）、绑定/解绑
- * 语言模式合成状态展示（涌现规则 + 丹性相冲警告）
+ * 道人详情页面 - 只读/编辑双态
+ * 只读: 完整资料、模型失效警告、语言模式缓存状态、服丹编排(顺序+剂量)
+ * 编辑: useAgentEditorFlow 草稿;编辑过程零 API,保存=基础资料→完整编排→GET 回读(flow 保证);
+ *       失败保留草稿且 ActionFeedback 可重试;「恢复服务端版本」回到基线但保持编辑态
+ * 删除: 有会话历史(409 delete_has_history)时引导停用;无历史才二次确认硬删除
  */
-import { useState, useEffect, useRef, type DragEvent } from 'react'
-import { useParams } from 'next/navigation'
+import { useEffect, useState } from 'react'
+import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useTranslations } from 'next-intl'
 import {
-  ArrowLeft,
-  Cpu,
-  Pill,
-  Sparkles,
-  Plus,
-  Trash2,
-  Loader2,
   AlertCircle,
-  MessageSquare,
-  Edit3,
-  X,
-  Check,
+  ArrowLeft,
+  Ban,
+  Cpu,
   FlaskConical,
-  Scale,
-  ListOrdered,
-  Wand2,
-  TriangleAlert,
-  GripVertical,
+  Loader2,
+  MessageSquare,
+  Pencil,
+  Pill as PillIcon,
   RefreshCw,
+  RotateCcw,
+  Save,
+  Scale,
+  Sparkles,
+  Trash2,
+  TriangleAlert,
+  Wand2,
+  X,
 } from 'lucide-react'
 import { useAgent } from '@/contexts/AgentContext'
 import { usePill } from '@/contexts/PillContext'
-import { ActionFeedback } from '@/components/interaction/action-feedback'
+import { useAgentEditorFlow } from '@/hooks/use-agent-editor-flow'
 import { useChatLaunchFlow } from '@/hooks/use-chat-launch-flow'
+import { useUnsavedChanges } from '@/hooks/use-unsaved-changes'
+import { AgentPillComposer } from '@/components/agent-pill-composer'
+import { NuwaDistillPanel } from '@/components/nuwa-distill-panel'
+import { ActionFeedback } from '@/components/interaction/action-feedback'
+import { ApiError } from '@/services/api'
+import * as agentService from '@/services/agentService'
 import * as modelService from '@/services/modelService'
 import type { ModelOption } from '@/services/modelService'
-import * as agentService from '@/services/agentService'
-import type { AgentPill, TensionSeverity } from '@/services/types'
+import type { AgentStatus, TensionSeverity } from '@/services/types'
+import { formatDateTime } from '@/utils/format'
 
 /** 生成头像渐变颜色（根据名称确定性生成） */
 function getAvatarColor(name: string): string {
@@ -53,143 +59,20 @@ function getAvatarColor(name: string): string {
   return colors[Math.abs(hash) % colors.length]
 }
 
-/** 已服用金丹条目（权重可编辑，可拖拽调整服用顺序） */
-function AgentPillRow({
-  agentPill,
-  index,
-  isDragOver,
-  reordering,
-  onSave,
-  onUnbind,
-  onDragStartRow,
-  onDragOverRow,
-  onDropRow,
-  onDragEndRow,
-}: {
-  agentPill: AgentPill
-  index: number
-  isDragOver: boolean
-  reordering: boolean
-  onSave: (pillId: string, weight: number, sortOrder: number) => Promise<boolean>
-  onUnbind: (pillId: string) => Promise<boolean>
-  onDragStartRow: (index: number, e: DragEvent, rowEl: HTMLElement | null) => void
-  onDragOverRow: (index: number, e: DragEvent) => void
-  onDropRow: (index: number) => void
-  onDragEndRow: () => void
-}) {
-  const t = useTranslations('agent')
-  const [weight, setWeight] = useState(agentPill.weight)
-  const [sortOrder, setSortOrder] = useState(agentPill.sort_order)
-  const [saving, setSaving] = useState(false)
-  const rowRef = useRef<HTMLDivElement>(null)
+/** 从 409 响应体提取会话历史数(兼容 data.data.session_count 与 data.session_count 两种嵌套) */
+function extractSessionCount(error: ApiError): number {
+  const body = error.data as
+    | { data?: { session_count?: unknown }; session_count?: unknown }
+    | undefined
+  const inner = body?.data?.session_count ?? body?.session_count
+  return typeof inner === 'number' && Number.isFinite(inner) ? inner : 0
+}
 
-  // 外部数据刷新后同步本地状态（渲染期调整，避免级联渲染）
-  const [synced, setSynced] = useState({ w: agentPill.weight, s: agentPill.sort_order })
-  if (synced.w !== agentPill.weight || synced.s !== agentPill.sort_order) {
-    setSynced({ w: agentPill.weight, s: agentPill.sort_order })
-    setWeight(agentPill.weight)
-    setSortOrder(agentPill.sort_order)
-  }
-
-  const dirty = weight !== agentPill.weight || sortOrder !== agentPill.sort_order
-  const pill = agentPill.pill
-
-  const handleSave = async () => {
-    setSaving(true)
-    await onSave(agentPill.pill_id, weight, sortOrder)
-    setSaving(false)
-  }
-
-  return (
-    <div
-      ref={rowRef}
-      onDragOver={e => onDragOverRow(index, e)}
-      onDrop={e => {
-        e.preventDefault()
-        onDropRow(index)
-      }}
-      className={`
-        dao-card p-4 flex flex-col gap-3 transition-all
-        ${isDragOver ? 'border-gold/60 ring-1 ring-gold/40' : ''}
-        ${reordering ? 'opacity-60 pointer-events-none' : ''}
-      `}
-    >
-      <div className="flex items-center gap-3 min-w-0">
-        {/* 拖拽手柄（调整服用顺序） */}
-        <span
-          draggable
-          onDragStart={e => onDragStartRow(index, e, rowRef.current)}
-          onDragEnd={onDragEndRow}
-          className="cursor-grab active:cursor-grabbing p-1 -ml-1 rounded text-muted-foreground/60 hover:text-gold hover:bg-gold/10 transition-colors shrink-0"
-          title={t('pills.reorderTitle')}
-        >
-          <GripVertical className="w-4 h-4" />
-        </span>
-        <div className="w-10 h-10 rounded-xl bg-gold/15 flex items-center justify-center shrink-0">
-          <FlaskConical className="w-5 h-5 text-gold" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <Link
-            href={`/pills/${agentPill.pill_id}`}
-            className="text-sm font-medium text-foreground hover:text-gold transition-colors truncate block"
-          >
-            {pill?.name || `金丹 #${agentPill.pill_id}`}
-          </Link>
-          {pill?.description && (
-            <p className="text-[10px] text-muted-foreground truncate">{pill.description}</p>
-          )}
-        </div>
-        <button
-          onClick={() => onUnbind(agentPill.pill_id)}
-          className="p-1.5 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors shrink-0"
-          title={t('pills.unbindTitle')}
-        >
-          <Trash2 className="w-4 h-4" />
-        </button>
-      </div>
-
-      {/* 权重 / 顺序编辑 */}
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="flex-1 min-w-[120px]">
-          <label className="dao-label flex items-center gap-1">
-            <Scale className="w-3 h-3" />
-            {t('pills.weight')}（0-10）
-          </label>
-          <input
-            type="number"
-            min={0}
-            max={10}
-            step={0.5}
-            value={weight}
-            onChange={e => setWeight(Math.min(10, Math.max(0, Number(e.target.value))))}
-            className="dao-input py-1.5 text-sm"
-          />
-        </div>
-        <div className="flex-1 min-w-[120px]">
-          <label className="dao-label flex items-center gap-1">
-            <ListOrdered className="w-3 h-3" />
-            {t('pills.sortOrder')}
-          </label>
-          <input
-            type="number"
-            min={0}
-            step={1}
-            value={sortOrder}
-            onChange={e => setSortOrder(Math.max(0, Math.floor(Number(e.target.value))))}
-            className="dao-input py-1.5 text-sm"
-          />
-        </div>
-        <button
-          onClick={handleSave}
-          disabled={!dirty || saving}
-          className="dao-btn-gold text-xs px-3 py-2 disabled:opacity-40 whitespace-nowrap"
-        >
-          {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-          {t('saveCta')}
-        </button>
-      </div>
-    </div>
-  )
+// 严重程度徽标样式（label 通过 tSev 渲染）
+const SEVERITY_CLASS: Record<TensionSeverity, string> = {
+  low: 'bg-sage/15 text-sage border-sage/30',
+  medium: 'bg-gold/15 text-gold border-gold/30',
+  high: 'bg-primary/10 text-primary border-primary/30',
 }
 
 export default function AgentDetailPage() {
@@ -198,27 +81,25 @@ export default function AgentDetailPage() {
   const tEditor = useTranslations('agentDetail.editor')
   const tSev = useTranslations('agent.severity')
   const tLaunch = useTranslations('chatView.launch')
+  const tCommon = useTranslations('common')
   const { id } = useParams<{ id: string }>()
+  const router = useRouter()
   const agentId = id
 
-  const { state: agentState, fetchAgent, bindPill, unbindPill, updateAgentPill, editAgent } = useAgent()
+  const { state: agentState, fetchAgent, dispatch } = useAgent()
   const { state: pillState, fetchPills } = usePill()
   const launchFlow = useChatLaunchFlow()
 
-  const [showBindPill, setShowBindPill] = useState(false)
-  const [isEditing, setIsEditing] = useState(false)
-  const [editName, setEditName] = useState('')
-  const [editPersonality, setEditPersonality] = useState('')
-  const [editModel, setEditModel] = useState('')
-  const [editProactivity, setEditProactivity] = useState(50)
-  const [modelOptions, setModelOptions] = useState<ModelOption[]>([])
-  const [dragIndex, setDragIndex] = useState<number | null>(null)
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
-  const [reordering, setReordering] = useState(false)
-
   const agent = agentState.currentAgent
-  const agentPills = [...(agent?.agent_pills || [])].sort((a, b) => a.sort_order - b.sort_order)
-  const languagePattern = agent?.language_pattern
+  const flow = useAgentEditorFlow(agent)
+  useUnsavedChanges(flow.dirty, t('unsavedConfirm'))
+
+  // null = 尚未加载成功(不做失效判定);数组 = 已加载(可能为空)
+  const [modelOptions, setModelOptions] = useState<ModelOption[] | null>(null)
+  const [deleteArmed, setDeleteArmed] = useState(false)
+  const [deleteStatus, setDeleteStatus] = useState<'idle' | 'submitting' | 'error'>('idle')
+  const [historyCount, setHistoryCount] = useState<number | null>(null)
+  const [deactivateStatus, setDeactivateStatus] = useState<'idle' | 'submitting' | 'error'>('idle')
 
   // 加载数据
   useEffect(() => {
@@ -226,117 +107,99 @@ export default function AgentDetailPage() {
       fetchAgent(agentId)
       fetchPills()
     }
-    // 加载已启用模型选项（默认模型排在首位）
-    modelService.options()
+    let cancelled = false
+    modelService
+      .options()
       .then(opts => {
+        if (cancelled) return
         setModelOptions([...opts].sort((a, b) => Number(b.is_default) - Number(a.is_default)))
       })
       .catch(() => {
-        // 模型选项加载失败时保留下拉为空态提示
+        // 模型选项加载失败:保留下拉空态提示,不做失效判定
       })
+    return () => {
+      cancelled = true
+    }
   }, [agentId, fetchAgent, fetchPills])
 
-  // 初始化编辑表单（渲染期调整，避免级联渲染）
-  const [syncedAgent, setSyncedAgent] = useState(agent)
-  if (agent && agent !== syncedAgent) {
-    setSyncedAgent(agent)
-    setEditName(agent.name)
-    setEditPersonality(agent.personality || '')
-    setEditModel(agent.model_name)
-    setEditProactivity(agent.proactivity ?? 50)
-  }
+  /** 模型失效判定:选项已成功加载且当前模型不在启用列表中 */
+  const isModelInvalid = (modelName: string) =>
+    modelOptions !== null && modelName !== '' && !modelOptions.some(o => o.name === modelName)
 
-  /** 保存编辑 */
-  const handleSaveEdit = async () => {
-    if (!editName.trim()) return
-    const updated = await editAgent(agentId, {
-      name: editName.trim(),
-      personality: editPersonality.trim(),
-      model_name: editModel,
-      proactivity: editProactivity,
-    })
-    if (updated) setIsEditing(false)
-  }
-
-  /** 服用金丹（默认权重 1.0，顺序追加到末尾） */
-  const handleBindPill = async (pillId: string) => {
-    const maxOrder = agentPills.reduce((max, ap) => Math.max(max, ap.sort_order), -1)
-    await bindPill(agentId, pillId, 1, maxOrder + 1)
-  }
-
-  /** 拖拽开始：记录源索引并设置拖拽图像为整行 */
-  const handleDragStartRow = (index: number, e: DragEvent, rowEl: HTMLElement | null) => {
-    setDragIndex(index)
-    e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('text/plain', String(index))
-    if (rowEl) e.dataTransfer.setDragImage(rowEl, 20, 20)
-  }
-
-  /** 拖拽悬停：允许放置并高亮目标行 */
-  const handleDragOverRow = (index: number, e: DragEvent) => {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-    if (dragIndex !== null && index !== dragOverIndex) setDragOverIndex(index)
-  }
-
-  /** 拖拽结束（未放置）：清理状态 */
-  const handleDragEndRow = () => {
-    setDragIndex(null)
-    setDragOverIndex(null)
-  }
-
-  /** 放置：重排列表并持久化受影响的服用顺序（PUT /agents/:id/pills/:pill_id） */
-  const handleDropRow = async (targetIndex: number) => {
-    const sourceIndex = dragIndex
-    handleDragEndRow()
-    if (sourceIndex === null || sourceIndex === targetIndex) return
-
-    const reordered = [...agentPills]
-    const [moved] = reordered.splice(sourceIndex, 1)
-    reordered.splice(targetIndex, 0, moved)
-
-    // 新位置即新 sort_order，仅持久化顺序发生变化的行
-    const changed = reordered
-      .map((ap, newOrder) => ({ ap, newOrder }))
-      .filter(({ ap, newOrder }) => ap.sort_order !== newOrder)
-    if (changed.length === 0) return
-
-    setReordering(true)
+  /** 真正执行删除(二次确认后或失败重试时调用) */
+  const performDelete = async () => {
+    if (!agent) return
+    setDeleteStatus('submitting')
     try {
-      // 串行提交，避免后端写入竞争
-      for (const { ap, newOrder } of changed) {
-        await agentService.updateAgentPill(agentId, ap.pill_id, ap.weight, newOrder)
+      await agentService.deleteAgent(agent.id)
+      dispatch({ type: 'REMOVE_AGENT', payload: agent.id })
+      router.push('/agents')
+    } catch (error) {
+      if (error instanceof ApiError && error.errorCode === 'service.agent.delete_has_history') {
+        // 有会话历史:引导停用而非硬删除
+        setHistoryCount(extractSessionCount(error))
+        setDeleteStatus('idle')
+        setDeleteArmed(false)
+        return
       }
-    } catch {
-      // 失败时下方刷新会回显服务端真实顺序
+      setDeleteStatus('error')
+      setDeleteArmed(false)
     }
-    await fetchAgent(agentId)
-    setReordering(false)
   }
 
-  /** 开始对话 */
-  const handleStartChat = async () => {
-    await launchFlow.launchSingle(agentId)
+  /** 自定义删除:二次确认(第一次点击仅进入待确认态) */
+  const handleDelete = () => {
+    if (!deleteArmed) {
+      setDeleteArmed(true)
+      return
+    }
+    void performDelete()
   }
 
-  /** 可服用金丹列表（未绑定的） */
-  const availablePills = pillState.pills.filter(
-    p => !agentPills.some(ap => ap.pill_id === p.id)
-  )
-
-  // 严重程度徽标样式（label 通过 tSev 渲染）
-  const SEVERITY_CLASS: Record<TensionSeverity, string> = {
-    low: 'bg-sage/15 text-sage border-sage/30',
-    medium: 'bg-gold/15 text-gold border-gold/30',
-    high: 'bg-primary/10 text-primary border-primary/30',
+  /** 停用:更新状态后回读详情(经 dispatch 写回,无整页闪烁) */
+  const performDeactivate = async () => {
+    if (!agent) return
+    setDeactivateStatus('submitting')
+    try {
+      await agentService.updateAgent(agent.id, { status: 'inactive' })
+      const fresh = await agentService.getAgent(agent.id)
+      dispatch({ type: 'UPDATE_AGENT', payload: fresh })
+      dispatch({ type: 'SET_CURRENT_AGENT', payload: fresh })
+      setHistoryCount(null)
+      setDeactivateStatus('idle')
+    } catch {
+      setDeactivateStatus('error')
+    }
   }
 
+  /** 保存(写后重读由 flow 保证) */
+  const handleSave = () => {
+    void flow.save()
+  }
+
+  // ========== 加载 / 错误 / 空 三态 ==========
   if (!agent && agentState.loading) {
     return (
       <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
         <div className="flex flex-col items-center justify-center py-16">
-          <Loader2 className="w-8 h-8 text-gold animate-spin mb-3" />
+          <Loader2 className="mb-3 h-8 w-8 animate-spin text-gold" />
           <p className="text-sm text-muted-foreground">{t('loading')}</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!agent && agentState.error) {
+    return (
+      <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
+        <div className="flex flex-col items-center justify-center py-16">
+          <AlertCircle className="mb-3 h-12 w-12 text-primary" />
+          <p className="mb-4 max-w-xl break-words text-center text-sm text-muted-foreground">
+            {agentState.error}
+          </p>
+          <button type="button" onClick={() => fetchAgent(agentId)} className="dao-btn-ghost">
+            {tCommon('retry')}
+          </button>
         </div>
       </div>
     )
@@ -346,10 +209,10 @@ export default function AgentDetailPage() {
     return (
       <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
         <div className="flex flex-col items-center justify-center py-16">
-          <AlertCircle className="w-12 h-12 text-primary mb-3" />
+          <AlertCircle className="mb-3 h-12 w-12 text-primary" />
           <p className="text-sm text-muted-foreground">{t('notFound')}</p>
           <Link href="/agents" className="dao-btn-primary mt-4 whitespace-nowrap">
-            <ArrowLeft className="w-4 h-4" />
+            <ArrowLeft className="h-4 w-4" />
             {t('backToList')}
           </Link>
         </div>
@@ -357,378 +220,551 @@ export default function AgentDetailPage() {
     )
   }
 
-  return (
-    <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
-      {/* 返回按钮 */}
-      <Link
-        href="/agents"
-        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-gold transition-colors mb-4 whitespace-nowrap"
-      >
-        <ArrowLeft className="w-4 h-4" />
-        {t('backToList')}
-      </Link>
+  const languagePattern = agent.language_pattern
 
-      {/* 道人信息头部 */}
-      <div className="dao-card p-5 md:p-6 mb-6">
-        <div className="flex flex-col md:flex-row gap-5">
-          {/* 头像 */}
-          <div className={`
-            shrink-0 w-20 h-20 md:w-24 md:h-24 rounded-2xl
-            bg-gradient-to-br ${getAvatarColor(agent.name)}
-            flex items-center justify-center text-white font-serif font-bold text-3xl md:text-4xl
-            shadow-lg
-          `}>
-            {agent.name.charAt(0)}
-          </div>
+  // ========== 只读态 ==========
+  if (flow.mode === 'readonly') {
+    const agentPills = [...(agent.agent_pills ?? [])].sort((a, b) => a.sort_order - b.sort_order)
+    const modelInvalid = isModelInvalid(agent.model_name)
+    return (
+      <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
+        <Link
+          href="/agents"
+          className="mb-4 inline-flex items-center gap-1.5 whitespace-nowrap text-sm text-muted-foreground transition-colors hover:text-gold"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          {t('backToList')}
+        </Link>
 
-          {/* 信息 */}
-          <div className="flex-1 min-w-0">
-            {isEditing ? (
-              <div className="space-y-3">
-                <div>
-                  <label className="dao-label">{t('editor.nameLabel')}</label>
-                  <input
-                    value={editName}
-                    onChange={e => setEditName(e.target.value)}
-                    className="dao-input text-lg font-serif"
-                  />
-                </div>
-                <div>
-                  <label className="dao-label">{t('editor.personaLabel')}</label>
-                  <textarea
-                    value={editPersonality}
-                    onChange={e => setEditPersonality(e.target.value)}
-                    className="dao-textarea"
-                    rows={4}
-                    placeholder={t('editor.personaPlaceholder')}
-                  />
-                </div>
-                <div>
-                  <label className="dao-label flex items-center gap-1.5">
-                    <Cpu className="w-3.5 h-3.5" />
-                    {t('editor.modelLabel')}
-                  </label>
-                  {modelOptions.length === 0 ? (
-                    <p className="text-xs text-muted-foreground bg-muted border border-border/70 rounded-lg px-3 py-2.5">
-                      {t('editor.modelEmpty')}
-                      <Link href="/settings" className="text-gold hover:text-gold/80 mx-1 whitespace-nowrap">
-                        {t('editor.modelLink')}
-                      </Link>
-                      {t('editor.modelEmptySuffix')}
-                    </p>
+        {/* 道人信息头部 */}
+        <div className="dao-card mb-6 p-5 md:p-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-start">
+            {agent.avatar ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={agent.avatar}
+                alt={agent.name}
+                className="h-20 w-20 shrink-0 rounded-2xl object-cover shadow-lg md:h-24 md:w-24"
+              />
+            ) : (
+              <div
+                className={`flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br font-serif text-3xl font-bold text-white shadow-lg md:h-24 md:w-24 md:text-4xl ${getAvatarColor(agent.name)}`}
+              >
+                {agent.name.charAt(0)}
+              </div>
+            )}
+
+            <div className="min-w-0 flex-1">
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <h1 className="min-w-0 break-words font-serif text-xl font-bold text-foreground md:text-2xl">
+                  {agent.name}
+                </h1>
+                <span
+                  className={`shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] ${
+                    agent.status === 'active'
+                      ? 'border-sage/30 bg-sage/15 text-sage'
+                      : 'border-border bg-muted text-muted-foreground'
+                  }`}
+                >
+                  {agent.status === 'active' ? tStatus('active') : tStatus('inactive')}
+                </span>
+                {modelInvalid && (
+                  <span
+                    className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-gold/40 bg-gold/10 px-2 py-0.5 text-[10px] text-gold"
+                    title={t('modelInvalidWarning')}
+                  >
+                    <TriangleAlert className="h-3 w-3" />
+                    {t('modelInvalidBadge')}
+                  </span>
+                )}
+              </div>
+
+              <p className="mb-3 whitespace-pre-wrap break-words text-sm leading-relaxed text-muted-foreground">
+                {agent.personality || t('persona.empty')}
+              </p>
+
+              <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                <span className="flex min-w-0 items-center gap-1">
+                  <Cpu className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{agent.model_name}</span>
+                </span>
+                <span className="flex items-center gap-1">
+                  <PillIcon className="h-3.5 w-3.5" />
+                  {t('pillsCount', { count: agentPills.length })}
+                </span>
+                <span className="flex items-center gap-1" title={tEditor('proactivityHint')}>
+                  <Sparkles className="h-3.5 w-3.5" />
+                  {tEditor('proactivity')}: {agent.proactivity}
+                </span>
+                <span className="flex items-center gap-1">
+                  {t('meta.createdAt')} {formatDateTime(agent.created_at)}
+                </span>
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void launchFlow.launchSingle(agent.id)}
+                  disabled={launchFlow.state.status === 'submitting' || agent.status !== 'active'}
+                  title={agent.status !== 'active' ? t('inactiveChatHint') : undefined}
+                  className="dao-btn-primary whitespace-nowrap text-sm disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {launchFlow.state.status === 'submitting' ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
-                    <select
-                      value={editModel}
-                      onChange={e => setEditModel(e.target.value)}
-                      className="dao-input"
-                    >
-                      {/* 当前使用的模型可能已停用/删除，保留为可选项以便回显 */}
-                      {editModel && !modelOptions.some(o => o.name === editModel) && (
-                        <option value={editModel}>{editModel}{t('editor.modelCurrent')}</option>
+                    <MessageSquare className="h-4 w-4" />
+                  )}
+                  {t('startChatCta')}
+                </button>
+                <button
+                  type="button"
+                  onClick={flow.beginEdit}
+                  className="dao-btn-ghost whitespace-nowrap text-sm"
+                >
+                  <Pencil className="h-4 w-4" />
+                  {t('editCta')}
+                </button>
+                {historyCount === null && (
+                  <button
+                    type="button"
+                    onClick={handleDelete}
+                    disabled={deleteStatus === 'submitting'}
+                    className="dao-btn-ghost whitespace-nowrap text-sm text-primary hover:text-primary/80"
+                  >
+                    {deleteStatus === 'submitting' ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
+                    {deleteArmed ? t('deleteConfirmCta') : t('deleteCta')}
+                  </button>
+                )}
+              </div>
+
+              {launchFlow.state.status !== 'idle' && (
+                <div className="mt-3 rounded-lg border border-gold/40 bg-gold/5 px-3 py-2.5 shadow-sm">
+                  {launchFlow.state.status === 'submitting' ? (
+                    <ActionFeedback status="submitting" message={tLaunch('submitting')} />
+                  ) : (
+                    <>
+                      <ActionFeedback
+                        status="error"
+                        message={launchFlow.state.message}
+                        onRetry={() => {
+                          void launchFlow.retry()
+                        }}
+                        retryLabel={tLaunch('retry')}
+                      />
+                      {launchFlow.state.errorCode === 'service.chat.model_unavailable' && (
+                        <Link
+                          href="/settings"
+                          className="mt-2 inline-flex max-w-full whitespace-normal break-words text-left text-xs font-medium text-gold hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60"
+                        >
+                          {tLaunch('modelSettings')}
+                        </Link>
                       )}
-                      {modelOptions.map(m => (
-                        <option key={`${m.provider_name}/${m.name}`} value={m.name}>
-                          {m.display_name || m.name}（{m.provider_display_name || m.provider_name}）{m.is_default ? ` · ${t('editor.defaultBadge')}` : ''}
-                        </option>
-                      ))}
-                    </select>
+                    </>
                   )}
                 </div>
-                <div>
-                  <label className="dao-label flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5" />
-                    {tEditor('proactivity')}
-                    <span className="ml-auto font-mono text-xs text-sage">
-                      {editProactivity}
-                    </span>
-                  </label>
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    step={1}
-                    value={editProactivity}
-                    onChange={e => setEditProactivity(Number(e.target.value))}
-                    aria-label={tEditor('proactivity')}
-                    className="w-full accent-gold mt-1.5"
-                  />
-                  <p className="mt-1.5 text-[11px] text-sage">
-                    {tEditor('proactivityHint')}
+              )}
+
+              {historyCount !== null && (
+                <div className="mt-3 rounded-lg border border-gold/40 bg-gold/5 px-3 py-2.5 shadow-sm">
+                  <p className="flex items-start gap-2 break-words text-sm text-foreground/90">
+                    <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-gold" />
+                    {t('deleteHistoryHint', { count: historyCount })}
                   </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void performDeactivate()}
+                      disabled={deactivateStatus === 'submitting'}
+                      className="dao-btn-gold whitespace-nowrap text-xs"
+                    >
+                      {deactivateStatus === 'submitting' ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Ban className="h-3.5 w-3.5" />
+                      )}
+                      {t('deactivateCta')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setHistoryCount(null)}
+                      className="dao-btn-ghost whitespace-nowrap text-xs"
+                    >
+                      {t('cancelCta')}
+                    </button>
+                  </div>
+                  {deactivateStatus === 'error' && (
+                    <div className="mt-2">
+                      <ActionFeedback
+                        status="error"
+                        message={t('deactivateFailed')}
+                        onRetry={() => void performDeactivate()}
+                        retryLabel={tCommon('retry')}
+                      />
+                    </div>
+                  )}
                 </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <button onClick={handleSaveEdit} className="dao-btn-primary text-sm whitespace-nowrap">
-                    <Check className="w-4 h-4" /> {t('saveCta')}
-                  </button>
-                  <button onClick={() => setIsEditing(false)} className="dao-btn-ghost text-sm whitespace-nowrap">
-                    <X className="w-4 h-4" /> {t('cancelCta')}
-                  </button>
+              )}
+
+              {deleteStatus === 'error' && (
+                <div className="mt-3">
+                  <ActionFeedback
+                    status="error"
+                    message={t('deleteFailed')}
+                    onRetry={() => void performDelete()}
+                    retryLabel={tCommon('retry')}
+                  />
                 </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* 语言模式缓存状态 */}
+        {languagePattern && (
+          <div className="dao-card mb-6 p-4">
+            <div className="mb-3 flex min-w-0 flex-wrap items-center gap-2">
+              <Wand2 className="h-4 w-4 shrink-0 text-sage" />
+              <h2 className="min-w-0 break-words font-serif text-sm font-bold text-gold">
+                {t('languagePattern.title')}
+              </h2>
+              <span
+                className={`shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] ${
+                  languagePattern.is_valid
+                    ? 'border-sage/30 bg-sage/15 text-sage'
+                    : 'border-gold/30 bg-gold/15 text-gold'
+                }`}
+              >
+                {languagePattern.is_valid
+                  ? t('languagePattern.synthesized')
+                  : t('languagePattern.stale')}
+              </span>
+            </div>
+
+            {!languagePattern.is_valid ? (
+              <div className="flex items-start gap-2 rounded-lg border border-gold/20 bg-gold/10 px-3 py-2 text-xs text-gold">
+                <RefreshCw className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>{t('languagePattern.staleDesc')}</span>
               </div>
             ) : (
               <>
-                <div className="flex items-center gap-3 mb-2 flex-wrap">
-                  <h1 className="text-xl md:text-2xl font-serif font-bold text-foreground truncate min-w-0">
-                    {agent.name}
-                  </h1>
-                  <span className={`
-                    text-[10px] px-2 py-0.5 rounded-full border whitespace-nowrap shrink-0
-                    ${agent.status === 'active'
-                      ? 'bg-sage/15 text-sage border-sage/30'
-                      : 'bg-muted text-muted-foreground border-border'
-                    }
-                  `}>
-                    {agent.status === 'active' ? tStatus('active') : tStatus('inactive')}
-                  </span>
-                </div>
-
-                {agent.personality && (
-                  <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
-                    {agent.personality}
-                  </p>
+                {languagePattern.emergence_rules.length > 0 && (
+                  <div className="mb-3">
+                    <p className="mb-1.5 text-xs text-muted-foreground">
+                      {t('languagePattern.emergenceRules')}
+                    </p>
+                    <ul className="space-y-1">
+                      {languagePattern.emergence_rules.map((rule, i) => (
+                        <li key={i} className="flex items-start gap-1.5 text-xs text-foreground/90">
+                          <Sparkles className="mt-0.5 h-3 w-3 shrink-0 text-gold" />
+                          <span>{rule}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 )}
 
-                <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1 min-w-0">
-                    <Cpu className="w-3.5 h-3.5 shrink-0" />
-                    <span className="truncate">{agent.model_name}</span>
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Pill className="w-3.5 h-3.5" />
-                    {t('pillsCount', { count: agentPills.length })}
-                  </span>
-                  <span
-                    className="flex items-center gap-1"
-                    title={tEditor('proactivityHint')}
-                  >
-                    <Sparkles className="w-3.5 h-3.5" />
-                    {tEditor('proactivity')}: {agent.proactivity}
-                  </span>
-                </div>
-
-                <div className="mt-4 flex flex-wrap items-center gap-2">
-                  <button
-                    onClick={handleStartChat}
-                    disabled={launchFlow.state.status === 'submitting'}
-                    className="dao-btn-primary whitespace-nowrap text-sm disabled:cursor-wait disabled:opacity-60"
-                  >
-                    {launchFlow.state.status === 'submitting' ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <MessageSquare className="w-4 h-4" />
-                    )}
-                    {t('startChatCta')}
-                  </button>
-                  <button onClick={() => setIsEditing(true)} className="dao-btn-ghost text-sm whitespace-nowrap">
-                    <Edit3 className="w-4 h-4" />
-                    {t('editCta')}
-                  </button>
-                </div>
-                {launchFlow.state.status !== 'idle' && (
-                  <div className="mt-3 rounded-lg border border-gold/40 bg-gold/5 px-3 py-2.5 shadow-sm">
-                    {launchFlow.state.status === 'submitting' ? (
-                      <ActionFeedback status="submitting" message={tLaunch('submitting')} />
-                    ) : (
-                      <>
-                        <ActionFeedback
-                          status="error"
-                          message={launchFlow.state.message}
-                          onRetry={() => { void launchFlow.retry() }}
-                          retryLabel={tLaunch('retry')}
-                        />
-                        {launchFlow.state.errorCode === 'service.chat.model_unavailable' && (
-                          <Link
-                            href="/settings"
-                            className="mt-2 inline-flex max-w-full break-words text-left text-xs font-medium whitespace-normal text-gold hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60"
-                          >
-                            {tLaunch('modelSettings')}
-                          </Link>
-                        )}
-                      </>
-                    )}
+                {languagePattern.inner_tensions.length > 0 && (
+                  <div>
+                    <p className="mb-1.5 flex items-center gap-1 text-xs text-muted-foreground">
+                      <TriangleAlert className="h-3 w-3 text-primary" />
+                      {t('languagePattern.tensions', {
+                        count: languagePattern.inner_tensions.length,
+                      })}
+                    </p>
+                    <ul className="space-y-2">
+                      {languagePattern.inner_tensions.map((tension, i) => (
+                        <li
+                          key={i}
+                          className="flex items-start gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="mb-0.5 flex flex-wrap items-center gap-2">
+                              <span className="font-medium text-foreground/90">
+                                {tension.dimension}
+                              </span>
+                              <span
+                                className={`shrink-0 whitespace-nowrap rounded-full border px-1.5 py-px text-[10px] ${SEVERITY_CLASS[tension.severity] ?? SEVERITY_CLASS.medium}`}
+                              >
+                                {tSev(tension.severity)}
+                              </span>
+                            </div>
+                            <p className="leading-relaxed text-muted-foreground">
+                              {tension.description}
+                            </p>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 )}
               </>
             )}
           </div>
-        </div>
-      </div>
+        )}
 
-      {/* 语言模式合成状态 */}
-      {languagePattern && (
-        <div className="dao-card p-4 mb-6">
-          <div className="flex items-center gap-2 mb-3 flex-wrap min-w-0">
-            <Wand2 className="w-4 h-4 text-sage shrink-0" />
-            <h2 className="text-sm font-serif font-bold text-gold truncate">
-              {t('languagePattern.title')}
+        {/* 服丹编排(只读:按服用顺序展示金丹名与剂量) */}
+        <section className="dao-card p-5">
+          <div className="mb-4 flex items-center gap-2">
+            <FlaskConical className="h-4 w-4 shrink-0 text-gold" />
+            <h2 className="min-w-0 break-words font-serif text-base font-bold text-gold">
+              {t('pills.title')}
             </h2>
-            <span className={`
-              text-[10px] px-2 py-0.5 rounded-full border whitespace-nowrap shrink-0
-              ${languagePattern.is_valid
-                ? 'bg-sage/15 text-sage border-sage/30'
-                : 'bg-gold/15 text-gold border-gold/30'
-              }
-            `}>
-              {languagePattern.is_valid ? t('languagePattern.synthesized') : t('languagePattern.stale')}
+            <span className="shrink-0 text-xs text-muted-foreground">
+              {t('pillsCount', { count: agentPills.length })}
             </span>
           </div>
-
-          {!languagePattern.is_valid ? (
-            /* 缓存已失效：以下内容为旧丹方合成结果，将在下次论道时重新合成 */
-            <div className="flex items-start gap-2 text-xs text-gold bg-gold/10 border border-gold/20 rounded-lg px-3 py-2">
-              <RefreshCw className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-              <span>{t('languagePattern.staleDesc')}</span>
+          {agentPills.length === 0 ? (
+            <div>
+              <p className="text-sm text-muted-foreground">{t('pills.empty')}</p>
+              <p className="mt-1 text-xs text-sage">{t('pills.emptyHint')}</p>
             </div>
           ) : (
-            <>
-              {languagePattern.emergence_rules && languagePattern.emergence_rules.length > 0 && (
-                <div className="mb-3">
-                  <p className="text-xs text-muted-foreground mb-1.5">{t('languagePattern.emergenceRules')}</p>
-                  <ul className="space-y-1">
-                    {languagePattern.emergence_rules.map((rule, i) => (
-                      <li key={i} className="flex items-start gap-1.5 text-xs text-foreground/90">
-                        <Sparkles className="w-3 h-3 text-gold mt-0.5 shrink-0" />
-                        <span>{rule}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {languagePattern.inner_tensions && languagePattern.inner_tensions.length > 0 && (
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1.5 flex items-center gap-1">
-                    <TriangleAlert className="w-3 h-3 text-primary" />
-                    {t('languagePattern.tensions', { count: languagePattern.inner_tensions.length })}
-                  </p>
-                  <ul className="space-y-2">
-                    {languagePattern.inner_tensions.map((tension, i) => {
-                      const sevClass = SEVERITY_CLASS[tension.severity] ?? SEVERITY_CLASS.medium
-                      const sevLabel = tSev(tension.severity)
-                      return (
-                        <li
-                          key={i}
-                          className="flex items-start gap-2 text-xs bg-primary/5 border border-primary/20 rounded-lg px-3 py-2"
-                        >
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                              <span className="font-medium text-foreground/90">{tension.dimension}</span>
-                              <span className={`text-[10px] px-1.5 py-px rounded-full border whitespace-nowrap shrink-0 ${sevClass}`}>
-                                {sevLabel}
-                              </span>
-                            </div>
-                            <p className="text-muted-foreground leading-relaxed">{tension.description}</p>
-                          </div>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
-
-      {/* 已服用金丹 */}
-      <div className="mb-6">
-        <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
-          <h2 className="text-lg font-serif font-bold text-gold flex items-center gap-2 min-w-0">
-            <FlaskConical className="w-5 h-5 shrink-0" />
-            <span className="truncate">{t('pills.title')}</span>
-          </h2>
-          <button
-            onClick={() => setShowBindPill(!showBindPill)}
-            className="dao-btn-gold text-sm whitespace-nowrap"
-          >
-            <Plus className="w-4 h-4" />
-            {t('pills.addCta')}
-          </button>
-        </div>
-
-        {/* 服用金丹选择面板 */}
-        {showBindPill && (
-          <div className="dao-card p-4 mb-4 animate-in fade-in duration-300">
-            <h3 className="text-sm font-medium text-gold mb-3">{t('pills.selectFromVault')}</h3>
-            {availablePills.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">
-                {t('pills.allBound')}
-              </p>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {availablePills.map(pill => (
-                  <button
-                    key={pill.id}
-                    onClick={() => handleBindPill(pill.id)}
-                    className="flex items-center gap-3 p-3 rounded-lg bg-muted border border-border/70 hover:border-gold/40 hover:bg-gold/5 transition-all text-left min-w-0"
+            <ol className="space-y-2">
+              {agentPills.map((agentPill, index) => (
+                <li
+                  key={agentPill.id}
+                  className="flex items-center gap-3 rounded-lg border border-border/70 bg-muted px-3 py-2"
+                >
+                  <span className="shrink-0 text-xs text-muted-foreground">{index + 1}.</span>
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gold/15 text-gold">
+                    <FlaskConical className="h-4 w-4" />
+                  </span>
+                  <Link
+                    href={`/pills/${agentPill.pill_id}`}
+                    className="min-w-0 flex-1 truncate text-sm font-medium text-foreground transition-colors hover:text-gold"
                   >
-                    <div className="w-8 h-8 rounded-lg bg-gold/15 flex items-center justify-center shrink-0">
-                      <FlaskConical className="w-4 h-4 text-gold" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm text-foreground truncate">{pill.name}</p>
-                      {pill.tags && pill.tags.length > 0 && (
-                        <p className="text-[10px] text-muted-foreground truncate">{pill.tags.join(' · ')}</p>
-                      )}
-                    </div>
-                    <Plus className="w-4 h-4 text-gold ml-auto shrink-0" />
-                  </button>
-                ))}
-              </div>
+                    {agentPill.pill?.name ?? t('composer.unknownPill')}
+                  </Link>
+                  <span className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs text-muted-foreground">
+                    <Scale className="h-3 w-3" />
+                    {t('pills.weight')} {agentPill.weight}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
+      </div>
+    )
+  }
+
+  // ========== 编辑态 ==========
+  const draft = flow.draft
+  const draftModelInvalid = isModelInvalid(draft.model_name)
+  const selectOptions = modelOptions ?? []
+  const modelMissing = draft.model_name !== '' && !selectOptions.some(o => o.name === draft.model_name)
+
+  return (
+    <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
+      <Link
+        href="/agents"
+        className="mb-4 inline-flex items-center gap-1.5 whitespace-nowrap text-sm text-muted-foreground transition-colors hover:text-gold"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        {t('backToList')}
+      </Link>
+
+      {/* 基础资料编辑 */}
+      <div className="dao-card mb-6 p-5 md:p-6">
+        <NuwaDistillPanel onApply={flow.applyNuwaDraft} />
+
+        <div className="mt-4 space-y-3">
+          <div>
+            <label htmlFor="agent-name" className="dao-label">
+              {t('editor.nameLabel')}
+            </label>
+            <input
+              id="agent-name"
+              value={draft.name}
+              onChange={e => flow.updateDraft({ name: e.target.value })}
+              className="dao-input font-serif text-lg"
+            />
+            {flow.fieldErrors.name === 'required' && (
+              <p className="mt-1 text-xs text-primary">{t('editor.nameRequired')}</p>
             )}
           </div>
-        )}
 
-        {/* 已绑定金丹列表 */}
-        {agentPills.length === 0 ? (
-          <div className="dao-card flex flex-col items-center py-8 text-center">
-            <Pill className="w-10 h-10 text-muted-foreground/50 mb-2" />
-            <p className="text-sm text-muted-foreground">{t('pills.empty')}</p>
-            <p className="text-xs text-sage mt-1">{t('pills.emptyHint')}</p>
+          <div>
+            <label htmlFor="agent-avatar" className="dao-label">
+              {t('editor.avatarLabel')}
+            </label>
+            <input
+              id="agent-avatar"
+              value={draft.avatar}
+              onChange={e => flow.updateDraft({ avatar: e.target.value })}
+              placeholder={t('editor.avatarPlaceholder')}
+              className="dao-input py-1.5 text-sm"
+            />
           </div>
-        ) : (
-          <>
-            <p className="text-[11px] text-sage mb-2 flex items-center gap-1.5">
-              {reordering ? (
-                <>
-                  <Loader2 className="w-3 h-3 animate-spin shrink-0" />
-                  <span>{t('pills.reordering')}</span>
-                </>
-              ) : (
-                <>
-                  <GripVertical className="w-3 h-3 shrink-0" />
-                  <span>{t('pills.dragHint')}</span>
-                </>
-              )}
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {agentPills.map((agentPill, index) => (
-                <AgentPillRow
-                  key={agentPill.id}
-                  agentPill={agentPill}
-                  index={index}
-                  isDragOver={dragOverIndex === index && dragIndex !== null && dragIndex !== index}
-                  reordering={reordering}
-                  onSave={(pillId, weight, sortOrder) => updateAgentPill(agentId, pillId, weight, sortOrder)}
-                  onUnbind={(pillId) => unbindPill(agentId, pillId)}
-                  onDragStartRow={handleDragStartRow}
-                  onDragOverRow={handleDragOverRow}
-                  onDropRow={handleDropRow}
-                  onDragEndRow={handleDragEndRow}
-                />
+
+          <div>
+            <label htmlFor="agent-personality" className="dao-label">
+              {t('editor.personaLabel')}
+            </label>
+            <textarea
+              id="agent-personality"
+              value={draft.personality}
+              onChange={e => flow.updateDraft({ personality: e.target.value })}
+              className="dao-textarea"
+              rows={4}
+              placeholder={t('editor.personaPlaceholder')}
+            />
+          </div>
+
+          <div>
+            <label className="dao-label flex items-center gap-1.5">
+              <Cpu className="h-3.5 w-3.5" />
+              {t('editor.modelLabel')}
+            </label>
+            {modelOptions !== null && modelOptions.length === 0 ? (
+              <p className="rounded-lg border border-border/70 bg-muted px-3 py-2.5 text-xs text-muted-foreground">
+                {t('editor.modelEmpty')}
+                <Link href="/settings" className="mx-1 whitespace-nowrap text-gold hover:text-gold/80">
+                  {t('editor.modelLink')}
+                </Link>
+                {t('editor.modelEmptySuffix')}
+              </p>
+            ) : (
+              <>
+                <select
+                  aria-label={t('editor.modelLabel')}
+                  value={draft.model_name}
+                  onChange={e => flow.updateDraft({ model_name: e.target.value })}
+                  className="dao-input"
+                >
+                  {/* 当前失效模型作为警告项保留展示,不静默丢弃 */}
+                  {modelMissing && (
+                    <option value={draft.model_name}>
+                      {draft.model_name}
+                      {t('editor.modelInvalidSuffix')}
+                    </option>
+                  )}
+                  {selectOptions.map(m => (
+                    <option key={`${m.provider_name}/${m.name}`} value={m.name}>
+                      {m.display_name || m.name}（{m.provider_display_name || m.provider_name}）
+                      {m.is_default ? ` · ${t('editor.defaultBadge')}` : ''}
+                    </option>
+                  ))}
+                </select>
+                {draftModelInvalid && (
+                  <p className="mt-1 flex items-start gap-1 break-words text-xs text-gold">
+                    <TriangleAlert className="mt-0.5 h-3 w-3 shrink-0" />
+                    {t('modelInvalidWarning')}
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+
+          <div>
+            <label className="dao-label flex items-center gap-1.5">
+              <Sparkles className="h-3.5 w-3.5" />
+              {tEditor('proactivity')}
+              <span className="ml-auto font-mono text-xs text-sage">{draft.proactivity}</span>
+            </label>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={draft.proactivity}
+              aria-label={tEditor('proactivity')}
+              onChange={e => flow.updateDraft({ proactivity: Number(e.target.value) })}
+              className="mt-1.5 w-full accent-gold"
+            />
+            <p className="mt-1.5 text-[11px] text-sage">{tEditor('proactivityHint')}</p>
+          </div>
+
+          <div>
+            <span className="dao-label">{t('editor.statusLabel')}</span>
+            <div role="group" aria-label={t('editor.statusLabel')} className="flex gap-2">
+              {(['active', 'inactive'] as AgentStatus[]).map(status => (
+                <button
+                  key={status}
+                  type="button"
+                  aria-pressed={draft.status === status}
+                  onClick={() => flow.updateDraft({ status })}
+                  className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                    draft.status === status
+                      ? 'border-gold/50 bg-gold/15 text-gold'
+                      : 'border-border/70 bg-muted text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {tStatus(status)}
+                </button>
               ))}
             </div>
-          </>
-        )}
+          </div>
+
+          <div>
+            <button
+              type="button"
+              onClick={flow.discard}
+              className="dao-btn-ghost whitespace-nowrap text-sm"
+            >
+              <X className="h-4 w-4" />
+              {t('cancelCta')}
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* 错误提示 */}
-      {agentState.error && (
-        <div className="fixed bottom-20 md:bottom-6 right-4 dao-card p-3 flex items-center gap-2 text-sm text-primary animate-in fade-in duration-300">
-          <AlertCircle className="w-4 h-4 shrink-0" />
-          <span>{agentState.error}</span>
+      {/* 服丹编排编辑(受控组件:仅改草稿,保存时一次性提交) */}
+      <section className="dao-card p-5">
+        <div className="mb-4 flex items-center gap-2">
+          <FlaskConical className="h-4 w-4 shrink-0 text-gold" />
+          <h2 className="min-w-0 break-words font-serif text-base font-bold text-gold">
+            {t('pills.title')}
+          </h2>
         </div>
-      )}
+        <AgentPillComposer
+          value={draft.pills}
+          onChange={pills => flow.updateDraft({ pills })}
+          pills={pillState.pills}
+          fieldErrors={flow.fieldErrors}
+        />
+      </section>
+
+      {/* 底部保存栏 */}
+      <div className="sticky bottom-4 mt-6 flex flex-wrap items-center justify-end gap-3">
+        {flow.saveStatus === 'submitting' && (
+          <ActionFeedback status="submitting" message={t('saving')} />
+        )}
+        {flow.saveStatus === 'error' && (
+          <ActionFeedback
+            status="error"
+            message={t('saveFailed')}
+            onRetry={handleSave}
+            retryLabel={tCommon('retry')}
+          />
+        )}
+        <button
+          type="button"
+          onClick={flow.restoreServerVersion}
+          disabled={flow.saveStatus === 'submitting'}
+          className="dao-btn-ghost whitespace-nowrap text-sm"
+        >
+          <RotateCcw className="h-4 w-4" />
+          {t('restoreCta')}
+        </button>
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={flow.saveStatus === 'submitting'}
+          className="dao-btn-primary whitespace-nowrap shadow-lg disabled:opacity-50"
+        >
+          {flow.saveStatus === 'submitting' ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Save className="h-4 w-4" />
+          )}
+          {t('saveCta')}
+        </button>
+      </div>
     </div>
   )
 }
