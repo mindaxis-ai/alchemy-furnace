@@ -58,9 +58,8 @@ jobs:
       - name: go vet
         run: go vet ./...
 
-      # master 还没写 go test，先用 build 验证编译过
-      - name: go build
-        run: CGO_ENABLED=0 go build -o /tmp/server ./cmd/main
+      - name: go test
+        run: go test ./... -count=1
 
   # ───────────────────── 2. Python smoke test ─────────────────────
   python:
@@ -87,9 +86,8 @@ jobs:
         run: |
           python -m compileall -q app/ || (echo "syntax errors above" && exit 1)
 
-      - name: import smoke
-        run: |
-          python -c "from app.main import app; print('OK', app.title)"
+      - name: pytest
+        run: pytest -q
 
   # ───────────────────── 3. Frontend lint + build ─────────────────────
   frontend:
@@ -103,22 +101,25 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22.22.2"
 
       # 显式装 pnpm —— 不依赖 setup-node 的 cache
       # (setup-node cache: 'pnpm' 在 lockfileVersion 9 下有路径解析坑)
       - uses: pnpm/action-setup@v4
         with:
-          version: 10
+          version: 10.8.1
 
       - name: pnpm install
         run: pnpm install --frozen-lockfile
 
       - name: typecheck
-        run: pnpm typecheck || true # 早期版本可能没有此脚本
+        run: pnpm typecheck
+
+      - name: test
+        run: pnpm test
 
       - name: lint
-        run: pnpm lint || true # eslint 可选
+        run: pnpm lint
 
       # 关键：必须能 build 通过 —— frontend 是输出产物
       - name: build
