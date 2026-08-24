@@ -184,6 +184,25 @@ export interface AgentDetail extends Agent {
   language_pattern?: LanguagePattern | null
 }
 
+/** 道人编辑器草稿中的服丹行（本地稳定 key 供受控列表渲染/排序） */
+export interface AgentPillDraftItem {
+  key: string
+  pill_id: string
+  /** 剂量/权重 0-10 */
+  weight: number
+}
+
+/** 道人编辑器草稿：与服务器对象零引用共享的独立编辑副本 */
+export interface AgentEditorDraft {
+  name: string
+  avatar: string
+  personality: string
+  model_name: string
+  proactivity: number
+  status: AgentStatus
+  pills: AgentPillDraftItem[]
+}
+
 // ========== 对话 ==========
 
 /** 流终止后的显式恢复协议；none 为安全默认。 */
@@ -278,6 +297,18 @@ export interface CreateAgentRequest {
 /** 更新道人请求 */
 export interface UpdateAgentRequest extends Partial<CreateAgentRequest> {
   status?: AgentStatus
+}
+
+/** 完整服丹编排单项（完整替换用） */
+export interface ReplacePillsItem {
+  pill_id: string
+  /** 剂量/权重 0-10 */
+  weight: number
+}
+
+/** 完整替换服丹编排请求：以传入数组为最终编排，空数组清空全部服用关系 */
+export interface ReplacePillsRequest {
+  pills: ReplacePillsItem[]
 }
 
 /** 服用金丹请求 */

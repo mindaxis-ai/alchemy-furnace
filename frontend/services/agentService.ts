@@ -10,6 +10,7 @@ import type {
   UpdateAgentRequest,
   PagedList,
   AgentListParams,
+  ReplacePillsItem,
 } from './types'
 
 /**
@@ -82,4 +83,12 @@ export function updateAgentPill(
  */
 export function unbindPill(agentId: string, pillId: string): Promise<void> {
   return del<void>(`/agents/${agentId}/pills/${pillId}`)
+}
+
+/**
+ * 完整替换道人服丹编排（原子）：以传入数组为最终编排
+ * 空数组 = 清空全部服用关系；返回写后服务端确认的道人详情
+ */
+export function replacePills(agentId: string, pills: ReplacePillsItem[]): Promise<AgentDetail> {
+  return put<AgentDetail>(`/agents/${agentId}/pills`, { pills })
 }
