@@ -8,11 +8,13 @@
  * T4 将扩展快捷键守卫
  */
 import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { isDesktop } from '@/services/api'
 
 const ALLOW = 'input, textarea, [contenteditable="true"], .md-selectable'
 
 export default function DesktopGuards() {
+  const router = useRouter()
   useEffect(() => {
     if (!isDesktop()) return
     const onContextMenu = (e: MouseEvent) => {
@@ -30,7 +32,7 @@ export default function DesktopGuards() {
       if (!(e.metaKey || e.ctrlKey)) return
       if (e.key === ',') {
         e.preventDefault()
-        window.location.href = '/settings'
+        router.push('/settings')
       } else if (e.key === 'n' || e.key === 'N') {
         e.preventDefault()
         window.dispatchEvent(new CustomEvent('alchemy:new-session'))
@@ -42,6 +44,6 @@ export default function DesktopGuards() {
       window.removeEventListener('dragstart', onDragStart)
       window.removeEventListener('keydown', onKeyDown)
     }
-  }, [])
+  }, [router])
   return null
 }

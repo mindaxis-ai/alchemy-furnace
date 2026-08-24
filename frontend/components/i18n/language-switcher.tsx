@@ -75,6 +75,7 @@ export function LanguageSwitcher({ className }: { className?: string }) {
     // but a hard nav mirrors what a fresh page load looks like, which
     // is what users expect from a language switcher.
     startTransition(() => {
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- 有意硬导航:让 root layout 重跑,新 locale 的字体/metadata 干净应用(见上方注释)
       window.location.href = `/${next}`
     })
   }
