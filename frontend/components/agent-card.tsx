@@ -2,12 +2,17 @@
 
 /**
  * 道人卡片组件 - 浅色宣纸风
- * 显示头像占位、名称、性格摘要、模型、状态标识
- * 响应式：桌面端网格卡片，H5 纵向卡片
+ * 默认模式整卡为单一键盘可访问的导航容器(role="link"),点击/Enter/Space 进入详情;
+ * 内部「论道」按钮阻止冒泡,避免双重导航:
+ * - active: 可发起会话(useChatLaunchFlow)
+ * - inactive: 显示已停用徽记、论道按钮禁用并带原因提示,但整卡仍可进入详情(详情页可恢复)
+ * 紧凑模式保持整卡 Link(无内部按钮)
  */
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useTranslations } from 'next-intl'
-import { Cpu, ChevronRight, Sparkles } from 'lucide-react'
+import { ChevronRight, Cpu, Loader2, MessageSquare, Sparkles } from 'lucide-react'
+import { useChatLaunchFlow } from '@/hooks/use-chat-launch-flow'
 import type { Agent } from '@/services/types'
 import { truncateText } from '@/utils/format'
 
@@ -35,6 +40,10 @@ function getAvatarColor(name: string): string {
 export function AgentCard({ agent, compact = false }: AgentCardProps) {
   const t = useTranslations('agentCard')
   const tStatus = useTranslations('agentCard.status')
+  const router = useRouter()
+  const launchFlow = useChatLaunchFlow()
+
+  const inactive = agent.status !== 'active'
 
   // 状态映射
   const statusInfo: Record<string, { className: string }> = {
@@ -45,98 +54,139 @@ export function AgentCard({ agent, compact = false }: AgentCardProps) {
   const statusLabel = agent.status === 'active' ? tStatus('active') : tStatus('inactive')
 
   const avatarGradient = getAvatarColor(agent.name)
+  const href = `/agents/${agent.id}`
 
   if (compact) {
-    // 紧凑模式
+    // 紧凑模式:整卡 Link,无内部按钮
     return (
       <Link
-        href={`/agents/${agent.id}`}
-        className="dao-card flex items-center gap-3 sm:gap-4 p-4 group min-w-0"
+        href={href}
+        className="dao-card group flex min-w-0 items-center gap-3 p-4 sm:gap-4"
       >
         {/* 头像 */}
         <div className={`
-          shrink-0 w-12 h-12 rounded-xl bg-gradient-to-br ${avatarGradient}
-          flex items-center justify-center text-primary-foreground font-serif font-bold text-lg
+          flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${avatarGradient}
+          font-serif text-lg font-bold text-primary-foreground
           shadow-lg
         `}>
           {agent.name.charAt(0)}
         </div>
 
         {/* 信息 */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 min-w-0">
-            <h3 className="font-serif font-semibold text-foreground group-hover:text-gold transition-colors truncate min-w-0">
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-2">
+            <h3 className="min-w-0 truncate font-serif font-semibold text-foreground transition-colors group-hover:text-gold">
               {agent.name}
             </h3>
-            <span className={`text-[10px] px-2 py-0.5 rounded-full border whitespace-nowrap shrink-0 ${statusClass}`}>
+            <span className={`shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] ${statusClass}`}>
               {statusLabel}
             </span>
           </div>
-          <p className="text-xs text-muted-foreground mt-0.5 truncate">
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">
             {agent.personality ? truncateText(agent.personality, 40) : t('noPersona')}
           </p>
         </div>
 
         {/* 模型 */}
-        <div className="hidden sm:flex items-center gap-3 text-xs text-muted-foreground shrink-0">
+        <div className="hidden shrink-0 items-center gap-3 text-xs text-muted-foreground sm:flex">
           <span className="flex items-center gap-1 whitespace-nowrap">
-            <Cpu className="w-3.5 h-3.5" />
-            <span className="truncate max-w-[12ch]">{agent.model_name}</span>
+            <Cpu className="h-3.5 w-3.5" />
+            <span className="max-w-[12ch] truncate">{agent.model_name}</span>
           </span>
         </div>
 
-        <ChevronRight className="w-5 h-5 text-sage group-hover:text-gold transition-colors shrink-0" />
+        <ChevronRight className="h-5 w-5 shrink-0 text-sage transition-colors group-hover:text-gold" />
       </Link>
     )
   }
 
-  // 默认模式
+  // 默认模式:整卡键盘可达导航 + 内部论道按钮
+  const navigate = () => router.push(href)
+
   return (
-    <Link
-      href={`/agents/${agent.id}`}
-      className="dao-card flex flex-col p-5 group h-full min-w-0"
+    <div
+      role="link"
+      tabIndex={0}
+      aria-label={agent.name}
+      onClick={navigate}
+      onKeyDown={(event) => {
+        // 仅当按键源自卡片本身才导航;焦点在内部按钮上时放行,
+        // 交由按钮自身的键盘激活(其 onClick 已 stopPropagation)
+        if (event.target !== event.currentTarget) return
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          navigate()
+        }
+      }}
+      className="dao-card group relative flex h-full min-w-0 cursor-pointer flex-col p-5 transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60"
     >
       {/* 顶部：头像 + 状态 */}
-      <div className="flex items-start justify-between gap-2 mb-4">
+      <div className="mb-4 flex items-start justify-between gap-2">
         <div className={`
-          shrink-0 w-16 h-16 rounded-2xl bg-gradient-to-br ${avatarGradient}
-          flex items-center justify-center text-primary-foreground font-serif font-bold text-2xl
+          flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${avatarGradient}
+          font-serif text-2xl font-bold text-primary-foreground
           shadow-lg transition-transform duration-300 group-hover:scale-105
         `}>
           {agent.name.charAt(0)}
         </div>
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="flex min-w-0 items-center gap-2">
           {agent.status === 'active' && (
-            <Sparkles className="w-4 h-4 text-gold animate-pulse shrink-0" />
+            <Sparkles className="h-4 w-4 shrink-0 animate-pulse text-gold" />
           )}
-          <span className={`text-[10px] px-2 py-0.5 rounded-full border whitespace-nowrap shrink-0 ${statusClass}`}>
+          <span className={`shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] ${statusClass}`}>
             {statusLabel}
           </span>
         </div>
       </div>
 
       {/* 名称 */}
-      <h3 className="font-serif font-bold text-lg text-foreground group-hover:text-gold transition-colors mb-1.5 truncate">
+      <h3 className="mb-1.5 truncate font-serif text-lg font-bold text-foreground transition-colors group-hover:text-gold">
         {agent.name}
       </h3>
 
       {/* 性格描述 */}
-      <p className="text-sm text-muted-foreground line-clamp-3 mb-4 flex-1">
+      <p className="mb-4 line-clamp-3 flex-1 text-sm text-muted-foreground">
         {agent.personality || t('noPersona')}
       </p>
 
       {/* 底部分隔 */}
       <div className="dao-divider my-3 text-[10px]">
-        <Sparkles className="w-3 h-3" />
+        <Sparkles className="h-3 w-3" />
       </div>
 
-      {/* 底部信息 */}
-      <div className="flex items-center justify-between text-xs text-muted-foreground min-w-0">
-        <span className="flex items-center gap-1 min-w-0 truncate">
-          <Cpu className="w-3.5 h-3.5 shrink-0" />
+      {/* 底部信息:模型 + 论道入口 */}
+      <div className="flex min-w-0 items-center justify-between gap-2 text-xs text-muted-foreground">
+        <span className="flex min-w-0 items-center gap-1 truncate">
+          <Cpu className="h-3.5 w-3.5 shrink-0" />
           <span className="truncate">{agent.model_name}</span>
         </span>
+        <button
+          type="button"
+          disabled={inactive || launchFlow.state.status === 'submitting'}
+          title={inactive ? t('inactiveChatHint') : t('chatTitle', { name: agent.name })}
+          onClick={(event) => {
+            // 阻止冒泡到整卡导航容器,避免双重导航
+            event.stopPropagation()
+            if (inactive) return
+            void launchFlow.launchSingle(agent.id)
+          }}
+          className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs text-gold/80 transition-colors hover:text-gold disabled:cursor-not-allowed disabled:text-muted-foreground/50 disabled:hover:text-muted-foreground/50"
+        >
+          {launchFlow.state.status === 'submitting' ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <MessageSquare className="h-3.5 w-3.5" />
+          )}
+          {t('chatCta')}
+        </button>
       </div>
-    </Link>
+
+      {/* 发起会话失败:不静默,卡片上给出错误 */}
+      {launchFlow.state.status === 'error' && (
+        <p role="alert" className="mt-2 break-words text-[11px] text-primary">
+          {launchFlow.state.message}
+        </p>
+      )}
+    </div>
   )
 }

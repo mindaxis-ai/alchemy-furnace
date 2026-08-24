@@ -447,6 +447,13 @@
     "emptySearchTitle": "未找到匹配的道人",
     "emptySearchDesc": "尝试其他关键词",
     "emptyDesc": "点击上方按钮招募你的第一位道人",
+    "emptyFiltered": "该状态下暂无道人",
+    "filter": {
+      "label": "状态筛选",
+      "active": "活跃",
+      "inactive": "已停用",
+      "all": "全部"
+    },
     "modal": {
       "title": "招募道人",
       "nameLabel": "道号 *",
@@ -606,6 +613,9 @@
     "unboundBadge": "未服丹",
     "noPersona": "未设性格",
     "viewCta": "观其详情",
+    "chatCta": "论道",
+    "chatTitle": "与{name}发起论道",
+    "inactiveChatHint": "已停用，不能发起会话；可进入详情恢复为活跃",
     "status": {
       "active": "活跃",
       "inactive": "沉睡"

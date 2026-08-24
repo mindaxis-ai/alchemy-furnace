@@ -7,7 +7,7 @@
  */
 import React, { createContext, useContext, useReducer, useCallback, useRef } from 'react'
 import * as agentService from '@/services/agentService'
-import type { Agent, AgentDetail, CreateAgentRequest, UpdateAgentRequest } from '@/services/types'
+import type { Agent, AgentDetail, AgentListParams, CreateAgentRequest, UpdateAgentRequest } from '@/services/types'
 
 /** 道人状态 */
 interface AgentState {
@@ -75,7 +75,8 @@ interface AgentContextType {
   state: AgentState
   dispatch: React.Dispatch<AgentAction>
   // 异步操作
-  fetchAgents: () => Promise<void>
+  /** 获取道人列表;params 透传给 API(如按 status 筛选),缺省拉全量 */
+  fetchAgents: (params?: AgentListParams) => Promise<void>
   fetchAgent: (id: string) => Promise<void>
   addAgent: (data: CreateAgentRequest) => Promise<Agent | null>
   editAgent: (id: string, data: UpdateAgentRequest) => Promise<Agent | null>
@@ -95,13 +96,13 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(agentReducer, initialState)
   const listRequestRef = useRef(0)
 
-  /** 获取道人列表 */
-  const fetchAgents = useCallback(async () => {
+  /** 获取道人列表(竞态守卫:仅最后一次请求落地) */
+  const fetchAgents = useCallback(async (params?: AgentListParams) => {
     const requestId = ++listRequestRef.current
     dispatch({ type: 'SET_ERROR', payload: null })
     dispatch({ type: 'SET_LOADING', payload: true })
     try {
-      const data = await agentService.listAgents()
+      const data = await agentService.listAgents(params)
       if (requestId !== listRequestRef.current) return
       dispatch({ type: 'SET_AGENTS', payload: { list: data.list || [], total: data.total } })
     } catch (error) {

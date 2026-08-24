@@ -26,6 +26,14 @@ import { AgentCard } from '@/components/agent-card'
 import { NuwaDistillPanel } from '@/components/nuwa-distill-panel'
 import * as modelService from '@/services/modelService'
 import type { ModelOption } from '@/services/modelService'
+import type { AgentListParams, AgentStatus } from '@/services/types'
+
+/** 状态筛选三态;all 不带 status 参数(拉全量) */
+type StatusFilter = AgentStatus | 'all'
+
+function paramsFor(filter: StatusFilter): AgentListParams | undefined {
+  return filter === 'all' ? undefined : { status: filter }
+}
 
 export default function AgentsPage() {
   const t = useTranslations('agents')
@@ -36,13 +44,19 @@ export default function AgentsPage() {
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([])
   const [modelName, setModelName] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('active')
 
-  // 初始化加载
+  // 初始化加载 + 筛选切换:状态筛选走 API 参数,不做前端过滤
   useEffect(() => {
-    fetchAgents()
-    // 加载已启用模型选项（默认模型排在首位并作为默认选择）
+    fetchAgents(paramsFor(statusFilter))
+  }, [fetchAgents, statusFilter])
+
+  // 加载已启用模型选项（默认模型排在首位并作为默认选择）
+  useEffect(() => {
+    let cancelled = false
     modelService.options()
       .then(opts => {
+        if (cancelled) return
         const sorted = [...opts].sort((a, b) => Number(b.is_default) - Number(a.is_default))
         setModelOptions(sorted)
         const def = sorted.find(o => o.is_default) || sorted[0]
@@ -51,7 +65,10 @@ export default function AgentsPage() {
       .catch(() => {
         // 模型选项加载失败时保留下拉为空态提示
       })
-  }, [fetchAgents])
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   /** 创建道人 */
   const handleCreate = async (e: React.FormEvent) => {
@@ -98,16 +115,35 @@ export default function AgentsPage() {
         </button>
       </div>
 
-      {/* 搜索栏 */}
-      <div className="relative mb-6">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <input
-          type="text"
-          placeholder={t('searchPlaceholder')}
-          value={searchQuery}
-          onChange={e => setSearchQuery(e.target.value)}
-          className="dao-input pl-10"
-        />
+      {/* 搜索栏 + 状态筛选(筛选走 API 参数) */}
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="relative min-w-0 flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder={t('searchPlaceholder')}
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            className="dao-input pl-10"
+          />
+        </div>
+        <div role="group" aria-label={t('filter.label')} className="flex shrink-0 gap-1 rounded-lg border border-border/70 bg-muted p-1">
+          {(['active', 'inactive', 'all'] as StatusFilter[]).map(value => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={statusFilter === value}
+              onClick={() => setStatusFilter(value)}
+              className={`whitespace-nowrap rounded-md px-3 py-1 text-xs transition-colors ${
+                statusFilter === value
+                  ? 'bg-gold/15 text-gold'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {t(`filter.${value}`)}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* 创建道人弹窗 */}
@@ -232,7 +268,11 @@ export default function AgentsPage() {
           <AlertCircle className="mb-3 h-10 w-10 text-primary" />
           <h3 className="mb-1 font-medium text-foreground">{t('loadErrorTitle')}</h3>
           <p className="mb-4 max-w-xl break-words text-sm text-muted-foreground">{state.error}</p>
-          <button type="button" onClick={fetchAgents} className="dao-btn-ghost">
+          <button
+            type="button"
+            onClick={() => fetchAgents(paramsFor(statusFilter))}
+            className="dao-btn-ghost"
+          >
             <RefreshCw className="h-4 w-4" />
             {t('retry')}
           </button>
@@ -244,12 +284,18 @@ export default function AgentsPage() {
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <Users className="w-12 h-12 text-muted-foreground/50 mb-3" />
           <h3 className="text-base font-medium text-muted-foreground mb-1">
-            {searchQuery ? t('emptySearchTitle') : t('emptyTitle')}
+            {searchQuery
+              ? t('emptySearchTitle')
+              : statusFilter !== 'active'
+                ? t('emptyFiltered')
+                : t('emptyTitle')}
           </h3>
-          <p className="text-sm text-sage mb-4">
-            {searchQuery ? t('emptySearchDesc') : t('emptyDesc')}
-          </p>
-          {!searchQuery && (
+          {(searchQuery || statusFilter === 'active') && (
+            <p className="text-sm text-sage mb-4">
+              {searchQuery ? t('emptySearchDesc') : t('emptyDesc')}
+            </p>
+          )}
+          {!searchQuery && statusFilter === 'active' && (
             <button onClick={() => setShowCreate(true)} className="dao-btn-primary whitespace-nowrap">
               <Plus className="w-4 h-4" />
               {t('create')}

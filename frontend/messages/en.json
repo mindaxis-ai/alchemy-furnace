@@ -447,6 +447,13 @@
     "emptySearchTitle": "No matches",
     "emptySearchDesc": "Try other keywords",
     "emptyDesc": "Click the button above to recruit your first daoist",
+    "emptyFiltered": "No daoists with this status",
+    "filter": {
+      "label": "Status filter",
+      "active": "Active",
+      "inactive": "Deactivated",
+      "all": "All"
+    },
     "modal": {
       "title": "Recruit a daoist",
       "nameLabel": "Daoist name *",
@@ -606,6 +613,9 @@
     "unboundBadge": "Unbound",
     "noPersona": "No persona",
     "viewCta": "View details",
+    "chatCta": "Discourse",
+    "chatTitle": "Start discourse with {name}",
+    "inactiveChatHint": "Deactivated; cannot start chats. Open details to reactivate",
     "status": {
       "active": "Active",
       "inactive": "Dormant"
