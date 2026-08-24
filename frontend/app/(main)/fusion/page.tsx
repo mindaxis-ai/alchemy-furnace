@@ -69,7 +69,10 @@ export default function FusionPage() {
     listProviders({ page_size: 100 })
       .then((d) => { if (!cancelled) setHasProvider((d.list || []).length > 0) })
       .catch(() => {})
-    refreshFusionModel()
+    // 融合模型 banner 的初次加载也走同一取消保护（手动切换仍用 refreshFusionModel）
+    getSystemConfig()
+      .then((c) => { if (!cancelled) setFusionModel(c.fusion_model_info) })
+      .catch(() => {})
     return () => { cancelled = true }
   }, [])
 

@@ -25,7 +25,8 @@ const UserContext = createContext<UserContextType | null>(null)
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null)
-  const [loading, setLoading] = useState(false)
+  // 首挂即自动拉取一次（见下方 effect），初始即 loading，避免"未加载"假态闪烁
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const fetchProfile = useCallback(async () => {
@@ -53,10 +54,25 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  // 首次挂载:自动拉取一次
+  // 首次挂载:自动拉取一次。内联 async loader + 取消保护:
+  // setState 只发生在 promise 回调里,且卸载后不再写状态
   useEffect(() => {
-    fetchProfile()
-  }, [fetchProfile])
+    let cancelled = false
+    userService.getProfile()
+      .then((data) => {
+        if (cancelled) return
+        setProfile(data)
+        setError(null)
+      })
+      .catch((e) => {
+        if (cancelled) return
+        setError(e instanceof Error ? e.message : '加载用户档案失败')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [])
 
   return (
     <UserContext.Provider value={{ profile, loading, error, fetchProfile, updateProfile }}>

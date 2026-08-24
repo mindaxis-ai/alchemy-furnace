@@ -4,8 +4,9 @@
  * 客户端 locale Provider:让语言选择在非 locale 路由下也能全局生效。
  *
  * 生产环境 output:'export' 下页面在构建期静态渲染,服务端无法读取
- * localStorage。此组件在浏览器端挂载后读取 `alchemy-locale`,如果与
- * 服务端初始 locale 不同,则切换 locale 并重新渲染整棵子树。
+ * localStorage。localStorage 里的偏好经 useSyncExternalStore 读取:
+ * SSR/水合期用 getServerSnapshot(null) 保持与服务端一致,水合完成后
+ * React 自动重读 getSnapshot 并切换 locale、重新渲染整棵子树。
  *
  * - `(main)/layout.tsx` 传 `preferStored={true}`:非 locale 路由(
  *   /pills /chat 等)以 localStorage 为准,覆盖默认中文。
@@ -13,7 +14,7 @@
  *   URL 为准,尊重 `/zh-CN` 或 `/en` 的直接访问。
  */
 
-import { useEffect, useState } from 'react'
+import { useSyncExternalStore } from 'react'
 import { NextIntlClientProvider } from 'next-intl'
 import { defaultLocale, type Locale, locales } from '@/i18n'
 import zhCN from '@/messages/zh-CN.json'
@@ -33,6 +34,10 @@ function getStoredLocale(): Locale | null {
   return raw && locales.includes(raw) ? raw : null
 }
 
+// locale 偏好是只读快照:persistLocale 之后由整页跳转生效,无需订阅变更
+const subscribeNoop = () => () => {}
+const getServerStoredLocale = (): Locale | null => null
+
 export function LocaleProvider({
   children,
   initialLocale,
@@ -42,15 +47,8 @@ export function LocaleProvider({
   initialLocale: Locale
   preferStored?: boolean
 }) {
-  const [locale, setLocale] = useState<Locale>(initialLocale)
-
-  useEffect(() => {
-    if (!preferStored) return
-    const stored = getStoredLocale()
-    if (stored && stored !== locale) {
-      setLocale(stored)
-    }
-  }, [preferStored, locale])
+  const stored = useSyncExternalStore(subscribeNoop, getStoredLocale, getServerStoredLocale)
+  const locale = preferStored && stored ? stored : initialLocale
 
   return (
     <NextIntlClientProvider locale={locale} messages={messages[locale]}>

@@ -163,8 +163,10 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
   }, [messages, chatState.streaming])
 
   // 切换会话:强制粘底 + 滚到底(等消息列表渲染完再滚)
+  // 只依赖会话 id:消息流式更新会重建 currentSession 对象,但不应重触发滚动
+  const currentSessionId = currentSession?.id
   useEffect(() => {
-    if (!currentSession) return
+    if (!currentSessionId) return
     // 等 messages 渲染完(useEffect 顺序:先 messages effect,后这里)
     const t = setTimeout(() => {
       stickyToBottomRef.current = true
@@ -172,7 +174,7 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' })
     }, 50)
     return () => clearTimeout(t)
-  }, [currentSession?.id])
+  }, [currentSessionId])
 
   /** 发送消息 */
   const handleSend = async () => {

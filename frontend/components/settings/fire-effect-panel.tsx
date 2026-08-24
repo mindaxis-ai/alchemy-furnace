@@ -11,7 +11,7 @@
  * 跨标签页同步走 storage event(均由 pref 模块托管)。
  */
 
-import { useEffect, useState } from 'react'
+import { useSyncExternalStore } from 'react'
 import { useTranslations } from 'next-intl'
 import { Flame } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -20,6 +20,10 @@ import {
   FIRE_EFFECT_OPTIONS,
   FIRE_EFFECT_CHANGE_EVENT,
   SMOKE_LEVEL_CHANGE_EVENT,
+  FIRE_EFFECT_STORAGE_KEY,
+  SMOKE_LEVEL_STORAGE_KEY,
+  DEFAULT_FIRE_EFFECT,
+  DEFAULT_SMOKE_LEVEL,
   type FireEffectId,
   getFireEffect,
   getSmokeLevel,
@@ -27,41 +31,47 @@ import {
   setSmokeLevel,
 } from '@/lib/fire-effect-pref'
 
+/**
+ * 偏好存放在 localStorage（pref 模块托管），经 useSyncExternalStore 订阅：
+ * SSR/水合期用默认值，水合后自动重读 localStorage；同标签页 CustomEvent 与
+ * 跨标签页 storage 事件触发 onChange → React 重读快照。
+ */
+function subscribeFireEffect(onChange: () => void) {
+  const onStorage = (e: StorageEvent) => {
+    if (e.key === FIRE_EFFECT_STORAGE_KEY) onChange()
+  }
+  window.addEventListener(FIRE_EFFECT_CHANGE_EVENT, onChange)
+  window.addEventListener('storage', onStorage)
+  return () => {
+    window.removeEventListener(FIRE_EFFECT_CHANGE_EVENT, onChange)
+    window.removeEventListener('storage', onStorage)
+  }
+}
+
+function subscribeSmokeLevel(onChange: () => void) {
+  const onStorage = (e: StorageEvent) => {
+    if (e.key === SMOKE_LEVEL_STORAGE_KEY) onChange()
+  }
+  window.addEventListener('storage', onStorage)
+  window.addEventListener(SMOKE_LEVEL_CHANGE_EVENT, onChange)
+  return () => {
+    window.removeEventListener(SMOKE_LEVEL_CHANGE_EVENT, onChange)
+    window.removeEventListener('storage', onStorage)
+  }
+}
+
+const getDefaultFireEffect = () => DEFAULT_FIRE_EFFECT
+const getDefaultSmokeLevel = () => DEFAULT_SMOKE_LEVEL
+
 export function FireEffectPanel() {
   const t = useTranslations('settings.fire')
-  const [selected, setSelected] = useState<FireEffectId>('plume')
-  const [level, setLevel] = useState<number>(0.55)
-
-  // mount: 从 localStorage 读
-  useEffect(() => {
-    setSelected(getFireEffect())
-    setLevel(getSmokeLevel())
-  }, [])
-
-  // 监听同标签页 / 跨标签页变化 → 同步到 UI（用户在另一处改了也能反映）
-  useEffect(() => {
-    const onFire = (e: Event) => setSelected((e as CustomEvent).detail)
-    const onSmoke = (e: Event) => setLevel((e as CustomEvent).detail)
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === 'alchemy.fireEffect') setSelected(getFireEffect())
-      if (e.key === 'alchemy.smokeLevel') setLevel(getSmokeLevel())
-    }
-    window.addEventListener(FIRE_EFFECT_CHANGE_EVENT, onFire)
-    window.addEventListener(SMOKE_LEVEL_CHANGE_EVENT, onSmoke)
-    window.addEventListener('storage', onStorage)
-    return () => {
-      window.removeEventListener(FIRE_EFFECT_CHANGE_EVENT, onFire)
-      window.removeEventListener(SMOKE_LEVEL_CHANGE_EVENT, onSmoke)
-      window.removeEventListener('storage', onStorage)
-    }
-  }, [])
+  const selected = useSyncExternalStore(subscribeFireEffect, getFireEffect, getDefaultFireEffect)
+  const level = useSyncExternalStore(subscribeSmokeLevel, getSmokeLevel, getDefaultSmokeLevel)
 
   const pickEffect = (id: FireEffectId) => {
-    setSelected(id)
     setFireEffect(id)
   }
   const pickLevel = (n: number) => {
-    setLevel(n)
     setSmokeLevel(n)
   }
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, useMemo } from 'react'
+import { useEffect, useRef, useState, useMemo, useSyncExternalStore } from 'react'
 import Image from 'next/image'
 import { BaguaFurnaceFire, FurnaceWindow } from './bagua-furnace-fire'
 import { BaguaFurnaceSmoke } from './bagua-furnace-smoke'
@@ -69,45 +69,53 @@ function useMediaQuery(query: string) {
   return matches
 }
 
+/**
+ * 火效/烟雾偏好存放在 localStorage（fire-effect-pref 托管），经
+ * useSyncExternalStore 订阅：SSR/水合期用默认值，水合后自动重读；同标签页
+ * CustomEvent + 跨标签页 storage 事件触发 onChange → React 重读快照。
+ */
+function subscribeFireEffect(onChange: () => void) {
+  const onStorage = (e: StorageEvent) => {
+    if (e.key === FIRE_EFFECT_STORAGE_KEY) onChange()
+  }
+  window.addEventListener(FIRE_EFFECT_CHANGE_EVENT, onChange)
+  window.addEventListener('storage', onStorage)
+  return () => {
+    window.removeEventListener(FIRE_EFFECT_CHANGE_EVENT, onChange)
+    window.removeEventListener('storage', onStorage)
+  }
+}
+
+function subscribeSmokeLevel(onChange: () => void) {
+  const onStorage = (e: StorageEvent) => {
+    if (e.key === SMOKE_LEVEL_STORAGE_KEY) onChange()
+  }
+  window.addEventListener(SMOKE_LEVEL_CHANGE_EVENT, onChange)
+  window.addEventListener('storage', onStorage)
+  return () => {
+    window.removeEventListener(SMOKE_LEVEL_CHANGE_EVENT, onChange)
+    window.removeEventListener('storage', onStorage)
+  }
+}
+
+const getDefaultFireEffect = () => DEFAULT_FIRE_EFFECT
+const getDefaultSmokeLevel = () => DEFAULT_SMOKE_LEVEL
+
+/** devicePixelRatio 只进 canvas effect（不进 DOM），lazy initializer 无水合风险 */
+function getInitialPixelRatio() {
+  if (typeof window === 'undefined') return 1
+  return Math.min(2, window.devicePixelRatio || 1)
+}
+
 export function BaguaFurnace({ alt, windows, forceIntensity }: BaguaFurnaceProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const [isHovering, setIsHovering] = useState(false)
   const [isVisible, setIsVisible] = useState(true)
-  const [fireEffect, setFireEffectState] = useState<typeof DEFAULT_FIRE_EFFECT>(DEFAULT_FIRE_EFFECT)
-  const [smokeLevel, setSmokeLevelState] = useState<number>(DEFAULT_SMOKE_LEVEL)
+  const fireEffect = useSyncExternalStore(subscribeFireEffect, getFireEffect, getDefaultFireEffect)
+  const smokeLevel = useSyncExternalStore(subscribeSmokeLevel, getSmokeLevel, getDefaultSmokeLevel)
   const isTouch = useMediaQuery('(hover: none), (pointer: coarse)')
   const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
-  const [pixelRatio, setPixelRatio] = useState(1)
-
-  // 挂载读 pref（client only），并订阅：同标签页 CustomEvent + 跨标签页 storage
-  useEffect(() => {
-    setFireEffectState(getFireEffect())
-    setSmokeLevelState(getSmokeLevel())
-    const onFire = (e: Event) => {
-      const next = (e as CustomEvent).detail as typeof DEFAULT_FIRE_EFFECT
-      setFireEffectState(next)
-    }
-    const onSmoke = (e: Event) => {
-      setSmokeLevelState((e as CustomEvent).detail as number)
-    }
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === FIRE_EFFECT_STORAGE_KEY) setFireEffectState(getFireEffect())
-      if (e.key === SMOKE_LEVEL_STORAGE_KEY) setSmokeLevelState(getSmokeLevel())
-    }
-    window.addEventListener(FIRE_EFFECT_CHANGE_EVENT, onFire)
-    window.addEventListener(SMOKE_LEVEL_CHANGE_EVENT, onSmoke)
-    window.addEventListener('storage', onStorage)
-    return () => {
-      window.removeEventListener(FIRE_EFFECT_CHANGE_EVENT, onFire)
-      window.removeEventListener(SMOKE_LEVEL_CHANGE_EVENT, onSmoke)
-      window.removeEventListener('storage', onStorage)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    setPixelRatio(Math.min(2, window.devicePixelRatio || 1))
-  }, [])
+  const [pixelRatio] = useState(getInitialPixelRatio)
 
   useEffect(() => {
     const el = rootRef.current

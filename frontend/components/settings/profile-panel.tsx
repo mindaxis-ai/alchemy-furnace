@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { User, Check, AlertCircle, Loader2 } from 'lucide-react'
 import { useUser } from '@/contexts/UserContext'
+import type { UserProfile } from '@/services/userService'
 
 const DISPLAY_NAME_MAX = 32
 const BIO_MAX = 500
@@ -28,12 +29,17 @@ export function ProfilePanel() {
     fetchProfile()
   }, [fetchProfile])
 
-  useEffect(() => {
+  // 表单初值随 profile 派生：渲染期比较前一个 profile 引用并调整（React 官方
+  // "adjust state during render" 模式），替代 effect 里的同步 setState 级联。
+  // prevProfile 初始为 null：挂载时若 profile 已在缓存中也要完成首次回填。
+  const [prevProfile, setPrevProfile] = useState<UserProfile | null>(null)
+  if (profile !== prevProfile) {
+    setPrevProfile(profile)
     if (profile) {
       setDisplayName(profile.display_name || '')
       setBio(profile.bio || '')
     }
-  }, [profile])
+  }
 
   const handleSave = async () => {
     setValidationError(null)

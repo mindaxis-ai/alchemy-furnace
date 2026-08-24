@@ -5,7 +5,7 @@
  * 流程: 触发 check → 显示 changelog + 立即更新 → 下载进度(轮询 progress)→ 重启提示
  * 失败: 显示错误 + 手动下载链接(GitHub release page)
  */
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
 import { Download, AlertCircle, CheckCircle2, ExternalLink, X } from 'lucide-react'
 import {
@@ -25,33 +25,33 @@ interface UpdateDialogProps {
 export function UpdateDialog({ onClose }: UpdateDialogProps) {
   const t = useTranslations('update')
   const tAbout = useTranslations('about')
-  const [phase, setPhase] = useState<Phase>('idle')
+  const [phase, setPhase] = useState<Phase>('checking')
   const [result, setResult] = useState<UpdateCheckResult | null>(null)
   const [pct, setPct] = useState(0)
   const [error, setError] = useState<string | null>(null)
 
-  /** 自动检查更新 */
-  const doCheck = useCallback(async () => {
-    setPhase('checking')
-    setError(null)
-    try {
-      const r = await checkUpdate()
-      setResult(r)
-      if (r.notes === '开发构建未启用更新') {
-        setPhase('disabled')
-      } else if (r.has_update) {
-        setPhase('available')
-      } else {
-        setPhase('latest')
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '检查失败')
-      setPhase('failed')
-    }
+  // mount 时自动检查（async loader + 取消保护: setState 只在 promise 回调里,卸载后不写状态）
+  useEffect(() => {
+    let cancelled = false
+    checkUpdate()
+      .then((r) => {
+        if (cancelled) return
+        setResult(r)
+        if (r.notes === '开发构建未启用更新') {
+          setPhase('disabled')
+        } else if (r.has_update) {
+          setPhase('available')
+        } else {
+          setPhase('latest')
+        }
+      })
+      .catch((e) => {
+        if (cancelled) return
+        setError(e instanceof Error ? e.message : '检查失败')
+        setPhase('failed')
+      })
+    return () => { cancelled = true }
   }, [])
-
-  // mount 时自动检查
-  useEffect(() => { doCheck() }, [doCheck])
 
   // 进度轮询
   useEffect(() => {
