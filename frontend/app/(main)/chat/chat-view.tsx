@@ -725,7 +725,7 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
           onSelectSingle={handleCreateSession}
           onSelectGroup={handleCreateGroupSession}
           onRetry={launchFlow.retry}
-          onRetryAgents={fetchAgents}
+          onRetryAgents={() => fetchAgents()}
           onRetryReadiness={retryChatReadiness}
           onSelectionChange={launchFlow.reset}
         />
