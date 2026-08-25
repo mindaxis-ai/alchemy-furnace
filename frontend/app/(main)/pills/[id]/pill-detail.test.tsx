@@ -166,6 +166,15 @@ describe('PillDetailPage', () => {
   })
 
   describe('五种状态', () => {
+    it('静态导出 "_" 占位不触发拉取', () => {
+      // Next output:export 将 [id] 预渲染为 "_";硬加载/深链时 useParams()
+      // 短暂返回 "_"。它不是真 ID,绝不能 GET /pills/_(400 且弹错)。
+      setPill(null)
+      td.params.id = '_'
+      render(<PillDetailPage />)
+      expect(td.fetchPill).not.toHaveBeenCalled()
+    })
+
     it('加载态:显示加载提示', () => {
       setPill(null, { loading: true })
       render(<PillDetailPage />)

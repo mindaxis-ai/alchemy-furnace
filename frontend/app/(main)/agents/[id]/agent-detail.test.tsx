@@ -219,6 +219,16 @@ describe('AgentDetailPage', () => {
   })
 
   describe('加载/错误/空三态', () => {
+    it('静态导出 "_" 占位不触发任何拉取', () => {
+      // Next output:export 将 [id] 预渲染为 "_";硬加载/深链时 useParams()
+      // 短暂返回 "_"。它不是真 ID,绝不能 GET /agents/_(400 且弹错)。
+      setAgent(null)
+      td.params.id = '_'
+      render(<AgentDetailPage />)
+      expect(td.fetchAgent).not.toHaveBeenCalled()
+      expect(td.fetchPills).not.toHaveBeenCalled()
+    })
+
     it('加载态:显示加载提示', () => {
       setAgent(null, { loading: true })
       render(<AgentDetailPage />)

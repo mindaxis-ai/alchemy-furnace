@@ -68,6 +68,11 @@ async function fetchChatReadiness(): Promise<ChatReadinessState> {
 }
 
 export function ChatView({ sessionId }: { sessionId?: string }) {
+  // Next output:export prerenders [sessionId] as "_"; that static shell param
+  // briefly surfaces through useParams() on hard/deep load. Treat it as "no
+  // session" so we never fetch GET /chat/sessions/_ (which 400s and pops an
+  // error). Real UUIDs are never "_".
+  const activeSessionId = sessionId === '_' ? undefined : sessionId
   const router = useRouter()
   const t = useTranslations('chatView')
   const launchFlow = useChatLaunchFlow()
@@ -147,12 +152,12 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
 
   // 根据 URL 参数加载会话
   useEffect(() => {
-    if (sessionId) {
-      loadMessages(sessionId)
+    if (activeSessionId) {
+      loadMessages(activeSessionId)
     } else {
       clearCurrent()
     }
-  }, [sessionId, loadMessages, clearCurrent])
+  }, [activeSessionId, loadMessages, clearCurrent])
 
   // 自动滚动到底部 — 仅当用户"粘底"时才跟随,避免抢用户滚轮
   // 流式输出时 messages 每 ~30ms 变一次,如果不判断 stickyToBottom,用户的滚轮会被
@@ -282,7 +287,7 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
     })
   }
 
-  if (sessionId && (!currentSession || currentSession.id !== sessionId)) {
+  if (activeSessionId && (!currentSession || currentSession.id !== activeSessionId)) {
     const loadState = chatState.sessionLoad
     if (loadState.status === 'not-found') {
       return (
@@ -291,7 +296,7 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
           message={t('load.sessionNotFoundMessage')}
           retryLabel={t('load.retry')}
           backLabel={t('load.backToLobby')}
-          onRetry={() => loadMessages(sessionId)}
+          onRetry={() => loadMessages(activeSessionId)}
         />
       )
     }
@@ -302,7 +307,7 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
           message={loadState.message || t('load.sessionErrorMessage')}
           retryLabel={t('load.retry')}
           backLabel={t('load.backToLobby')}
-          onRetry={() => loadMessages(sessionId)}
+          onRetry={() => loadMessages(activeSessionId)}
         />
       )
     }

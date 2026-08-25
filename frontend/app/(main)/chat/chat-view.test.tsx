@@ -57,6 +57,7 @@ const testDoubles = vi.hoisted(() => ({
     error: null as string | null,
     sessionsError: null as string | null,
     currentSpeaker: null,
+    sessionLoad: { status: 'idle' as const },
     history: {
       page: 1,
       pageSize: 200,
@@ -203,6 +204,16 @@ describe('chat launch surfaces', () => {
       can_create_single: true,
       can_create_group: true,
     })
+  })
+
+  it('treats the static-export "_" placeholder as no session and never loads it', () => {
+    // Next.js output:export prerenders [sessionId] as "_"; on hard/deep load
+    // useParams() briefly returns "_" before hydration settles. Fetching it
+    // would 400 ("会话ID格式不正确") and surface an error popup.
+    render(<ChatView sessionId="_" />)
+
+    expect(testDoubles.loadMessages).not.toHaveBeenCalled()
+    expect(screen.getByRole('heading', { name: '论道' })).toBeInTheDocument()
   })
 
   it('renders the lobby skeleton immediately while readiness calls remain pending', () => {

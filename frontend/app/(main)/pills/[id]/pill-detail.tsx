@@ -177,7 +177,9 @@ export default function PillDetailPage() {
   const tCommon = useTranslations('common')
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
-  const pillId = id
+  // Next output:export prerenders [id] as "_"; ignore that static shell param
+  // so we never GET /pills/_ (400 "金丹ID格式不正确"). Real UUIDs aren't "_".
+  const pillId = id === '_' ? undefined : id
 
   const { state, fetchPill, removePill } = usePill()
   const pill = state.currentPill
@@ -290,7 +292,7 @@ export default function PillDetailPage() {
           <p className="mb-4 max-w-xl break-words text-center text-sm text-muted-foreground">
             {state.error}
           </p>
-          <button type="button" onClick={() => fetchPill(pillId)} className="dao-btn-ghost">
+          <button type="button" onClick={() => pillId && fetchPill(pillId)} className="dao-btn-ghost">
             {tCommon('retry')}
           </button>
         </div>

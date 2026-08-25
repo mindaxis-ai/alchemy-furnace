@@ -84,7 +84,9 @@ export default function AgentDetailPage() {
   const tCommon = useTranslations('common')
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
-  const agentId = id
+  // Next output:export prerenders [id] as "_"; ignore that static shell param
+  // so we never GET /agents/_ (400 "道人ID格式不正确"). Real UUIDs aren't "_".
+  const agentId = id === '_' ? undefined : id
 
   const { state: agentState, fetchAgent, dispatch } = useAgent()
   const { state: pillState, fetchPills } = usePill()
@@ -197,7 +199,7 @@ export default function AgentDetailPage() {
           <p className="mb-4 max-w-xl break-words text-center text-sm text-muted-foreground">
             {agentState.error}
           </p>
-          <button type="button" onClick={() => fetchAgent(agentId)} className="dao-btn-ghost">
+          <button type="button" onClick={() => agentId && fetchAgent(agentId)} className="dao-btn-ghost">
             {tCommon('retry')}
           </button>
         </div>
