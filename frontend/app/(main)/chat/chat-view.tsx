@@ -44,6 +44,7 @@ import { TopTabs } from '@/components/interaction/top-tabs'
 import { MentionSuggest } from '@/components/mention-suggest'
 import { ActionFeedback } from '@/components/interaction/action-feedback'
 import { useChatLaunchFlow, type LaunchState } from '@/hooks/use-chat-launch-flow'
+import { chatSessionHref } from '@/lib/chat-route'
 import { getChatReadiness } from '@/services/chatService'
 import type { Agent, ChatReadiness } from '@/services/types'
 
@@ -226,7 +227,7 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
 
   const handleSelectSession = (id: string) => {
     setSidebarOpen(false)
-    router.push(`/chat/${id}`)
+    router.push(chatSessionHref(id))
   }
 
   const handleCreateSession = async (agentId: string) => {

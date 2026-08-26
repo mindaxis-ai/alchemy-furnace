@@ -310,6 +310,20 @@ describe('chat launch surfaces', () => {
     expect(within(dialog).getByRole('button', { name: /Agent Two/ })).toBeDisabled()
   })
 
+  it('switching to an existing session uses the canonical URL and never creates one', async () => {
+    const user = userEvent.setup()
+    testDoubles.chatState.sessions = [{ ...singleSession, title: '历史会话' }]
+    render(<ChatView />)
+
+    // 列表项按钮的可访问名含会话标题 + 道人名,用标题正则定位
+    await user.click(screen.getByRole('button', { name: /历史会话/ }))
+
+    expect(testDoubles.push).toHaveBeenCalledOnce()
+    expect(testDoubles.push).toHaveBeenCalledWith('/chat?session=11111111-1111-4111-8111-111111111111')
+    expect(testDoubles.createSession).not.toHaveBeenCalled()
+    expect(testDoubles.createGroupSession).not.toHaveBeenCalled()
+  })
+
   it('does not open the picker through the new-session shortcut while not ready', async () => {
     testDoubles.getChatReadiness.mockResolvedValueOnce({
       active_agent_count: 2,
@@ -385,7 +399,7 @@ describe('chat launch surfaces', () => {
     await waitFor(() => {
       expect(screen.queryByRole('heading', { name: 'mode.selectAgent' })).not.toBeInTheDocument()
     })
-    expect(testDoubles.push).toHaveBeenCalledWith('/chat/11111111-1111-4111-8111-111111111111')
+    expect(testDoubles.push).toHaveBeenCalledWith('/chat?session=11111111-1111-4111-8111-111111111111')
   })
 
   it('retains a failed group selection and disables duplicate launch while submitting', async () => {
@@ -439,7 +453,7 @@ describe('chat launch surfaces', () => {
       expect(screen.queryByRole('heading', { name: 'mode.selectAgent' })).not.toBeInTheDocument()
     })
     expect(testDoubles.createGroupSession).toHaveBeenCalledOnce()
-    expect(testDoubles.push).toHaveBeenCalledWith('/chat/11111111-1111-4111-8111-111111111111')
+    expect(testDoubles.push).toHaveBeenCalledWith('/chat?session=11111111-1111-4111-8111-111111111111')
   })
 
   it('shows the shared launch failure and retry on agent detail', async () => {

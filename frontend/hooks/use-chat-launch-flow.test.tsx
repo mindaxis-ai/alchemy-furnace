@@ -215,7 +215,7 @@ describe('useChatLaunchFlow', () => {
     expect(createGroupSession).toHaveBeenNthCalledWith(1, ['agent-1', 'agent-2'])
     expect(createGroupSession).toHaveBeenNthCalledWith(2, ['agent-1', 'agent-2'])
     expect(push).toHaveBeenCalledOnce()
-    expect(push).toHaveBeenCalledWith('/chat/22222222-2222-4222-8222-222222222222')
+    expect(push).toHaveBeenCalledWith('/chat?session=22222222-2222-4222-8222-222222222222')
   })
 
   it('navigates exactly once after a successful single-session response', async () => {
@@ -227,7 +227,7 @@ describe('useChatLaunchFlow', () => {
     })
 
     expect(push).toHaveBeenCalledOnce()
-    expect(push).toHaveBeenCalledWith('/chat/11111111-1111-4111-8111-111111111111')
+    expect(push).toHaveBeenCalledWith('/chat?session=11111111-1111-4111-8111-111111111111')
     expect(result.current.state).toEqual({ status: 'idle' })
   })
 

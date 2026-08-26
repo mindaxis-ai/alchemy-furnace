@@ -8,6 +8,7 @@ import { useLocale, useTranslations } from 'next-intl'
 import { usePill } from '@/contexts/PillContext'
 import { useAgent } from '@/contexts/AgentContext'
 import { useChat } from '@/contexts/ChatContext'
+import { chatSessionHref } from '@/lib/chat-route'
 import { FloatCard, CoinIcon, SealDot } from '@/components/alchemy/float-card'
 import { BaguaFurnace } from '@/components/alchemy/bagua-furnace'
 import type { FurnaceWindow } from '@/components/alchemy/bagua-furnace-fire'
@@ -335,7 +336,7 @@ export default function HomePage() {
                     <span className="absolute -left-4 top-1.5" aria-hidden>
                       <SealDot />
                     </span>
-                    <Link href={`/chat/${s.id}`} className="group block">
+                    <Link href={chatSessionHref(s.id)} className="group block">
                       <div className="flex items-center gap-2">
                         <p className="font-serif text-sm font-bold text-foreground transition-colors group-hover:text-primary">
                           {s.title || tSessions('fallbackTitle')}

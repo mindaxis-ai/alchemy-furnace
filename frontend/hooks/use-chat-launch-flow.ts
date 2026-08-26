@@ -4,6 +4,7 @@ import { useCallback, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 import { useChat } from '@/contexts/ChatContext'
+import { chatSessionHref } from '@/lib/chat-route'
 import { ApiError } from '@/services/api'
 
 export type LaunchState =
@@ -49,7 +50,7 @@ export function useChatLaunchFlow(): ChatLaunchFlow {
         : await createGroupSession(request.agentIds)
       lastFailedRequestRef.current = null
       setState({ status: 'idle' })
-      router.push(`/chat/${session.id}`)
+      router.push(chatSessionHref(session.id))
       return true
     } catch (error) {
       lastFailedRequestRef.current = request
