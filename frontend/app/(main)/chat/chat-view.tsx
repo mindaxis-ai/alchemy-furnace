@@ -68,11 +68,9 @@ async function fetchChatReadiness(): Promise<ChatReadinessState> {
 }
 
 export function ChatView({ sessionId }: { sessionId?: string }) {
-  // Next output:export prerenders [sessionId] as "_"; that static shell param
-  // briefly surfaces through useParams() on hard/deep load. Treat it as "no
-  // session" so we never fetch GET /chat/sessions/_ (which 400s and pops an
-  // error). Real UUIDs are never "_".
-  const activeSessionId = sessionId === '_' ? undefined : sessionId
+  // sessionId 来自 ChatPageClient，已经过 parseChatSessionId 校验：
+  // 要么是合法 UUID，要么为 undefined（大厅）。
+  const activeSessionId = sessionId
   const router = useRouter()
   const t = useTranslations('chatView')
   const launchFlow = useChatLaunchFlow()

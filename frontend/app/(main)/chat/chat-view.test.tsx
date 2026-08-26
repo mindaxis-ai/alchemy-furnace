@@ -206,16 +206,6 @@ describe('chat launch surfaces', () => {
     })
   })
 
-  it('treats the static-export "_" placeholder as no session and never loads it', () => {
-    // Next.js output:export prerenders [sessionId] as "_"; on hard/deep load
-    // useParams() briefly returns "_" before hydration settles. Fetching it
-    // would 400 ("会话ID格式不正确") and surface an error popup.
-    render(<ChatView sessionId="_" />)
-
-    expect(testDoubles.loadMessages).not.toHaveBeenCalled()
-    expect(screen.getByRole('heading', { name: '论道' })).toBeInTheDocument()
-  })
-
   it('renders the lobby skeleton immediately while readiness calls remain pending', () => {
     testDoubles.fetchSessions.mockReturnValue(new Promise(() => undefined))
     testDoubles.fetchAgents.mockReturnValue(new Promise(() => undefined))
