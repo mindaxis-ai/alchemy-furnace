@@ -12,7 +12,7 @@ leaks into repr, logs, attempts or exceptions.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from enum import Enum
 from urllib.parse import urlparse
 
@@ -54,6 +54,19 @@ class ResearchReport:
     @property
     def domain_count(self) -> int:
         return len({urlparse(item.url).hostname for item in self.documents})
+
+    def public_summary(self) -> dict:
+        """对外可见元数据：attempts、文档数、域名数、字符数与警告。
+
+        不含正文摘录，不含任何凭证字段，可安全进入错误 details 与日志。
+        """
+        return {
+            "attempts": [asdict(item) for item in self.attempts],
+            "document_count": len(self.documents),
+            "domain_count": self.domain_count,
+            "total_characters": self.total_characters,
+            "warnings": list(self.warnings),
+        }
 
 
 class ResearchError(RuntimeError):
