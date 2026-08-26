@@ -4,6 +4,7 @@ package router
 
 import (
 	stderrors "errors"
+	"net/http"
 
 	"github.com/alchemy-furnace/server/internal/errors"
 	"github.com/alchemy-furnace/server/server/http/response"
@@ -29,9 +30,10 @@ func Wrapper(h Handler) gin.HandlerFunc {
 				bodyCode = status
 			}
 			errorCode := stableErrorCode(err)
-			// 5xx 不向前端暴露内部细节,统一文案并记日志;4xx 业务错误消息可直接返回
+			// 5xx 不向前端暴露内部细节,统一文案并记日志;4xx 业务错误消息可直接返回。
+			// 受控的 503(ErrorTypeServiceUnavailable,远端可重试错误)保留公开 message。
 			message := err.Error()
-			if status >= 500 {
+			if status >= 500 && status != http.StatusServiceUnavailable {
 				zap.L().Error("[炼丹炉] 内部错误",
 					zap.String("request_id", c.GetString("X-Request-ID")),
 					zap.Error(err))

@@ -35,8 +35,22 @@ func (s *Service) Distill(ctx context.Context, subject, brief, locale string) (*
 	result, err := s.client.Distill(ctx, subject, brief, locale, creds)
 	if err != nil {
 		var remote *distillation.RemoteError
-		if stderrors.As(err, &remote) && remote.Status >= http.StatusBadRequest && remote.Status < http.StatusInternalServerError {
-			return nil, appErrors.New(appErrors.ErrorTypeInvalidRequest, "service.distillation.remote", remote.Message)
+		if stderrors.As(err, &remote) {
+			// 透传远端语义: error_code=远端 code,data={stage,retryable,details}。
+			// 可重试的远端 503 映射为 ErrorTypeServiceUnavailable(HTTP 503),
+			// 不被通用 Wrapper 隐藏成"服务器内部错误"。
+			errorType := appErrors.ErrorTypeInvalidRequest
+			switch {
+			case remote.Status == http.StatusServiceUnavailable:
+				errorType = appErrors.ErrorTypeServiceUnavailable
+			case remote.Status >= http.StatusInternalServerError:
+				errorType = appErrors.ErrorTypeServerInternalError
+			}
+			return nil, appErrors.NewWithData(errorType, remote.Code, map[string]any{
+				"stage":     remote.Stage,
+				"retryable": remote.Retryable,
+				"details":   remote.Details,
+			}, remote.Message)
 		}
 		return nil, appErrors.New(appErrors.ErrorTypeServerInternalError, "service.distillation.call", err.Error())
 	}

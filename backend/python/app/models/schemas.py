@@ -121,6 +121,15 @@ class DistillSource(BaseModel):
     dimension: str
 
 
+class DistillResearchSummary(BaseModel):
+    """蒸馏研究摘要 - 证据等级与来源统计(不含正文)"""
+    evidence_level: Literal["limited", "standard"] = Field(..., description="证据等级: limited/standard")
+    document_count: int = Field(..., ge=0, description="采纳的公开资料文档数")
+    domain_count: int = Field(..., ge=0, description="独立域名数")
+    total_characters: int = Field(..., ge=0, description="证据总字符数")
+    warnings: List[str] = Field(default_factory=list, description="研究阶段警告")
+
+
 class DistillResponse(BaseModel):
     name: str
     description: str
@@ -129,6 +138,7 @@ class DistillResponse(BaseModel):
     skill_schema: Dict[str, Any]
     sources: List[DistillSource] = Field(default_factory=list)
     model: str = ""
+    research: DistillResearchSummary
 
 
 # ==================== 对话相关模型 ====================
