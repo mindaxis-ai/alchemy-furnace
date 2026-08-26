@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import html
 import ipaddress
-import re
 import time
 from dataclasses import dataclass
 from html.parser import HTMLParser
@@ -32,6 +31,7 @@ from app.services.research_provider import (
     ResearchProvider,
     ResearchReport,
 )
+from app.services.web_document_fetcher import WebDocumentFetcher
 
 SEARCH_URL = "https://html.duckduckgo.com/html/?q={}"
 QUERY_DIMENSIONS = (
@@ -167,29 +167,8 @@ def _real_sleep(seconds: float) -> None:
     time.sleep(seconds)
 
 
-class _TextExtractor(HTMLParser):
-    """Temporary inline text extractor; Task 3 moves extraction to the fetcher."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.parts: list[str] = []
-        self._ignored = 0
-
-    def handle_starttag(self, tag: str, attrs) -> None:
-        if tag in {"script", "style", "noscript", "svg"}:
-            self._ignored += 1
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag in {"script", "style", "noscript", "svg"} and self._ignored:
-            self._ignored -= 1
-
-    def handle_data(self, data: str) -> None:
-        if not self._ignored:
-            self.parts.append(data)
-
-
 class DuckDuckGoResearchProvider(ResearchProvider):
-    """Bounded sequential discovery + excerpt fetch (temporary fetch until Task 3)."""
+    """Bounded sequential discovery + SSRF-safe excerpt fetch."""
 
     def __init__(
         self,
@@ -197,15 +176,13 @@ class DuckDuckGoResearchProvider(ResearchProvider):
         max_documents: int = 10,
         sleep=_real_sleep,
         discovery=None,
+        fetcher=None,
     ) -> None:
         self.timeout = timeout
         self.max_documents = max_documents
         self.sleep = sleep
         self.discovery = discovery or DuckDuckGoDiscovery(timeout=timeout)
-        self.headers = {
-            "User-Agent": USER_AGENT,
-            "Accept": "text/html,text/plain;q=0.9",
-        }
+        self.fetcher = fetcher or WebDocumentFetcher(timeout=timeout)
 
     def collect(
         self,
@@ -232,11 +209,26 @@ class DuckDuckGoResearchProvider(ResearchProvider):
             if len(picked) >= MAX_CANDIDATES:
                 break
 
-        documents = [
-            ResearchDocument(candidate.title, candidate.url, self._fetch_excerpt(candidate.url), dimension)
-            for dimension, candidate in picked
-        ]
-        documents = [doc for doc in documents if doc.excerpt]
+        documents: list[ResearchDocument] = []
+        failures: dict[str, int] = {}
+        for dimension, candidate in picked:
+            result = self.fetcher.fetch(candidate.url)
+            if result.status == "ok" and result.excerpt:
+                documents.append(
+                    ResearchDocument(candidate.title, result.url, result.excerpt, dimension)
+                )
+            else:
+                failures[result.reason] = failures.get(result.reason, 0) + 1
+        if failures and attempts:
+            merged = attempts[-1]
+            attempts[-1] = ResearchAttempt(
+                provider=merged.provider,
+                status=merged.status,
+                discovered=merged.discovered,
+                accepted=merged.accepted,
+                reason=",".join(f"{reason}={count}" for reason, count in sorted(failures.items())),
+            )
+
         documents.sort(key=lambda item: (item.dimension, item.url))
         return ResearchReport(
             documents=documents,
@@ -249,25 +241,3 @@ class DuckDuckGoResearchProvider(ResearchProvider):
     @staticmethod
     def _blocked_attempt(code: str) -> ResearchAttempt:
         return ResearchAttempt("duckduckgo", "blocked", 0, 0, code)
-
-    def _fetch_excerpt(self, url: str) -> str:
-        """Temporary fetch; Task 3 replaces it with the SSRF-safe fetcher."""
-        if not is_public_http_url(url):
-            return ""
-        try:
-            with httpx.Client(
-                timeout=self.timeout, follow_redirects=False, headers=self.headers
-            ) as client:
-                response = client.get(url)
-                response.raise_for_status()
-            content_type = response.headers.get("content-type", "").lower()
-            if "text/html" not in content_type and "text/plain" not in content_type:
-                return ""
-            raw = response.content[:120_000].decode(response.encoding or "utf-8", errors="ignore")
-            if "text/html" in content_type:
-                parser = _TextExtractor()
-                parser.feed(raw)
-                raw = " ".join(parser.parts)
-            return re.sub(r"\s+", " ", html.unescape(raw)).strip()[:4_000]
-        except (httpx.HTTPError, UnicodeError, ValueError):
-            return ""

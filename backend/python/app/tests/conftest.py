@@ -215,3 +215,26 @@ def load_fixture():
         return (fixture_dir / name).read_text(encoding="utf-8")
 
     return _load
+
+
+class _FakeResolver:
+    """按调用次序返回 IP 列表的假 DNS resolver。"""
+
+    def __init__(self, plan):
+        self.plan = plan
+        self.calls = 0
+
+    def resolve(self, hostname):
+        index = min(self.calls, len(self.plan) - 1)
+        self.calls += 1
+        return self.plan[index]
+
+
+@pytest.fixture
+def public_dns():
+    return _FakeResolver([["93.184.216.34"]])
+
+
+@pytest.fixture
+def public_then_private_dns():
+    return _FakeResolver([["93.184.216.34"], ["127.0.0.1"]])
