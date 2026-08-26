@@ -4,15 +4,26 @@ from types import SimpleNamespace
 import pytest
 
 from app.services.nuwa_distillation_service import NuwaDistillationService
-from app.services.research_provider import ResearchDocument, ResearchProvider
+from app.services.research_provider import (
+    EvidenceLevel,
+    ResearchDocument,
+    ResearchProvider,
+    ResearchReport,
+)
 
 
 class FixedResearchProvider(ResearchProvider):
     def __init__(self, documents):
         self.documents = documents
 
-    def collect(self, subject: str, brief: str):
-        return self.documents
+    def collect(self, subject, brief, locale="zh-CN", credentials=None):
+        return ResearchReport(
+            documents=self.documents,
+            attempts=[],
+            evidence_level=(
+                EvidenceLevel.LIMITED if len(self.documents) >= 2 else EvidenceLevel.INSUFFICIENT
+            ),
+        )
 
 
 class FakeOpenAI:

@@ -3,6 +3,11 @@
 The distiller depends on :class:`ResearchProvider`, not on a search vendor.
 Adding Tavily, Bing, Serper, or an enterprise connector therefore does not
 change pill or agent services (open/closed principle).
+
+Task 1 note: this module is converging to a pure protocol file. The
+DuckDuckGo implementation is still hosted here temporarily — its
+``collect()`` now returns the :class:`ResearchReport` protocol — and moves
+to ``duckduckgo_research_provider.py`` in Task 2.
 """
 from __future__ import annotations
 
@@ -12,12 +17,19 @@ import re
 import socket
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from enum import Enum
 from html.parser import HTMLParser
 from typing import Iterable
 from urllib.parse import parse_qs, quote_plus, unquote, urlparse
 
 import httpx
+
+
+class EvidenceLevel(str, Enum):
+    INSUFFICIENT = "insufficient"
+    LIMITED = "limited"
+    STANDARD = "standard"
 
 
 @dataclass(frozen=True)
@@ -28,10 +40,66 @@ class ResearchDocument:
     dimension: str
 
 
+@dataclass(frozen=True)
+class ResearchAttempt:
+    provider: str
+    status: str
+    discovered: int
+    accepted: int
+    reason: str | None
+
+
+@dataclass
+class ResearchReport:
+    documents: list[ResearchDocument]
+    attempts: list[ResearchAttempt]
+    evidence_level: EvidenceLevel
+    warnings: list[str] = field(default_factory=list)
+
+    @property
+    def total_characters(self) -> int:
+        return sum(len(item.excerpt) for item in self.documents)
+
+    @property
+    def domain_count(self) -> int:
+        return len({urlparse(item.url).hostname for item in self.documents})
+
+
+class ResearchError(RuntimeError):
+    """Stable, machine-readable research failure.
+
+    ``code``/``stage``/``retryable`` travel unchanged to the Go gateway and
+    frontend; ``attempts`` carries per-provider diagnostics for logging.
+    """
+
+    stage = "research"
+
+    def __init__(self, code: str, message: str, retryable: bool, attempts: list[ResearchAttempt]):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.retryable = retryable
+        self.attempts = attempts
+
+
+@dataclass(frozen=True)
+class ResearchCredentials:
+    model: str
+    base_url: str
+    api_key: str = field(repr=False)
+
+
 class ResearchProvider(ABC):
     @abstractmethod
-    def collect(self, subject: str, brief: str) -> list[ResearchDocument]:
-        """Collect bounded public evidence for one subject."""
+    def collect(
+        self,
+        subject: str,
+        brief: str,
+        locale: str = "zh-CN",
+        credentials: ResearchCredentials | None = None,
+    ) -> ResearchReport:
+        """Collect bounded public evidence for one subject, with diagnostics."""
+        raise NotImplementedError
 
 
 class _TextExtractor(HTMLParser):
@@ -54,7 +122,12 @@ class _TextExtractor(HTMLParser):
 
 
 class DuckDuckGoResearchProvider(ResearchProvider):
-    """Key-free, replaceable public-web provider with strict fetch bounds."""
+    """Key-free, replaceable public-web provider with strict fetch bounds.
+
+    Temporary home: Task 2 moves this class to
+    ``duckduckgo_research_provider.py`` with an attribute-order-independent
+    parser and challenge classification.
+    """
 
     SEARCH_URL = "https://html.duckduckgo.com/html/?q={}"
     DIMENSIONS = (
@@ -74,7 +147,31 @@ class DuckDuckGoResearchProvider(ResearchProvider):
             "Accept": "text/html,text/plain;q=0.9",
         }
 
-    def collect(self, subject: str, brief: str) -> list[ResearchDocument]:
+    def collect(
+        self,
+        subject: str,
+        brief: str,
+        locale: str = "zh-CN",
+        credentials: ResearchCredentials | None = None,
+    ) -> ResearchReport:
+        documents, discovered = self._collect(subject, brief)
+        return ResearchReport(
+            documents=documents,
+            attempts=[
+                ResearchAttempt(
+                    provider="duckduckgo",
+                    status="ok",
+                    discovered=discovered,
+                    accepted=len(documents),
+                    reason=None,
+                )
+            ],
+            evidence_level=(
+                EvidenceLevel.LIMITED if len(documents) >= 2 else EvidenceLevel.INSUFFICIENT
+            ),
+        )
+
+    def _collect(self, subject: str, brief: str) -> tuple[list[ResearchDocument], int]:
         candidates: list[tuple[str, str, str]] = []
         with ThreadPoolExecutor(max_workers=6) as pool:
             futures = {
@@ -115,7 +212,7 @@ class DuckDuckGoResearchProvider(ResearchProvider):
                     documents.append(ResearchDocument(title, url, excerpt, dimension))
 
         documents.sort(key=lambda item: (item.dimension, item.url))
-        return documents
+        return documents, len(unique)
 
     def _search(self, query: str) -> list[tuple[str, str]]:
         with httpx.Client(timeout=self.timeout, follow_redirects=True, headers=self.headers) as client:

@@ -31,7 +31,8 @@ class NuwaDistillationService:
         base_url: Optional[str] = None,
         locale: str = "zh-CN",
     ) -> dict[str, Any]:
-        documents = self.research_provider.collect(subject, brief)
+        report = self.research_provider.collect(subject, brief, locale)
+        documents = report.documents
         if len(documents) < 2:
             raise ValueError("公开资料不足，请补充更具体的人物全名、领域或目标描述")
 
