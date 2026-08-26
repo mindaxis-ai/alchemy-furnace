@@ -3,6 +3,8 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
+import { chatLobbyHref, chatSessionHref, parseLegacyChatPath } from '@/lib/chat-route'
+
 /** 旧 HashRouter 链接 → App Router 映射 */
 const HASH_MAP: Record<string, string> = {
   '#/': '/',
@@ -28,8 +30,18 @@ export function HashRedirect() {
       router.replace(HASH_MAP[`#${path}`] ?? '/')
       return
     }
-    // 前缀匹配动态段：/pills/:id、/agents/:id、/chat/:sessionId
-    for (const prefix of ['/pills/', '/agents/', '/chat/']) {
+    // 旧会话地址 #/chat/<uuid> 规范化到查询参数路由，其余 #/chat/* 回大厅
+    const legacySessionId = parseLegacyChatPath(path)
+    if (legacySessionId) {
+      router.replace(chatSessionHref(legacySessionId))
+      return
+    }
+    if (path.startsWith('/chat/')) {
+      router.replace(chatLobbyHref())
+      return
+    }
+    // 前缀匹配动态段：/pills/:id、/agents/:id
+    for (const prefix of ['/pills/', '/agents/']) {
       if (path.startsWith(prefix)) {
         router.replace(path)
         return

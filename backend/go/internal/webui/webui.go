@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"path"
 	"strings"
+
+	"github.com/google/uuid"
 )
 
 //go:embed all:out
@@ -51,6 +53,13 @@ func Handler() http.Handler {
 	defaultHTML := defaultLocaleHTML(sub)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
+		// 旧版深链 /chat/<uuid> 规范化到 /chat?session=<uuid>（307，保留查询含桌面 token）
+		if sessionID, ok := legacyChatSessionID(p); ok {
+			query := r.URL.Query()
+			query.Set("session", sessionID)
+			http.Redirect(w, r, "/chat?"+query.Encode(), http.StatusTemporaryRedirect)
+			return
+		}
 		// 根路径:优先默认 locale(zh-CN),回退 index.html 占位
 		if p == "" {
 			if serveFile(w, sub, defaultHTML) {
@@ -66,7 +75,8 @@ func Handler() http.Handler {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-		// 2) 动态导出路由: /chat/<uuid> → chat/_.html。
+		// 2) 动态导出路由: /pills/<id>、/agents/<id> → <dir>/_.html。
+		//    注意:/chat/<uuid> 已在上方 307 规范化,不会落入这里。
 		if !strings.Contains(path.Base(p), ".") {
 			if dir := path.Dir(p); dir != "." && serveFile(w, sub, path.Join(dir, "_.html")) {
 				w.WriteHeader(http.StatusOK)
@@ -89,6 +99,20 @@ func Handler() http.Handler {
 			w.Write(b)
 		}
 	})
+}
+
+// legacyChatSessionID 识别旧版会话深链 /chat/<uuid>。
+// 只有恰好两段、首段为 chat、第二段为合法 UUID 时才匹配;
+// 其余 /chat/* 路径（如 /chat/settings）不视为会话，返回 ok=false。
+func legacyChatSessionID(cleanPath string) (string, bool) {
+	parts := strings.Split(strings.Trim(cleanPath, "/"), "/")
+	if len(parts) != 2 || parts[0] != "chat" {
+		return "", false
+	}
+	if _, err := uuid.Parse(parts[1]); err != nil {
+		return "", false
+	}
+	return parts[1], true
 }
 
 // serveFile 读取 embed 文件并写响应(正确 Content-Type + 缓存头),成功返回 true

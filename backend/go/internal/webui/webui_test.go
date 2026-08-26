@@ -1,7 +1,9 @@
 package webui
 
 import (
+	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -80,12 +82,74 @@ func TestHandler_NoIndexHtmlFallback(t *testing.T) {
 	require.True(t, isWebuiBody(rec.Body.String()), "body 应是 webui HTML(占位或真实)")
 }
 
-// TestHandler_SPAFallback_ChatRoute: Next.js 客户端路由路径应 fallback 到 webui HTML
-// 状态 200,这样 WKWebView 才不会显示 404 错误页
-func TestHandler_SPAFallback_ChatRoute(t *testing.T) {
+// TestHandler_SPAFallback_NonSessionChatPath: 非会话的客户端路由路径应 fallback 到
+// webui HTML 200,这样 WKWebView 才不会显示 404 错误页。
+// 注意:/chat/<uuid> 已改为 307(见 TestHandler_LegacyChatSessionRedirect),
+// 这里只验证非 UUID 段不会被误判为会话。
+func TestHandler_SPAFallback_NonSessionChatPath(t *testing.T) {
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/chat/828d3bda-1e59-4fe6-b848-50150d18e280", nil)
+	req := httptest.NewRequest("GET", "/chat/new", nil)
 	Handler().ServeHTTP(rec, req)
-	require.Equal(t, 200, rec.Code, "SPA 路径必须 200,否则 WKWebView 显示错误页")
+	require.Equal(t, 200, rec.Code, "非会话 SPA 路径必须 200,否则 WKWebView 显示错误页")
 	require.True(t, isWebuiBody(rec.Body.String()), "SPA fallback body 应是 webui HTML")
+}
+
+// TestHandler_LegacyChatSessionRedirect: 旧的 /chat/<uuid> 深链必须 307 规范化到
+// /chat?session=<uuid>,且保留 DesktopGuard token 等查询参数;规范地址不再重定向。
+func TestHandler_LegacyChatSessionRedirect(t *testing.T) {
+	const uuid = "828d3bda-1e59-4fe6-b848-50150d18e280"
+	h := Handler()
+
+	tests := []struct {
+		name     string
+		target   string
+		wantCode int
+		wantQuery url.Values
+	}{
+		{
+			name:     "legacy uuid",
+			target:   "/chat/" + uuid,
+			wantCode: http.StatusTemporaryRedirect,
+			wantQuery: url.Values{"session": []string{uuid}},
+		},
+		{
+			name:     "preserve desktop token",
+			target:   "/chat/" + uuid + "?token=opaque-test-token",
+			wantCode: http.StatusTemporaryRedirect,
+			wantQuery: url.Values{
+				"session": []string{uuid},
+				"token":   []string{"opaque-test-token"},
+			},
+		},
+		{
+			name:     "non-uuid segment is not a session",
+			target:   "/chat/settings",
+			wantCode: http.StatusOK,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest("GET", tc.target, nil)
+			h.ServeHTTP(rec, req)
+			require.Equal(t, tc.wantCode, rec.Code)
+			if tc.wantCode != http.StatusTemporaryRedirect {
+				return
+			}
+			loc := rec.Header().Get("Location")
+			require.NotEmpty(t, loc, "307 必须带 Location")
+			u, err := url.Parse(loc)
+			require.NoError(t, err)
+			require.Equal(t, "/chat", u.Path)
+			require.Equal(t, tc.wantQuery, u.Query())
+		})
+	}
+
+	// 规范地址 /chat?session=<uuid> 直接 200,不应再被重定向。
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/chat?session="+uuid, nil)
+	h.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code, "规范地址不应重定向")
+	require.Empty(t, rec.Header().Get("Location"))
+	require.True(t, isWebuiBody(rec.Body.String()))
 }
