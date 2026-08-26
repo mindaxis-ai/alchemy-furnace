@@ -170,6 +170,8 @@ def _real_sleep(seconds: float) -> None:
 class DuckDuckGoResearchProvider(ResearchProvider):
     """Bounded sequential discovery + SSRF-safe excerpt fetch."""
 
+    provider_id = "duckduckgo"
+
     def __init__(
         self,
         timeout: float = 4.0,

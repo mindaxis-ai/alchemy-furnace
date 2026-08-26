@@ -137,7 +137,10 @@ _install_openai_stub()
 # ---------------------------------------------------------------------------
 from pathlib import Path
 
+import httpx  # 打桩已在上方注册 sys.modules["httpx"]，此处取真包或桩模块
 import pytest
+
+from app.services.web_document_fetcher import FetchResult
 
 
 def _timeout_exception():
@@ -166,20 +169,21 @@ class _FakeResponse:
 
 
 class FakeHTTP:
-    """可录制请求的假 httpx client：按 URL 或默认响应，支持触发超时。"""
+    """可录制请求的假 httpx client：按 URL 或 FIFO 队列响应，支持触发超时。"""
 
     def __init__(self):
         self.by_url = {}
-        self.default = None
+        self.queue = []
         self.timeout_now = False
         self.calls = []
         self.last_url = None
         self.last_headers = None
+        self.last_json = None
 
     def add(self, url=None, status=200, text="", payload=None, headers=None):
         response = _FakeResponse(status=status, text=text, payload=payload, headers=headers)
         if url is None:
-            self.default = response
+            self.queue.append(response)
         else:
             self.by_url[url] = response
 
@@ -189,17 +193,28 @@ class FakeHTTP:
     def raise_timeout(self):
         self.timeout_now = True
 
-    def get(self, url, **kwargs):
+    def _record(self, url, kwargs):
         self.calls.append(url)
         self.last_url = url
         self.last_headers = kwargs.get("headers")
+        self.last_json = kwargs.get("json")
+
+    def _respond(self, url):
         if self.timeout_now:
-            raise _timeout_exception()()
+            raise _timeout_exception()("simulated connect timeout")
         if url in self.by_url:
             return self.by_url[url]
-        if self.default is not None:
-            return self.default
+        if self.queue:
+            return self.queue.pop(0)
         raise AssertionError(f"未配置的假响应: {url}")
+
+    def get(self, url, **kwargs):
+        self._record(url, kwargs)
+        return self._respond(url)
+
+    def post(self, url, **kwargs):
+        self._record(url, kwargs)
+        return self._respond(url)
 
 
 @pytest.fixture
@@ -238,3 +253,36 @@ def public_dns():
 @pytest.fixture
 def public_then_private_dns():
     return _FakeResolver([["93.184.216.34"], ["127.0.0.1"]])
+
+
+class FakeFetcher:
+    """假 WebDocumentFetcher：按 URL 返回摘录，或返回指定 status/reason。"""
+
+    def __init__(self):
+        self.by_url = {}
+        self.fallback = None
+
+    def add(self, url, excerpt):
+        self.by_url[url] = FetchResult(url, excerpt, "ok", "")
+
+    def add_result(self, status, reason):
+        self.fallback = FetchResult("", "", status, reason)
+
+    def fetch(self, url):
+        if url in self.by_url:
+            return self.by_url[url]
+        if self.fallback is not None:
+            return self.fallback
+        return FetchResult(url, "", "failed", "no_fixture")
+
+
+@pytest.fixture
+def fake_fetcher():
+    return FakeFetcher()
+
+
+class FailIfCalled:
+    """任何调用都失败的哨兵：验证“不应访问”的路径。"""
+
+    def __getattr__(self, name):
+        raise AssertionError(f"不应调用 {name}")
