@@ -4,8 +4,8 @@ import logging
 from fastapi import APIRouter, HTTPException, status
 
 from app.models.schemas import DistillRequest, DistillResponse
+from app.services.duckduckgo_research_provider import DuckDuckGoResearchProvider
 from app.services.nuwa_distillation_service import NuwaDistillationService
-from app.services.research_provider import DuckDuckGoResearchProvider
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/distillation", tags=["女娲蒸馏"])

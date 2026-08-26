@@ -131,3 +131,87 @@ def _install_openai_stub() -> None:
 _install_pydantic_stubs()
 _install_httpx_stub()
 _install_openai_stub()
+
+# ---------------------------------------------------------------------------
+# 共享测试夹具（仅 stdlib，不引入第三方测试依赖）
+# ---------------------------------------------------------------------------
+from pathlib import Path
+
+import pytest
+
+
+def _timeout_exception():
+    """httpx 超时异常：真环境取 ConnectTimeout，桩环境取 TimeoutException。"""
+    return getattr(httpx, "ConnectTimeout", None) or getattr(
+        httpx, "TimeoutException", None
+    ) or Exception
+
+
+class _FakeResponse:
+    def __init__(self, status=200, text="", payload=None, headers=None, url=""):
+        self.status_code = status
+        self.text = text
+        self.content = text.encode("utf-8")
+        self._payload = payload
+        self.headers = headers or {}
+        self.url = url
+        self.encoding = "utf-8"
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
+    def json(self):
+        return self._payload
+
+
+class FakeHTTP:
+    """可录制请求的假 httpx client：按 URL 或默认响应，支持触发超时。"""
+
+    def __init__(self):
+        self.by_url = {}
+        self.default = None
+        self.timeout_now = False
+        self.calls = []
+        self.last_url = None
+        self.last_headers = None
+
+    def add(self, url=None, status=200, text="", payload=None, headers=None):
+        response = _FakeResponse(status=status, text=text, payload=payload, headers=headers)
+        if url is None:
+            self.default = response
+        else:
+            self.by_url[url] = response
+
+    def add_json(self, payload, url=None):
+        self.add(url=url, status=200, payload=payload, headers={"content-type": "application/json"})
+
+    def raise_timeout(self):
+        self.timeout_now = True
+
+    def get(self, url, **kwargs):
+        self.calls.append(url)
+        self.last_url = url
+        self.last_headers = kwargs.get("headers")
+        if self.timeout_now:
+            raise _timeout_exception()()
+        if url in self.by_url:
+            return self.by_url[url]
+        if self.default is not None:
+            return self.default
+        raise AssertionError(f"未配置的假响应: {url}")
+
+
+@pytest.fixture
+def fake_http():
+    return FakeHTTP()
+
+
+@pytest.fixture
+def load_fixture():
+    fixture_dir = Path(__file__).parent / "fixtures"
+
+    def _load(name: str) -> str:
+        return (fixture_dir / name).read_text(encoding="utf-8")
+
+    return _load
