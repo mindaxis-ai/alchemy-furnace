@@ -92,6 +92,15 @@ export interface DistillationSource {
   dimension: string
 }
 
+/** 蒸馏研究摘要(证据等级与来源统计,不含正文) */
+export interface DistillationResearchSummary {
+  evidence_level: 'limited' | 'standard'
+  document_count: number
+  domain_count: number
+  total_characters: number
+  warnings: string[]
+}
+
 export interface DistillationDraft {
   name: string
   description: string
@@ -100,6 +109,7 @@ export interface DistillationDraft {
   skill_schema: SkillSchema
   sources: DistillationSource[]
   model: string
+  research: DistillationResearchSummary
 }
 
 /** 融合血统：父代金丹 + 算子 + 时间 */

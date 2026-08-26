@@ -2,7 +2,16 @@
 
 import { useState } from 'react'
 import { useLocale, useTranslations } from 'next-intl'
-import { BrainCircuit, Check, ExternalLink, Loader2, Search } from 'lucide-react'
+import {
+  AlertTriangle,
+  BrainCircuit,
+  Check,
+  ExternalLink,
+  Loader2,
+  RotateCw,
+  Search,
+} from 'lucide-react'
+import { ApiError } from '@/services/api'
 import { distillNuwa } from '@/services/distillationService'
 import type { DistillationDraft } from '@/services/types'
 
@@ -10,7 +19,32 @@ import type { DistillationDraft } from '@/services/types'
  * 女娲智能蒸馏面板
  * 走正式网络/模型链路(distillNuwa),不加入任何 Mock fallback。
  * 蒸馏完成后只展示候选草稿与来源,只有用户显式「应用」才经 onApply 写入外层表单。
+ * 失败按稳定错误码分派动作:可重试错误给重试按钮,资料不足给输入建议,未知错误附 request id。
  */
+interface DistillFailure {
+  message: string
+  retryable: boolean
+  code?: string
+  requestId?: string
+}
+
+/** 从 ApiError 信封解析阶段化失败信息(Go 网关透传 Python 稳定错误协议) */
+function parseFailure(err: unknown, fallback: string): DistillFailure {
+  const apiError = err instanceof ApiError ? err : null
+  const retryable = !!(
+    apiError?.data?.data &&
+    typeof apiError.data.data === 'object' &&
+    (apiError.data.data as { retryable?: unknown }).retryable === true
+  )
+  return {
+    message: apiError?.message ?? fallback,
+    retryable,
+    code: apiError?.errorCode,
+    requestId:
+      typeof apiError?.data?.request_id === 'string' ? apiError.data.request_id : undefined,
+  }
+}
+
 export function NuwaDistillPanel({
   onApply,
 }: {
@@ -21,19 +55,19 @@ export function NuwaDistillPanel({
   const [subject, setSubject] = useState('')
   const [brief, setBrief] = useState('')
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [failure, setFailure] = useState<DistillFailure | null>(null)
   const [draft, setDraft] = useState<DistillationDraft | null>(null)
 
   const run = async () => {
     if (subject.trim().length < 2 || brief.trim().length < 4) return
     setLoading(true)
-    setError(null)
+    setFailure(null)
     try {
       const result = await distillNuwa({ subject: subject.trim(), brief: brief.trim(), locale })
       // 只生成候选预览,不自动应用
       setDraft(result)
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('error'))
+      setFailure(parseFailure(err, t('error')))
     } finally {
       setLoading(false)
     }
@@ -45,6 +79,9 @@ export function NuwaDistillPanel({
     onApply(draft)
     setDraft(null)
   }
+
+  const searchBlocked =
+    failure?.code === 'research_search_blocked' || failure?.code === 'research_provider_unavailable'
 
   return (
     <section className="rounded-2xl border border-gold/35 bg-gold/5 p-4">
@@ -87,14 +124,29 @@ export function NuwaDistillPanel({
         </button>
       </div>
 
-      {loading && (
-        <div className="mt-3 grid grid-cols-3 gap-1 text-center text-[10px] text-sage">
-          <span>{t('stages.research')}</span>
-          <span>{t('stages.verify')}</span>
-          <span>{t('stages.distill')}</span>
+      {failure && (
+        <div className="mt-3 space-y-2 text-xs">
+          <p className="break-words text-primary">{failure.message}</p>
+          {failure.code === 'research_insufficient_evidence' && (
+            <p className="text-muted-foreground">{t('insufficientHint')}</p>
+          )}
+          {failure.code === 'model_not_configured' && (
+            <p className="text-muted-foreground">{t('modelConfigHint')}</p>
+          )}
+          {searchBlocked && <p className="text-muted-foreground">{t('searchBlockedHint')}</p>}
+          {failure.retryable && (
+            <button type="button" onClick={run} className="dao-btn-ghost text-xs">
+              <RotateCw className="h-3.5 w-3.5" />
+              {t('retry')}
+            </button>
+          )}
+          {failure.requestId && !failure.code && (
+            <p className="break-all text-[10px] text-muted-foreground">
+              request_id: {failure.requestId}
+            </p>
+          )}
         </div>
       )}
-      {error && <p className="mt-3 break-words text-xs text-primary">{error}</p>}
 
       {draft && !loading && (
         <div className="mt-3 border-t border-gold/20 pt-3">
@@ -102,6 +154,14 @@ export function NuwaDistillPanel({
             <Check className="h-3.5 w-3.5" />
             {t('draftReady', { count: draft.sources.length })}
           </p>
+
+          {/* 有限证据:提示人工核对 */}
+          {draft.research.evidence_level === 'limited' && (
+            <p className="mt-2 flex items-start gap-1 text-[11px] text-primary">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              {t('limitedEvidence')}
+            </p>
+          )}
 
           {/* 候选草稿预览 */}
           <div className="mt-2 rounded-lg border border-gold/20 bg-muted/40 p-3">

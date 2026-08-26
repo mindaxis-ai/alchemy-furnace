@@ -4,13 +4,33 @@ import logging
 from fastapi import APIRouter, HTTPException, status
 
 from app.models.schemas import DistillRequest, DistillResponse
+from app.services.baidu_baike_research_provider import BaiduBaikeResearchProvider
 from app.services.duckduckgo_research_provider import DuckDuckGoResearchProvider
 from app.services.nuwa_distillation_service import DistillationError, NuwaDistillationService
+from app.services.qianfan_web_search_provider import QianfanWebSearchProvider
+from app.services.research_orchestrator import ResearchOrchestrator
+from app.services.web_document_fetcher import WebDocumentFetcher
+from app.services.wikipedia_research_provider import WikipediaResearchProvider
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/distillation", tags=["女娲蒸馏"])
 
-distillation_service = NuwaDistillationService(DuckDuckGoResearchProvider())
+# 国内优先、国际限时(6s 预算)的组合器;各提供者无注入 client 时按请求创建
+# 短生命周期 httpx.Client context manager,模块级不持有连接。
+distillation_service = NuwaDistillationService(
+    ResearchOrchestrator(
+        domestic=[
+            BaiduBaikeResearchProvider(fetcher=WebDocumentFetcher(timeout=3)),
+            QianfanWebSearchProvider(),
+        ],
+        global_providers=[
+            WikipediaResearchProvider(timeout=4),
+            DuckDuckGoResearchProvider(fetcher=WebDocumentFetcher(timeout=4)),
+        ],
+        global_budget_seconds=6,
+        circuit_breaker_seconds=600,
+    )
+)
 
 
 @router.post("/nuwa", response_model=DistillResponse, summary="从公开资料蒸馏金丹草稿")

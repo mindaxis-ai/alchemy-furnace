@@ -209,18 +209,18 @@
     "briefLabel": "What should this capture?",
     "briefPlaceholder": "e.g. How they judge early products, with direct language and honest limits",
     "start": "Research and distill",
-    "researching": "Collecting public evidence…",
-    "stages": {
-      "research": "Research",
-      "verify": "Cross-check",
-      "distill": "Build draft"
-    },
+    "researching": "Collecting public evidence and drafting…",
     "draftReady": "Draft ready · {count} public sources",
     "previewTitle": "Draft preview",
     "apply": "Apply to form",
     "discard": "Discard",
     "sources": "View research sources",
-    "error": "Distillation failed. Try again."
+    "error": "Distillation failed. Try again.",
+    "retry": "Retry",
+    "limitedEvidence": "Limited evidence — review the draft manually",
+    "searchBlockedHint": "Public search is temporarily rate-limited. Try again later.",
+    "insufficientHint": "Not enough public evidence. Try a better-known subject or add background to your goal.",
+    "modelConfigHint": "No synthesis model configured. Set one up under Settings → Model management."
   },
   "pills": {
     "title": "Pill Vault",
