@@ -146,6 +146,26 @@ describe('NuwaDistillPanel', () => {
     expect(onApply).not.toHaveBeenCalled()
   })
 
+  it('未配置模型时显示设置引导且不提供重试', async () => {
+    distillNuwa.mockRejectedValue(
+      new ApiError('未配置可用于智能炼制的模型，请先到设置中配置模型供应商', 400, {
+        error_code: 'model_not_configured',
+      })
+    )
+    const onApply = vi.fn()
+    const user = userEvent.setup()
+    render(<NuwaDistillPanel onApply={onApply} />)
+
+    await runDistill(user)
+
+    expect(
+      await screen.findByText('未配置可用于智能炼制的模型，请先到设置中配置模型供应商')
+    ).toBeInTheDocument()
+    expect(screen.getByText('modelConfigHint')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'retry' })).not.toBeInTheDocument()
+    expect(onApply).not.toHaveBeenCalled()
+  })
+
   it('有限证据草稿显示人工核对警告', async () => {
     distillNuwa.mockResolvedValue({
       ...nuwaDraft,

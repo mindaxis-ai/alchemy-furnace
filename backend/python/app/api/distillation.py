@@ -1,7 +1,7 @@
 """Nuwa distillation API."""
 import logging
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Header, HTTPException, status
 
 from app.models.schemas import DistillRequest, DistillResponse
 from app.services.baidu_baike_research_provider import BaiduBaikeResearchProvider
@@ -34,16 +34,27 @@ distillation_service = NuwaDistillationService(
 
 
 @router.post("/nuwa", response_model=DistillResponse, summary="从公开资料蒸馏金丹草稿")
-def distill_nuwa(request: DistillRequest) -> DistillResponse:
+def distill_nuwa(
+    request: DistillRequest,
+    x_request_id: str | None = Header(default=None),
+) -> DistillResponse:
     try:
-        return DistillResponse(**distillation_service.distill(**request.model_dump()))
-    except DistillationError as exc:
-        # 稳定错误协议: detail 为结构化对象,Go 网关按 code/stage/retryable 透传
-        http_status = (
-            status.HTTP_503_SERVICE_UNAVAILABLE
-            if exc.retryable
-            else status.HTTP_422_UNPROCESSABLE_ENTITY
+        return DistillResponse(
+            **distillation_service.distill(
+                **request.model_dump(), request_id=x_request_id
+            )
         )
+    except DistillationError as exc:
+        # 稳定错误协议: detail 为结构化对象,Go 网关按 code/stage/retryable 透传。
+        # model_not_configured 属客户端配置缺失(400),其余可重试 503、不可重试 422。
+        if exc.code == "model_not_configured":
+            http_status = status.HTTP_400_BAD_REQUEST
+        else:
+            http_status = (
+                status.HTTP_503_SERVICE_UNAVAILABLE
+                if exc.retryable
+                else status.HTTP_422_UNPROCESSABLE_ENTITY
+            )
         raise HTTPException(
             status_code=http_status,
             detail={

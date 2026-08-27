@@ -162,9 +162,12 @@ def test_distill_uses_injected_provider_and_returns_sources(monkeypatch):
     assert result["research"]["evidence_level"] == "standard"
 
 
-def test_distill_requires_key_for_openai_cloud(monkeypatch):
+def test_distill_requires_key_for_openai_cloud_emits_stable_code(monkeypatch):
     monkeypatch.setattr("app.services.nuwa_distillation_service.settings.openai_api_key", "")
     service = NuwaDistillationService(FixedResearchProvider(standard_report()))
 
-    with pytest.raises(ValueError, match="配置模型供应商"):
+    with pytest.raises(DistillationError) as captured:
         service.distill("人物", "提炼决策方式", base_url="https://api.openai.com/v1")
+    assert captured.value.code == "model_not_configured"
+    assert captured.value.stage == "model"
+    assert captured.value.retryable is False
