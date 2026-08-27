@@ -10,7 +10,7 @@ Unicode true
 !endif
 
 !define PRODUCT_NAME "AlchemyFurnace"
-!define PRODUCT_DISPLAY_NAME "AlchemyFurnace"
+!define PRODUCT_DISPLAY_NAME "炼丹炉"
 !define PRODUCT_EXECUTABLE "AlchemyFurnace.exe"
 !define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}"
 
