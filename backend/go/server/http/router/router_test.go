@@ -143,6 +143,35 @@ func TestWrappersPreserveErrorCodeForWrappedInternalError(t *testing.T) {
 	}
 }
 
+func TestWrapperKeepsPublicMessageForServiceUnavailable(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.GET("/distill", Wrapper(func(c *gin.Context) (int, any, error) {
+		return 0, nil, internalerrors.New(
+			internalerrors.ErrorTypeServiceUnavailable,
+			"research_search_blocked",
+			"公开搜索暂时限制了自动访问，请稍后重试",
+		)
+	}))
+
+	recorder := httptest.NewRecorder()
+	r.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/distill", nil))
+
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("HTTP status = %d, want %d", recorder.Code, http.StatusServiceUnavailable)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got := body["message"]; got != "公开搜索暂时限制了自动访问，请稍后重试" {
+		t.Errorf("message = %v, want public message preserved for 503", got)
+	}
+	if got := body["error_code"]; got != "research_search_blocked" {
+		t.Errorf("error_code = %v, want research_search_blocked", got)
+	}
+}
+
 type assertiveError string
 
 func (e assertiveError) Error() string { return string(e) }

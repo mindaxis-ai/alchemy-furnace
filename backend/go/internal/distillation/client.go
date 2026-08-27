@@ -24,14 +24,24 @@ type Source struct {
 	Dimension string `json:"dimension"`
 }
 
+// ResearchSummary 蒸馏研究摘要(证据等级与来源统计,不含正文)
+type ResearchSummary struct {
+	EvidenceLevel   string   `json:"evidence_level"`
+	DocumentCount   int      `json:"document_count"`
+	DomainCount     int      `json:"domain_count"`
+	TotalCharacters int      `json:"total_characters"`
+	Warnings        []string `json:"warnings"`
+}
+
 type Response struct {
-	Name           string         `json:"name"`
-	Description    string         `json:"description"`
-	PersonaSummary string         `json:"persona_summary"`
-	Tags           model.JSONList `json:"tags"`
-	SkillSchema    model.JSONMap  `json:"skill_schema"`
-	Sources        []Source       `json:"sources"`
-	Model          string         `json:"model"`
+	Name           string          `json:"name"`
+	Description    string          `json:"description"`
+	PersonaSummary string          `json:"persona_summary"`
+	Tags           model.JSONList  `json:"tags"`
+	SkillSchema    model.JSONMap   `json:"skill_schema"`
+	Sources        []Source        `json:"sources"`
+	Model          string          `json:"model"`
+	Research       ResearchSummary `json:"research"`
 }
 
 type request struct {
@@ -61,7 +71,7 @@ func (c *HTTPClient) Distill(ctx context.Context, subject, brief, locale string,
 	if err != nil {
 		return nil, fmt.Errorf("序列化蒸馏请求失败: %w", err)
 	}
-	req, err := http.NewRequestWithContext(context.WithoutCancel(ctx), http.MethodPost,
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		c.baseURL()+"/api/v1/distillation/nuwa", bytes.NewReader(payload))
 	if err != nil {
 		return nil, fmt.Errorf("构建蒸馏请求失败: %w", err)
@@ -74,14 +84,11 @@ func (c *HTTPClient) Distill(ctx context.Context, subject, brief, locale string,
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 16<<10))
-		var detail struct {
-			Detail string `json:"detail"`
+		if remote, ok := decodeErrorDetail(raw); ok {
+			remote.Status = resp.StatusCode
+			return nil, remote
 		}
-		_ = json.Unmarshal(raw, &detail)
-		if detail.Detail == "" {
-			detail.Detail = string(raw)
-		}
-		return nil, &RemoteError{Status: resp.StatusCode, Message: detail.Detail}
+		return nil, &RemoteError{Status: resp.StatusCode, Message: string(raw)}
 	}
 	var result Response
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
@@ -90,9 +97,52 @@ func (c *HTTPClient) Distill(ctx context.Context, subject, brief, locale string,
 	return &result, nil
 }
 
+// decodeErrorDetail 解析 Python 错误体 detail 字段: 新协议为结构化对象,
+// 旧协议为字符串。解析失败返回 ok=false,由调用方回退为原文 message。
+func decodeErrorDetail(raw []byte) (*RemoteError, bool) {
+	var envelope struct {
+		Detail json.RawMessage `json:"detail"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil || len(envelope.Detail) == 0 {
+		return nil, false
+	}
+	detail := envelope.Detail
+	switch detail[0] {
+	case '"': // 旧协议: {"detail":"旧版错误"}
+		var message string
+		if err := json.Unmarshal(detail, &message); err != nil {
+			return nil, false
+		}
+		return &RemoteError{Message: message}, true
+	case '{': // 新协议: {"detail":{"code":..,"stage":..,"message":..,"retryable":..,"details":..}}
+		var structured struct {
+			Code      string         `json:"code"`
+			Stage     string         `json:"stage"`
+			Message   string         `json:"message"`
+			Retryable bool           `json:"retryable"`
+			Details   map[string]any `json:"details"`
+		}
+		if err := json.Unmarshal(detail, &structured); err != nil {
+			return nil, false
+		}
+		return &RemoteError{
+			Code:      structured.Code,
+			Stage:     structured.Stage,
+			Message:   structured.Message,
+			Retryable: structured.Retryable,
+			Details:   structured.Details,
+		}, true
+	}
+	return nil, false
+}
+
 type RemoteError struct {
-	Status  int
-	Message string
+	Status    int
+	Code      string
+	Stage     string
+	Message   string
+	Retryable bool
+	Details   map[string]any
 }
 
 func (e *RemoteError) Error() string { return e.Message }

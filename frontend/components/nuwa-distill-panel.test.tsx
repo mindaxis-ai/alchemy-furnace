@@ -29,6 +29,13 @@ const nuwaDraft: DistillationDraft = {
     { title: '资治通鉴', url: 'https://example.com/zztj', dimension: 'fact' },
   ],
   model: 'gpt-5',
+  research: {
+    evidence_level: 'standard',
+    document_count: 2,
+    domain_count: 2,
+    total_characters: 4200,
+    warnings: [],
+  },
 }
 
 /** 填满主题与目标并触发蒸馏 */
@@ -119,5 +126,64 @@ describe('NuwaDistillPanel', () => {
       brief: '提取他的判断方式',
       locale: 'zh-CN',
     })
+  })
+
+  it('搜索被限制时显示阶段化错误和重试按钮', async () => {
+    distillNuwa.mockRejectedValue(
+      new ApiError('公开搜索暂时限制了自动访问，请稍后重试', 503, {
+        error_code: 'research_search_blocked',
+        data: { stage: 'research', retryable: true },
+      })
+    )
+    const onApply = vi.fn()
+    const user = userEvent.setup()
+    render(<NuwaDistillPanel onApply={onApply} />)
+
+    await runDistill(user)
+
+    expect(await screen.findByText('公开搜索暂时限制了自动访问，请稍后重试')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'retry' })).toBeInTheDocument()
+    expect(onApply).not.toHaveBeenCalled()
+  })
+
+  it('未配置模型时显示设置引导且不提供重试', async () => {
+    distillNuwa.mockRejectedValue(
+      new ApiError('未配置可用于智能炼制的模型，请先到设置中配置模型供应商', 400, {
+        error_code: 'model_not_configured',
+      })
+    )
+    const onApply = vi.fn()
+    const user = userEvent.setup()
+    render(<NuwaDistillPanel onApply={onApply} />)
+
+    await runDistill(user)
+
+    expect(
+      await screen.findByText('未配置可用于智能炼制的模型，请先到设置中配置模型供应商')
+    ).toBeInTheDocument()
+    expect(screen.getByText('modelConfigHint')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'retry' })).not.toBeInTheDocument()
+    expect(onApply).not.toHaveBeenCalled()
+  })
+
+  it('有限证据草稿显示人工核对警告', async () => {
+    distillNuwa.mockResolvedValue({
+      ...nuwaDraft,
+      research: {
+        evidence_level: 'limited',
+        document_count: 1,
+        domain_count: 1,
+        total_characters: 2200,
+        warnings: ['证据有限，结果需人工核对'],
+      },
+    })
+    const onApply = vi.fn()
+    const user = userEvent.setup()
+    render(<NuwaDistillPanel onApply={onApply} />)
+
+    await runDistill(user)
+
+    expect(await screen.findByText('limitedEvidence')).toBeInTheDocument()
+    expect(onApply).not.toHaveBeenCalled()
   })
 })

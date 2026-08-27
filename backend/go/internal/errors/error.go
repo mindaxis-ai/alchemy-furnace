@@ -17,6 +17,9 @@ const (
 	ErrorTypeInvalidRequest
 	// ErrorTypeConflict 资源冲突(如被引用删除) → 409
 	ErrorTypeConflict
+	// ErrorTypeServiceUnavailable 受控的外部服务不可用(远端 503) → 503
+	// 与内部错误不同: Wrapper 对这类错误保留公开 message,不替换为"服务器内部错误"
+	ErrorTypeServiceUnavailable
 	// ErrorTypeServerInternalError 服务器内部错误 → 500
 	ErrorTypeServerInternalError
 )
@@ -120,6 +123,8 @@ func HTTPStatus(err error) int {
 		return 400
 	case IsType(err, ErrorTypeConflict):
 		return 409
+	case IsType(err, ErrorTypeServiceUnavailable):
+		return 503
 	default:
 		return 500
 	}

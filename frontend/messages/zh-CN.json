@@ -209,18 +209,18 @@
     "briefLabel": "你想炼出什么",
     "briefPlaceholder": "如：提取他判断早期创业产品的思考方式，表达直接但保留诚实边界",
     "start": "从互联网收集并蒸馏",
-    "researching": "正在查找公开资料…",
-    "stages": {
-      "research": "六路调研",
-      "verify": "交叉核验",
-      "distill": "生成丹方"
-    },
+    "researching": "正在收集公开资料并生成草稿…",
     "draftReady": "候选草稿已生成 · {count} 个公开来源",
     "previewTitle": "候选草稿预览",
     "apply": "应用到表单",
     "discard": "丢弃",
     "sources": "查看资料来源",
-    "error": "智能蒸馏失败，请重试"
+    "error": "智能蒸馏失败，请重试",
+    "retry": "重试",
+    "limitedEvidence": "证据有限，结果需人工核对",
+    "searchBlockedHint": "公开搜索暂时限制了自动访问，请稍后重试",
+    "insufficientHint": "公开资料不足。试试更常见的人物或主题，或在炼制目标中补充更多背景信息",
+    "modelConfigHint": "未配置可用于智能炼制的模型，请先到「设置 → 模型管理」中配置"
   },
   "pills": {
     "title": "金丹阁",
