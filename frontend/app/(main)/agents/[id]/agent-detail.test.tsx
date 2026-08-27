@@ -135,6 +135,13 @@ const nuwaDraft: DistillationDraft = {
   skill_schema: { identity_card: '造物主' },
   sources: [{ title: '淮南子', url: 'https://example.com/huainanzi', dimension: 'persona' }],
   model: 'gpt-5',
+  research: {
+    evidence_level: 'standard',
+    document_count: 1,
+    domain_count: 1,
+    total_characters: 2500,
+    warnings: [],
+  },
 }
 
 // 隔离真实蒸馏面板(走网络),替换为显式 apply 触发器

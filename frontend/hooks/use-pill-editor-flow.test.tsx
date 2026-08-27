@@ -58,6 +58,13 @@ const nuwaDraft: DistillationDraft = {
   },
   sources: [{ title: '史记', url: 'https://example.com/shiji', dimension: 'tone' }],
   model: 'gpt-5',
+  research: {
+    evidence_level: 'standard',
+    document_count: 1,
+    domain_count: 1,
+    total_characters: 2500,
+    warnings: [],
+  },
 }
 
 function deferred<T>() {

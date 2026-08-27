@@ -143,6 +143,38 @@ import pytest
 from app.services.web_document_fetcher import FetchResult
 
 
+def pytest_configure(config):
+    """注册默认不运行的联网 smoke 标记（中国大陆发布前跑 network_cn）。"""
+    config.addinivalue_line(
+        "markers", "network_cn: 联网 smoke: 百度百科/千帆可达性（默认不运行）"
+    )
+    config.addinivalue_line(
+        "markers", "network_global: 联网 smoke: Wikipedia/DDG 可达性（默认不运行）"
+    )
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--run-network",
+        action="store_true",
+        default=False,
+        help="运行联网 smoke 测试（network_cn / network_global）",
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    """未显式选择联网标记或 --run-network 时跳过联网 smoke，保证 CI 零公网依赖。"""
+    if config.getoption("--run-network") or config.getoption("-m"):
+        return
+    skip_network = pytest.mark.skip(reason="联网 smoke：需 -m network_cn/network_global 或 --run-network")
+    for item in items:
+        if any(
+            marker.name in {"network_cn", "network_global"}
+            for marker in item.iter_markers()
+        ):
+            item.add_marker(skip_network)
+
+
 def _timeout_exception():
     """httpx 超时异常：真环境取 ConnectTimeout，桩环境取 TimeoutException。"""
     return getattr(httpx, "ConnectTimeout", None) or getattr(
