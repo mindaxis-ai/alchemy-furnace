@@ -45,11 +45,15 @@ func TestBuildTurnPlanOneEach(t *testing.T) {
 func TestBuildTurnPlanNormalDiscussion(t *testing.T) {
 	c := ExtractUserTurnConstraints("你怎么看这件事")
 	p := BuildTurnPlan(c, PolicyForProactivity(50), 3, nil)
-	if p.MaxSpeakers != 2 || p.MaxRounds != 2 {
-		t.Fatalf("普通讨论 → %+v, want ≤2/≤2", p)
+	if p.Intent.Mode != TurnModeCasual {
+		t.Fatalf("普通讨论 → intent=%s, want casual", p.Intent.Mode)
 	}
-	if p.MaxSentences != 3 || p.MaxTokens != 384 {
-		t.Fatalf("基础策略 → %+v, want 3句/384tok", p)
+	// Task 4:预算来自意图档,不再是表达欲档
+	if p.MaxSpeakers != 1 || p.MaxRounds != 1 {
+		t.Fatalf("普通讨论 → %+v, want casual 档 1/1", p)
+	}
+	if p.MaxSentences != 2 || p.MaxTokens != 128 {
+		t.Fatalf("casual 预算 → %+v, want 2句/128tok", p)
 	}
 	if p.MaxTurnTokens != 1280 {
 		t.Fatalf("MaxTurnTokens = %d, want 1280", p.MaxTurnTokens)
@@ -57,22 +61,23 @@ func TestBuildTurnPlanNormalDiscussion(t *testing.T) {
 }
 
 func TestBuildTurnPlanDetailed(t *testing.T) {
-	// 单聊(memberCount=1):MaxTokens ≤2048(§8.2)
+	// Task 4:Detailed 只进入 deep_dive 档(8句/896tok/2说话人/2轮),
+	// 不再提升到 2048/3072 tokens
 	c := ExtractUserTurnConstraints("详细讲讲")
 	p := BuildTurnPlan(c, PolicyForProactivity(50), 1, nil)
-	if p.MaxTokens > 2048 {
-		t.Fatalf("单聊详细 MaxTokens = %d, want ≤2048", p.MaxTokens)
+	if p.Intent.Mode != TurnModeDeepDive {
+		t.Fatalf("详细 → intent=%s, want deep_dive", p.Intent.Mode)
 	}
-	if p.MaxSpeakers != 3 || p.MaxRounds != 2 {
-		t.Fatalf("详细讨论 → %+v, want 3/2", p)
+	if p.MaxSentences != 8 || p.MaxTokens != 896 || p.MaxSpeakers != 2 || p.MaxRounds != 2 {
+		t.Fatalf("单聊详细 → %+v, want 8句/896tok/2人/2轮", p)
 	}
-	// 群聊(memberCount=4):单人 ≤1536
+	if p.MaxTurnTokens != 1280 {
+		t.Fatalf("详细 MaxTurnTokens = %d, want 1280(不再提升到 3072)", p.MaxTurnTokens)
+	}
+	// 群聊同档:成员数不再放大单人预算
 	p = BuildTurnPlan(c, PolicyForProactivity(50), 4, nil)
-	if p.MaxTokens > 1536 {
-		t.Fatalf("群聊详细单人 MaxTokens = %d, want ≤1536", p.MaxTokens)
-	}
-	if p.MaxTurnTokens != 3072 {
-		t.Fatalf("详细 MaxTurnTokens = %d, want 3072", p.MaxTurnTokens)
+	if p.MaxSentences != 8 || p.MaxTokens != 896 || p.MaxSpeakers != 2 || p.MaxRounds != 2 {
+		t.Fatalf("群聊详细 → %+v, want 同 deep_dive 档", p)
 	}
 }
 
@@ -82,8 +87,9 @@ func TestBuildTurnPlanSingleChatMustAnswer(t *testing.T) {
 	if !p.MustAnswer {
 		t.Fatal("单聊应始终 MustAnswer")
 	}
-	if p.MaxSentences != 1 || p.MaxTokens != 160 {
-		t.Fatalf("低表达欲单聊预算 → %+v", p)
+	// Task 4:表达欲不再决定单条回复长度——低表达欲档(quiet)不压缩 casual 意图预算
+	if p.MaxSentences != 2 || p.MaxTokens != 128 {
+		t.Fatalf("casual 单聊预算 → %+v, want 2句/128tok", p)
 	}
 }
 
@@ -93,5 +99,39 @@ func TestBuildTurnPlanPassesActivatedRules(t *testing.T) {
 	p := BuildTurnPlan(c, PolicyForProactivity(50), 2, []ActivatedPillRule{rule})
 	if len(p.ActivatedRules) != 1 || p.ActivatedRules[0].PillID != "p1" {
 		t.Fatalf("ActivatedRules 未透传: %+v", p.ActivatedRules)
+	}
+}
+
+// Task 4：意图预算固定档位——六档 × 四个字段逐项断言，且 Intent 透传。
+func TestBuildTurnPlanIntentBudgets(t *testing.T) {
+	tests := []struct {
+		name        string
+		msg         string
+		wantMode    TurnMode
+		maxSentence int
+		maxTokens   int
+		maxSpeakers int
+		maxRounds   int
+	}{
+		{"casual", "今天天气不错", TurnModeCasual, 2, 128, 1, 1},
+		{"vent", "烦死了，今天又被领导骂了", TurnModeVent, 2, 128, 1, 1},
+		{"factual", "什么是向量数据库", TurnModeFactual, 3, 256, 1, 1},
+		// 注意:烦躁前缀会触发 Concise/烦躁覆盖(晚于意图默认值),故此处用干净求助消息
+		{"advice", "我该怎么办", TurnModeAdvice, 4, 384, 1, 1},
+		{"task", "帮我整理一个发布计划", TurnModeTask, 6, 640, 2, 1},
+		{"deep_dive", "详细分析一下这套架构", TurnModeDeepDive, 8, 896, 2, 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := BuildTurnPlan(ExtractUserTurnConstraints(tt.msg), PolicyForProactivity(50), 3, nil)
+			if p.Intent.Mode != tt.wantMode {
+				t.Fatalf("%q → intent mode=%s, want %s", tt.msg, p.Intent.Mode, tt.wantMode)
+			}
+			if p.MaxSentences != tt.maxSentence || p.MaxTokens != tt.maxTokens ||
+				p.MaxSpeakers != tt.maxSpeakers || p.MaxRounds != tt.maxRounds {
+				t.Fatalf("%q → %+v, want %d句/%dtok/%d说话人/%d轮",
+					tt.msg, p, tt.maxSentence, tt.maxTokens, tt.maxSpeakers, tt.maxRounds)
+			}
+		})
 	}
 }
