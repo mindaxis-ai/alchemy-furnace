@@ -4,6 +4,15 @@ import (
 	"testing"
 )
 
+// Task 3：用户当轮约束必须携带意图——纯情绪倾诉（烦躁且无求助/任务信号）
+// 归为 vent。
+func TestExtractUserTurnConstraintsIncludesIntent(t *testing.T) {
+	c := ExtractUserTurnConstraints("我今天好烦，只想吐槽一下")
+	if c.Intent.Mode != TurnModeVent {
+		t.Fatalf("intent=%+v", c.Intent)
+	}
+}
+
 func TestExtractUserTurnConstraintsNegationFirst(t *testing.T) {
 	// 「不要停，继续说」不得误判停止(§8.1:先识别否定与继续表达,再识别停止)
 	c := ExtractUserTurnConstraints("不要停，继续说，我想听完你的完整分析")

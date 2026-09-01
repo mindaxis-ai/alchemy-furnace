@@ -20,6 +20,9 @@ type UserTurnConstraints struct {
 	WantsStop      bool
 	Frustration    FrustrationLevel
 	OneEach        bool
+	// Intent 是本轮对话意图，由导演层在约束提取完成后统一分类，
+	// 调用方无需关心分类细节。
+	Intent TurnIntent
 }
 
 // explicitStopCommands 只接受整句明确停止命令。任意位置的停止词
@@ -53,6 +56,7 @@ func ExtractUserTurnConstraints(userMessage string) UserTurnConstraints {
 	}
 	msg := strings.TrimSpace(userMessage)
 	if msg == "" {
+		c.Intent = ClassifyTurnIntent(c)
 		return c
 	}
 	lower := strings.ToLower(msg)
@@ -108,5 +112,7 @@ func ExtractUserTurnConstraints(userMessage string) UserTurnConstraints {
 			}
 		}
 	}
+	// 意图：所有布尔提取完成后统一分类一次，不在各分支重复调用。
+	c.Intent = ClassifyTurnIntent(c)
 	return c
 }
