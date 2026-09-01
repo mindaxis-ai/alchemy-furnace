@@ -494,9 +494,9 @@ func TestSSEChatPassesMaxTokensFromPlan(t *testing.T) {
 	if !strings.Contains(w.Body.String(), "event: done") {
 		t.Fatalf("SSE body = %q, want done", w.Body.String())
 	}
-	// 单聊详细:MaxTokens = max(policy, 2048) → 2048
-	if stub.lastOptions.MaxTokens != 2048 {
-		t.Fatalf("lastOptions = %+v, want MaxTokens=2048", stub.lastOptions)
+	// 单聊详细:TurnPlan.MaxTokens = deep_dive 档 896(不再提升到 2048)
+	if stub.lastOptions.MaxTokens != 896 {
+		t.Fatalf("lastOptions = %+v, want MaxTokens=896", stub.lastOptions)
 	}
 }
 

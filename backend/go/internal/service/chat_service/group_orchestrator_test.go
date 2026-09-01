@@ -231,7 +231,8 @@ func TestGroupSpeakerLifecycleEventsCarryExplicitIdentity(t *testing.T) {
 		AgentAvatar string `json:"agent_avatar"`
 	}
 	seen := map[string][]identity{}
-	svc.RunGroupTurn(context.Background(), s.UUID, "诸位怎么看?", func(event string, payload any) {
+	// task 档(2 发言人,无表达欲桶过滤):首位老君发言,身份事件确定归属
+	svc.RunGroupTurn(context.Background(), s.UUID, "帮我排查一个问题", func(event string, payload any) {
 		if event != "speaker_start" && event != "chunk" && event != "speaker_done" {
 			return
 		}
@@ -280,7 +281,8 @@ func TestGroupTransportInterruptionTerminatesTurnWithoutCorruptingCompletedSpeak
 		payload GroupSpeakerPayload
 	}
 	var events []recordedEvent
-	svc.RunGroupTurn(context.Background(), session.UUID, "question for the group", func(event string, payload any) {
+	// task 档(2 发言人):第 2 位发言时传输中断
+	svc.RunGroupTurn(context.Background(), session.UUID, "帮我排查一个问题", func(event string, payload any) {
 		data, _ := json.Marshal(payload)
 		var speakerPayload GroupSpeakerPayload
 		_ = json.Unmarshal(data, &speakerPayload)
@@ -342,7 +344,8 @@ func TestGroupMemberStreamErrorIsNonterminalAndSanitized(t *testing.T) {
 
 	var memberError GroupSpeakerPayload
 	turnDone := false
-	svc.RunGroupTurn(context.Background(), session.UUID, "question for the group", func(event string, payload any) {
+	// task 档(2 发言人,无表达欲桶过滤):首位老君报错,次位孙悟空仍发言收束
+	svc.RunGroupTurn(context.Background(), session.UUID, "帮我排查一个问题", func(event string, payload any) {
 		if event == "turn_done" {
 			turnDone = true
 		}
@@ -512,7 +515,8 @@ func TestRetryGroupTurnUsesLatestUserBeyondFirstHistoryPage(t *testing.T) {
 func TestGroupTurnAllPass(t *testing.T) {
 	svc, chats, engine, s := newGroupSvc(t, []string{"[PASS]", "[PASS]"})
 	log := &eventLog{}
-	svc.RunGroupTurn(context.Background(), s.UUID, "诸位怎么看?", log.emit)
+	// task 档(2 发言人)全员沉默:整轮沉默提前收束
+	svc.RunGroupTurn(context.Background(), s.UUID, "帮我排查一个问题", log.emit)
 
 	if countEvent(log, "speaker_start") != 0 {
 		t.Fatal("全员沉默不应有 speaker_start")
@@ -592,7 +596,8 @@ func TestGroupTurnChainMention(t *testing.T) {
 		"俺来了", "[PASS]",
 	})
 	log := &eventLog{}
-	svc.RunGroupTurn(context.Background(), s.UUID, "聊聊金丹", log.emit)
+	// deep_dive 档(2 轮):round1 老君@悟空,round2 悟空必答
+	svc.RunGroupTurn(context.Background(), s.UUID, "详细分析一下", log.emit)
 
 	if countEvent(log, "speaker_start") != 2 {
 		t.Fatalf("应有2人次发言: %v", log.events)
@@ -602,11 +607,11 @@ func TestGroupTurnChainMention(t *testing.T) {
 	}
 }
 
-// Task 9:普通讨论 MaxRounds=2(§8.2)→ 2 轮 × 2 人 = 4 次调用;更多 replies 受上限约束
+// Task 4:deep_dive 档 MaxRounds=2(§8.2)→ 2 轮 × 2 人 = 4 次调用;更多 replies 受上限约束
 func TestGroupTurnMaxRoundsPerTurnPlan(t *testing.T) {
 	svc, _, engine, s := newGroupSvc(t, []string{"甲1", "乙1", "甲2", "乙2"})
 	log := &eventLog{}
-	svc.RunGroupTurn(context.Background(), s.UUID, "热烈讨论", log.emit)
+	svc.RunGroupTurn(context.Background(), s.UUID, "详细分析一下", log.emit)
 	if engine.calls != 4 {
 		t.Fatalf("普通讨论 MaxRounds=2: 引擎应调4次(2轮×2人), 实际%d", engine.calls)
 	}
@@ -616,7 +621,7 @@ func TestGroupTurnMaxRoundsPerTurnPlan(t *testing.T) {
 
 	svc2, _, engine2, s2 := newGroupSvc(t, []string{"甲1", "乙1", "甲2", "乙2", "甲3", "乙3"})
 	log2 := &eventLog{}
-	svc2.RunGroupTurn(context.Background(), s2.UUID, "热烈讨论", log2.emit)
+	svc2.RunGroupTurn(context.Background(), s2.UUID, "详细分析一下", log2.emit)
 	if engine2.calls != 4 {
 		t.Fatalf("更多 replies 仍受 MaxRounds=2 上限约束: 引擎应只调4次, 实际%d", engine2.calls)
 	}
@@ -647,7 +652,8 @@ func TestGroupTurnSimilarityStopsNextSpeaker(t *testing.T) {
 	duplicate := "这是一个非常独特的回答内容"
 	svc, chats, engine, s := newGroupSvc(t, []string{duplicate, duplicate})
 	log := &eventLog{}
-	svc.RunGroupTurn(context.Background(), s.UUID, "聊聊金丹", log.emit)
+	// task 档(2 发言人):第二位回复重复 → 去重收敛
+	svc.RunGroupTurn(context.Background(), s.UUID, "帮我排查一个问题", log.emit)
 
 	if countEvent(log, "speaker_done") != 1 {
 		t.Fatalf("重复回复应只保留首位: %v", log.events)

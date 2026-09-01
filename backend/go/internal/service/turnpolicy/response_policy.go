@@ -8,27 +8,25 @@ import (
 	"fmt"
 )
 
-// ResponsePolicy 表达欲档位(spec §7.1)
+// ResponsePolicy 表达欲档位(spec §7.1;Task 5 起不再携带长度预算)
 type ResponsePolicy struct {
 	Band             string
 	VolunteerPercent int
-	MaxSentences     int
-	MaxTokens        int
+	FollowUpPercent  int // 供 prompt 表达「是否适合自然追问」;不得影响句数或 token
 }
 
 // policyBands 固定映射表(spec §7.1 逐字,禁止配置化)
 var policyBands = []struct {
-	min          int
-	max          int
-	band         string
-	maxSentences int
-	maxTokens    int
+	min             int
+	max             int
+	band            string
+	followUpPercent int
 }{
-	{0, 20, "quiet", 1, 160},
-	{21, 40, "reserved", 2, 256},
-	{41, 60, "balanced", 3, 384},
-	{61, 80, "talkative", 5, 640},
-	{81, 100, "expansive", 8, 896},
+	{0, 20, "quiet", 0},
+	{21, 40, "reserved", 10},
+	{41, 60, "balanced", 20},
+	{61, 80, "talkative", 35},
+	{81, 100, "expansive", 50},
 }
 
 // PolicyForProactivity 表达欲 0-100 → 固定策略档位(§7.1 表)
@@ -41,11 +39,11 @@ func PolicyForProactivity(proactivity int) ResponsePolicy {
 	}
 	for _, b := range policyBands {
 		if proactivity >= b.min && proactivity <= b.max {
-			return ResponsePolicy{Band: b.band, VolunteerPercent: proactivity, MaxSentences: b.maxSentences, MaxTokens: b.maxTokens}
+			return ResponsePolicy{Band: b.band, VolunteerPercent: proactivity, FollowUpPercent: b.followUpPercent}
 		}
 	}
 	// 不可达;防御性回退 quiet
-	return ResponsePolicy{Band: "quiet", VolunteerPercent: proactivity, MaxSentences: 1, MaxTokens: 160}
+	return ResponsePolicy{Band: "quiet", VolunteerPercent: proactivity, FollowUpPercent: 0}
 }
 
 // WantsToVolunteer SHA256(sessionUUID|agentID|userMessageUUID|round) 稳定桶(§7.1)。

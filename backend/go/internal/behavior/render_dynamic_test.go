@@ -47,7 +47,8 @@ func TestComposeSystemPromptUserRequirementRendered(t *testing.T) {
 	if !strings.Contains(prompt, "直接说结论") {
 		t.Fatalf("用户当轮要求分区应含原文意图:\n%s", prompt)
 	}
-	if !strings.Contains(prompt, "256") {
+	// Task 4:简短+烦躁覆盖 → casual 档 128 tokens(意图预算,非表达欲档 256)
+	if !strings.Contains(prompt, "内容预算约 128 tokens") {
 		t.Fatalf("回答与群聊预算分区应含 token 预算:\n%s", prompt)
 	}
 }

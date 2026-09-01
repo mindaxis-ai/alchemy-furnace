@@ -4,28 +4,29 @@ import (
 	"testing"
 )
 
+// Task 5:表达欲档位不再携带长度预算(MaxSentences/MaxTokens 已删除),
+// 只保留主动发言概率与追问倾向(FollowUpPercent)
 func TestPolicyForProactivityFixedMapping(t *testing.T) {
 	tests := []struct {
-		proactivity  int
-		band         string
-		maxSentences int
-		maxTokens    int
+		proactivity     int
+		band            string
+		followUpPercent int
 	}{
-		{0, "quiet", 1, 160},
-		{20, "quiet", 1, 160},
-		{21, "reserved", 2, 256},
-		{40, "reserved", 2, 256},
-		{41, "balanced", 3, 384},
-		{60, "balanced", 3, 384},
-		{61, "talkative", 5, 640},
-		{80, "talkative", 5, 640},
-		{81, "expansive", 8, 896},
-		{100, "expansive", 8, 896},
+		{0, "quiet", 0},
+		{20, "quiet", 0},
+		{21, "reserved", 10},
+		{40, "reserved", 10},
+		{41, "balanced", 20},
+		{60, "balanced", 20},
+		{61, "talkative", 35},
+		{80, "talkative", 35},
+		{81, "expansive", 50},
+		{100, "expansive", 50},
 	}
 	for _, tt := range tests {
 		p := PolicyForProactivity(tt.proactivity)
-		if p.Band != tt.band || p.MaxSentences != tt.maxSentences || p.MaxTokens != tt.maxTokens {
-			t.Fatalf("proactivity=%d → %+v, want band=%s/%d句/%dtok", tt.proactivity, p, tt.band, tt.maxSentences, tt.maxTokens)
+		if p.Band != tt.band || p.FollowUpPercent != tt.followUpPercent {
+			t.Fatalf("proactivity=%d → %+v, want band=%s/followup=%d", tt.proactivity, p, tt.band, tt.followUpPercent)
 		}
 		// VolunteerPercent = 原始值(§7.1)
 		if p.VolunteerPercent != tt.proactivity {
