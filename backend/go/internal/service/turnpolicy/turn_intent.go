@@ -1,5 +1,7 @@
 package turnpolicy
 
+import "strings"
+
 // TurnMode 是本轮对话的主导意图。导演层依据它决定回复形态、
 // 长度预算和群聊发言人数，道人性格只决定「怎么说」。
 type TurnMode string
@@ -46,15 +48,64 @@ type TurnIntent struct {
 	AllowFollowUp          bool
 }
 
+// 意图信号标记（包内只读，规则优先，不使用正则和外部模型）。
+// 求助信号：用户明确要建议或帮做决定。
+var adviceMarkers = []string{"怎么办", "建议", "该不该", "如何选择", "帮我决定", "如何处理"}
+
+// 任务信号：用户明确要执行或产出。
+var taskMarkers = []string{"写", "生成", "修改", "排查", "修复", "实现", "整理", "列出"}
+
+// 事实信号：用户要的是事实或简单判断。
+var factualMarkers = []string{"什么是", "是谁", "多少", "何时", "为什么", "是否", "能不能"}
+
+// containsAny 报告 s 是否包含任意一个标记。
+func containsAny(s string, markers []string) bool {
+	for _, m := range markers {
+		if strings.Contains(s, m) {
+			return true
+		}
+	}
+	return false
+}
+
 // ClassifyTurnIntent 按当前轮用户约束分类对话意图。
 //
-// Task 1 只实现最小默认行为：没有可识别信号时一律归为闲聊（casual/chat），
-// 允许自然追问，不允许列条，不允许未经请求的建议。规则优先的完整
-// 分类器由后续任务接入。
+// 分类优先级固定为 Detailed → Vent → Advice → Task → Factual → Casual：
+//  1. 用户明确要求详细展开 → deep_dive；
+//  2. 明确求助信号（怎么办/建议/该不该/如何选择/帮我决定/如何处理）→ advice，
+//     求助信号必须覆盖单纯烦躁（「烦死了，我该怎么办」→ advice）；
+//  3. 任务信号（写/生成/修改/排查/修复/实现/整理/列出）→ task，
+//     任务信号同样覆盖烦躁（「这个依赖很烦，帮我排查构建失败」→ task，
+//     对客观对象的抱怨不是情绪倾诉）；
+//  4. 事实信号（什么是/是谁/多少/何时/为什么/是否/能不能）→ factual；
+//  5. 烦躁且无其他明确信号 → vent，只接住情绪；
+//  6. 其余 → casual。
+//
+// AllowList/AllowUnsolicitedAdvice 按上表：deep_dive/advice/task 允许列条和
+// 主动建议，vent/factual/casual 不允许；所有意图都允许自然追问。
 func ClassifyTurnIntent(c UserTurnConstraints) TurnIntent {
-	return TurnIntent{
-		Mode:          TurnModeCasual,
-		Shape:         ResponseShapeChat,
-		AllowFollowUp: true,
+	msg := strings.ToLower(strings.TrimSpace(c.LatestQuestion))
+
+	if c.Detailed {
+		return TurnIntent{Mode: TurnModeDeepDive, Shape: ResponseShapeAnalyze,
+			AllowList: true, AllowUnsolicitedAdvice: true, AllowFollowUp: true}
 	}
+	if containsAny(msg, adviceMarkers) {
+		return TurnIntent{Mode: TurnModeAdvice, Shape: ResponseShapeSuggest,
+			AllowList: true, AllowUnsolicitedAdvice: true, AllowFollowUp: true}
+	}
+	if containsAny(msg, taskMarkers) {
+		return TurnIntent{Mode: TurnModeTask, Shape: ResponseShapeSteps,
+			AllowList: true, AllowUnsolicitedAdvice: true, AllowFollowUp: true}
+	}
+	if containsAny(msg, factualMarkers) {
+		return TurnIntent{Mode: TurnModeFactual, Shape: ResponseShapeAnswer,
+			AllowFollowUp: true}
+	}
+	if c.Frustration == FrustrationAnnoyed {
+		return TurnIntent{Mode: TurnModeVent, Shape: ResponseShapeAcknowledge,
+			AllowFollowUp: true}
+	}
+	return TurnIntent{Mode: TurnModeCasual, Shape: ResponseShapeChat,
+		AllowFollowUp: true}
 }
