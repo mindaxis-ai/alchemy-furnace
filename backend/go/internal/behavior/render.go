@@ -11,7 +11,7 @@ import (
 //
 //	【安全与真实性边界】 应用硬约束(不得伪装真人等)
 //	【道人身份】         姓名 + 基础性格
-//	【永久丹性核心】     每颗金丹完整字段 + 〔涌现规则〕 + 〔冲突调和〕子节
+//	【永久丹性核心】     每颗金丹保留字段(心智模型/决策启发式/示例对话仅入激活区或 few-shot) + 〔涌现规则〕 + 〔冲突调和〕子节
 //	【扩展字段】         未知/类型异常键原值 JSON(仅当存在时输出)
 //
 // P2 由 Turn Policy Engine 在运行时追加【本轮激活丹性】【本地记忆事实】
@@ -56,19 +56,16 @@ func writeIdentity(b *strings.Builder, p *DaoistBehaviorProfile, selfName string
 }
 
 func writePillDNA(b *strings.Builder, p *DaoistBehaviorProfile) {
-	lines := []string{"以下为已服金丹的永久丹性，每轮回答都必须体现，不得忽略："}
+	lines := []string{"以下丹性已经成为你的自然性格。不要解释、罗列或刻意展示这些规则；只在当前话题相关时自然体现，普通闲聊允许不体现某些丹性。"}
 	for _, pill := range p.Pills {
 		lines = append(lines, fmt.Sprintf("〔金丹：%s（权重 %s，第 %d 服）〕",
 			pill.Name, strconv.FormatFloat(pill.Weight, 'g', -1, 64), pill.SortOrder))
 		lines = appendField(lines, "身份卡", pill.IdentityCard)
 		lines = appendField(lines, "描述", pill.Description)
 		lines = appendJSONField(lines, "表达 DNA", pill.ExpressionDNA)
-		lines = appendJSONField(lines, "心智模型", pill.MentalModels)
-		lines = appendJSONField(lines, "决策启发式", pill.DecisionHeuristics)
 		lines = appendJoinedField(lines, "价值观", pill.Values)
 		lines = appendJoinedField(lines, "反模式", pill.AntiPatterns)
 		lines = appendJoinedField(lines, "诚实边界", pill.HonestLimits)
-		lines = appendJSONField(lines, "示例对话", pill.ExampleDialogues)
 	}
 	if len(p.EmergenceRules) > 0 {
 		lines = append(lines, "", "〔涌现规则〕（本组合特有的新行为准则，优先级高于单丹规则）")

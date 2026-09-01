@@ -8,7 +8,8 @@ import (
 	"github.com/alchemy-furnace/server/model"
 )
 
-// TestRenderSystemPromptPartitions 完整档案渲染:四分区 + 姓名/性格 + 九个标记
+// TestRenderSystemPromptPartitions 完整档案渲染:四分区 + 姓名/性格 + 六个标记
+// (Task 6:心智模型/决策启发式/示例对话移出永久区,仅档案侧仍保留)
 // + 涌现规则与冲突调和子节(spec §14.1 的确定性最终提示词断言)
 func TestRenderSystemPromptPartitions(t *testing.T) {
 	profile := CompileProfile("沉稳内敛，喜好引经据典", []synthesis.PillInput{markerPillInput()})
@@ -32,9 +33,8 @@ func TestRenderSystemPromptPartitions(t *testing.T) {
 		t.Error("提示词缺少基础性格")
 	}
 	for _, marker := range []string{
-		"IDENTITY_MARKER", "DNA_MARKER", "MENTAL_MODEL_MARKER", "HEURISTIC_MARKER",
-		"VALUE_MARKER", "ANTI_PATTERN_MARKER", "HONEST_LIMIT_MARKER",
-		"EXAMPLE_MARKER", "UNKNOWN_FIELD_MARKER",
+		"IDENTITY_MARKER", "DNA_MARKER", "VALUE_MARKER", "ANTI_PATTERN_MARKER",
+		"HONEST_LIMIT_MARKER", "UNKNOWN_FIELD_MARKER",
 	} {
 		if !strings.Contains(prompt, marker) {
 			t.Errorf("提示词缺少标记 %s", marker)
@@ -100,5 +100,28 @@ func TestRenderSystemPromptEmptyProfile(t *testing.T) {
 	prompt := RenderSystemPrompt(CompileProfile("", nil), "")
 	if !strings.Contains(prompt, "【安全与真实性边界】") {
 		t.Error("空档案也应渲染安全边界")
+	}
+}
+
+// TestRenderSystemPromptTreatsPillsAsInternalizedTraits Task 6:永久区不再强迫
+// 每轮表演全部丹性——内化语义(不解释/不罗列/相关时才自然体现)
+func TestRenderSystemPromptTreatsPillsAsInternalizedTraits(t *testing.T) {
+	prompt := RenderSystemPrompt(sampleProfile(), "测试道人")
+	if strings.Contains(prompt, "每轮回答都必须体现") {
+		t.Fatal("不得强迫每轮表演全部丹性")
+	}
+	if !strings.Contains(prompt, "已经成为你的自然性格") {
+		t.Fatal("缺少内化语义")
+	}
+}
+
+// TestRenderSystemPromptOmitsDormantReasoningAndExamples Task 6:心智模型/决策
+// 启发式/示例对话移出永久区(只允许在本轮激活区或 few-shot 中出现)
+func TestRenderSystemPromptOmitsDormantReasoningAndExamples(t *testing.T) {
+	prompt := RenderSystemPrompt(sampleProfile(), "测试道人")
+	for _, forbidden := range []string{"心智模型", "决策启发式", "示例对话"} {
+		if strings.Contains(prompt, forbidden) {
+			t.Fatalf("unexpected %s", forbidden)
+		}
 	}
 }
