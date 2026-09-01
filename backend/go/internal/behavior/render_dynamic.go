@@ -8,7 +8,8 @@ import (
 )
 
 // ComposeSystemPrompt 完整系统提示词(spec §11):静态四分区(RenderSystemPrompt)
-// + 动态四分区【本轮激活丹性】【本地记忆事实】【用户当轮要求】【回答与群聊预算】。
+// + 动态五分区【本轮激活丹性】【本地记忆事实】【用户当轮要求】【本轮对话策略】
+// 【回答与群聊预算】(Task 7 起策略分区只渲染可信枚举,不复制用户原文)。
 // 纯函数确定性;profile/plan 任一为 nil 返回空串。P3 填充 Memories。
 func ComposeSystemPrompt(profile *DaoistBehaviorProfile, selfName string, plan *turnpolicy.TurnPlan) string {
 	if profile == nil || plan == nil {
@@ -19,6 +20,7 @@ func ComposeSystemPrompt(profile *DaoistBehaviorProfile, selfName string, plan *
 	writeDynamicPillRules(&b, plan.ActivatedRules)
 	writeMemoryFacts(&b, plan.Memories)
 	writeUserRequirements(&b, plan)
+	writeConversationStrategy(&b, plan)
 	writeAnswerBudget(&b, plan)
 	return b.String()
 }
@@ -59,9 +61,6 @@ func writeMemoryFacts(b *strings.Builder, memories []turnpolicy.MemorySnippet) {
 
 func writeUserRequirements(b *strings.Builder, plan *turnpolicy.TurnPlan) {
 	var lines []string
-	if plan.LatestQuestion != "" {
-		lines = append(lines, "用户最新消息:"+plan.LatestQuestion)
-	}
 	if plan.Stop {
 		lines = append(lines, "用户要求停止本轮回答,不要继续输出。")
 	}
@@ -85,6 +84,30 @@ func writeUserRequirements(b *strings.Builder, plan *turnpolicy.TurnPlan) {
 	for _, l := range lines {
 		b.WriteString("- " + l + "\n")
 	}
+	b.WriteString("\n")
+}
+
+// conversationStrategies 各意图的可信策略文案(Task 7;固定枚举,禁止配置化)。
+// 只描述回复形态,不携带任何用户原文。
+var conversationStrategies = map[turnpolicy.TurnMode]string{
+	turnpolicy.TurnModeCasual:   "像熟人随口聊天；默认1～2句；不使用标题、列表、总结；可以自然追问一次。",
+	turnpolicy.TurnModeVent:     "先接住情绪；除非用户明确求助，否则不分析、不教育、不列建议；最多两句。",
+	turnpolicy.TurnModeFactual:  "第一句直接回答；仅补充必要解释；不复述问题；默认不用列表。",
+	turnpolicy.TurnModeAdvice:   "先给明确建议，再给最必要理由；最多一个自然追问。",
+	turnpolicy.TurnModeTask:     "直接完成任务；只有确有多个步骤时才用列表；不写空泛开场和收尾。",
+	turnpolicy.TurnModeDeepDive: "允许结构化分析，但先给结论；避免重复总结。",
+}
+
+// writeConversationStrategy 渲染【本轮对话策略】分区(Task 7):意图形态策略 +
+// 所有模式通用规则;未知模式跳过整节。
+func writeConversationStrategy(b *strings.Builder, plan *turnpolicy.TurnPlan) {
+	line, ok := conversationStrategies[plan.Intent.Mode]
+	if !ok {
+		return
+	}
+	b.WriteString("【本轮对话策略】\n")
+	b.WriteString("- " + string(plan.Intent.Mode) + "：" + line + "\n")
+	b.WriteString("- 所有模式通用：不默认使用“首先、其次、最后、综上所述、值得注意的是”；不要主动解释自己的人设或丹性。\n")
 	b.WriteString("\n")
 }
 
