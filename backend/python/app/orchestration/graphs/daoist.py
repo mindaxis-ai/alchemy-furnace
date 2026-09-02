@@ -60,6 +60,18 @@ _MESSAGE_TYPES = {
 #: LangChain 消息类型名 -> 通道形态 role。
 _ROLE_NAMES = {"system": "system", "human": "user", "ai": "assistant"}
 
+#: DaoistGraph 运行期瞬时通道：发言人切片之间不得残留上一道人的中间产物。
+#: GroupChatGraph.dispatch_daoists / SingleChatGraph.speak / ConversationGraph
+#: 都剔除这些通道后另起干净状态（reducer 会把已完成回复并入子运行结果，
+#: 造成重复终稿——这是发言人级隔离的公共词汇，归属 DaoistGraph 边界）。
+_TRANSIENT_CHANNELS = (
+    "selected_memories",
+    "prompt_messages",
+    "validation_retries",
+    "draft_reply",
+    "retry_pending",
+)
+
 
 def _emit(runtime: Runtime, run_id: str, name: str, payload: dict[str, Any]) -> None:
     """经运行期事件出口投递事件；负载统一脱敏后封装为 OrchestrationEvent。"""

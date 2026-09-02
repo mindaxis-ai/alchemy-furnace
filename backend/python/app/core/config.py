@@ -3,8 +3,28 @@
 炼丹炉 · 金丹化性 - 配置管理模块 (Configuration)
 以 pydantic_settings 管理环境变量，犹如炼丹之天时地利
 """
+import os
+import sys
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
+
+
+def _default_checkpoint_root() -> Path:
+    """编排检查点默认根目录：镜像 Go 桌面数据目录 os.UserConfigDir()/AlchemyFurnace。
+
+    serve/dev 模式由 Go 侧经 ORCHESTRATION_CHECKPOINT_PATH 注入覆盖
+    （引擎数据目录随桌面数据目录走，见 engineproc Task 9 接线）。
+    """
+    if sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support"
+    elif os.name == "nt":
+        appdata = os.environ.get("APPDATA")
+        base = Path(appdata) if appdata else Path.home() / "AppData" / "Roaming"
+    else:
+        base = Path(os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config"))
+    return base / "AlchemyFurnace" / "orchestration"
 
 
 class Settings(BaseSettings):
@@ -46,6 +66,12 @@ class Settings(BaseSettings):
     )
     synthesis_model: str = Field(
         default="gpt-4o-mini", description="语言模式合成用模型（可用较小模型）"
+    )
+
+    # ==================== 编排（LangGraph）配置 ====================
+    orchestration_checkpoint_path: Path = Field(
+        default_factory=_default_checkpoint_root,
+        description="编排图 SQLite 检查点目录（env: ORCHESTRATION_CHECKPOINT_PATH）",
     )
 
     # ==================== 日志配置 ====================
