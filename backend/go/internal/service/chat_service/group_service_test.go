@@ -238,6 +238,20 @@ func (f *fakeChatDao) DeleteMember(ctx context.Context, sessionID uint, agentID 
 	return errors.ErrorRecordNotFound("test.fake.delete_member")
 }
 
+// 编排 run 方法：本文件测试不触及编排持久化，仅满足 dao.Chat 接口
+func (f *fakeChatDao) CreateRun(ctx context.Context, run *model.ChatRun) errors.Error {
+	return nil
+}
+func (f *fakeChatDao) UpdateRunStatus(ctx context.Context, run *model.ChatRun, status string) errors.Error {
+	return nil
+}
+func (f *fakeChatDao) TakeRunByUUID(ctx context.Context, uid uuid.UUID) (*model.ChatRun, errors.Error) {
+	return nil, errors.ErrorRecordNotFound("test.fake.take_run")
+}
+func (f *fakeChatDao) SaveFinalReplyOnce(ctx context.Context, runUUID uuid.UUID, replyID string, message *model.ChatMessage) (*model.ChatMessage, errors.Error) {
+	return message, nil
+}
+
 func newGroupTestSvc() (*Chat, *fakeChatDao, uuid.UUID, uuid.UUID, uuid.UUID) {
 	u1, u2, u3 := uuid.New(), uuid.New(), uuid.New()
 	agents := &fakeAgentDao{agents: map[string]*model.DaoAgent{

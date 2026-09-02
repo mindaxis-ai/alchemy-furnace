@@ -25,6 +25,7 @@ var allMigratableModels = []any{
 	&model.LanguagePattern{},
 	&model.ChatSession{},
 	&model.ChatMessage{},
+	&model.ChatRun{},
 	&model.SessionMember{},
 	&model.LLMProvider{},
 	&model.LLMModel{},

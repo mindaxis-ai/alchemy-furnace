@@ -14,7 +14,7 @@ import (
 func newChatDAOTestSession(t *testing.T) (*ChatDao, *model.ChatSession) {
 	t.Helper()
 	db := newSQLiteTestDB(t, filepath.Join(t.TempDir(), "chat-dao.db"))
-	if err := db.AutoMigrate(&model.DaoAgent{}, &model.ChatSession{}, &model.ChatMessage{}); err != nil {
+	if err := db.AutoMigrate(&model.DaoAgent{}, &model.ChatSession{}, &model.ChatMessage{}, &model.ChatRun{}); err != nil {
 		t.Fatalf("AutoMigrate chat models: %v", err)
 	}
 	previousDB := DB
@@ -292,5 +292,209 @@ func TestChatDaoSaveGroupSessionPersistsSessionAndMembersInOrder(t *testing.T) {
 	}
 	if persistedMembers[0].AgentID != agents[0].ID || persistedMembers[1].AgentID != agents[1].ID {
 		t.Fatalf("member order/association wrong: %+v", persistedMembers)
+	}
+}
+
+// ---- 编排 run 持久化（Task 9）----
+
+func TestChatRunLifecyclePersistsAndTransitionsLegally(t *testing.T) {
+	dao, session := newChatDAOTestSession(t)
+	ctx := context.Background()
+
+	run := &model.ChatRun{
+		UUID:      uuid.New(),
+		SessionID: session.ID,
+		Status:    model.ChatRunStatusPending,
+		Engine:    "langgraph",
+	}
+	if err := dao.CreateRun(ctx, run); err != nil {
+		t.Fatalf("CreateRun error = %v", err)
+	}
+	if run.ID == 0 {
+		t.Fatal("CreateRun did not assign run ID")
+	}
+
+	taken, err := dao.TakeRunByUUID(ctx, run.UUID)
+	if err != nil {
+		t.Fatalf("TakeRunByUUID error = %v", err)
+	}
+	if taken.UUID != run.UUID || taken.SessionID != session.ID {
+		t.Fatalf("TakeRunByUUID identity = %+v, want run %s session %d", taken, run.UUID, session.ID)
+	}
+	if taken.Status != model.ChatRunStatusPending || taken.Engine != "langgraph" {
+		t.Fatalf("TakeRunByUUID status/engine = %s/%s, want pending/langgraph", taken.Status, taken.Engine)
+	}
+
+	// 合法链：pending -> running -> interrupted -> running -> completed
+	for _, status := range []string{
+		model.ChatRunStatusRunning,
+		model.ChatRunStatusInterrupted,
+		model.ChatRunStatusRunning,
+		model.ChatRunStatusCompleted,
+	} {
+		if err := dao.UpdateRunStatus(ctx, taken, status); err != nil {
+			t.Fatalf("UpdateRunStatus(%s) error = %v", status, err)
+		}
+		if taken.Status != status {
+			t.Fatalf("UpdateRunStatus did not backfill run.Status = %s, want %s", taken.Status, status)
+		}
+	}
+
+	// 同状态重复更新 = 幂等 no-op
+	if err := dao.UpdateRunStatus(ctx, taken, model.ChatRunStatusCompleted); err != nil {
+		t.Fatalf("idempotent UpdateRunStatus(completed) error = %v", err)
+	}
+	if taken.Status != model.ChatRunStatusCompleted {
+		t.Fatalf("idempotent update changed status to %s, want completed", taken.Status)
+	}
+
+	var stored model.ChatRun
+	if err := DB.Where("uuid = ?", run.UUID.String()).First(&stored).Error; err != nil {
+		t.Fatalf("reload run: %v", err)
+	}
+	if stored.Status != model.ChatRunStatusCompleted {
+		t.Fatalf("stored status = %s, want completed", stored.Status)
+	}
+}
+
+func TestChatRunStatusRejectsIllegalTransitions(t *testing.T) {
+	dao, session := newChatDAOTestSession(t)
+	ctx := context.Background()
+
+	newRun := func() *model.ChatRun {
+		run := &model.ChatRun{
+			UUID:      uuid.New(),
+			SessionID: session.ID,
+			Status:    model.ChatRunStatusPending,
+			Engine:    "langgraph",
+		}
+		if err := dao.CreateRun(ctx, run); err != nil {
+			t.Fatalf("CreateRun error = %v", err)
+		}
+		return run
+	}
+
+	// pending 只能出 running；直接 completed 拒绝
+	pending := newRun()
+	err := dao.UpdateRunStatus(ctx, pending, model.ChatRunStatusCompleted)
+	if err == nil || err.GetCode() != "dao.chat.update_run_status" {
+		t.Fatalf("pending->completed error = %#v, want dao.chat.update_run_status", err)
+	}
+
+	// running 可出三终态；终态无出路（先 pending->running，状态机不允许 pending 直达终态）
+	for _, terminal := range []string{model.ChatRunStatusCompleted, model.ChatRunStatusFailed, model.ChatRunStatusCancelled} {
+		run := newRun()
+		if err := dao.UpdateRunStatus(ctx, run, model.ChatRunStatusRunning); err != nil {
+			t.Fatalf("UpdateRunStatus(running) error = %v", err)
+		}
+		if err := dao.UpdateRunStatus(ctx, run, terminal); err != nil {
+			t.Fatalf("UpdateRunStatus(%s) error = %v", terminal, err)
+		}
+		err := dao.UpdateRunStatus(ctx, run, model.ChatRunStatusRunning)
+		if err == nil || err.GetCode() != "dao.chat.update_run_status" {
+			t.Fatalf("%s->running error = %#v, want dao.chat.update_run_status", terminal, err)
+		}
+	}
+
+	// 拒绝必须落库为未变更：pending->completed 被拒后 DB 状态仍是 pending
+	var stored model.ChatRun
+	if err := DB.Where("uuid = ?", pending.UUID.String()).First(&stored).Error; err != nil {
+		t.Fatalf("reload rejected run: %v", err)
+	}
+	if stored.Status != model.ChatRunStatusPending {
+		t.Fatalf("rejected transition persisted status = %s, want pending", stored.Status)
+	}
+}
+
+func TestSaveFinalReplyOnceIsIdempotent(t *testing.T) {
+	dao, session := newChatDAOTestSession(t)
+	ctx := context.Background()
+
+	run := &model.ChatRun{UUID: uuid.New(), SessionID: session.ID, Status: model.ChatRunStatusRunning, Engine: "langgraph"}
+	if err := dao.CreateRun(ctx, run); err != nil {
+		t.Fatalf("CreateRun error = %v", err)
+	}
+
+	message := &model.ChatMessage{
+		UUID: uuid.New(), SessionID: session.ID, Role: "assistant", Content: "第一份终稿",
+	}
+	first, err := dao.SaveFinalReplyOnce(ctx, run.UUID, "reply-1", message)
+	if err != nil {
+		t.Fatalf("SaveFinalReplyOnce error = %v", err)
+	}
+	if first.ID == 0 || first.RunID == nil || *first.RunID != run.UUID || first.ReplyID == nil || *first.ReplyID != "reply-1" {
+		t.Fatalf("first reply identity = %+v, want backfilled run/reply ids", first)
+	}
+
+	// 重复投递（重试）：不同内容也必须返回已有行，不产生第二条
+	duplicate := &model.ChatMessage{
+		UUID: uuid.New(), SessionID: session.ID, Role: "assistant", Content: "重试的第二份终稿",
+	}
+	second, err := dao.SaveFinalReplyOnce(ctx, run.UUID, "reply-1", duplicate)
+	if err != nil {
+		t.Fatalf("duplicate SaveFinalReplyOnce error = %v", err)
+	}
+	if first.ID != second.ID {
+		t.Fatalf("duplicate returned ID = %d, want original %d", second.ID, first.ID)
+	}
+	if second.Content != "第一份终稿" {
+		t.Fatalf("duplicate returned content = %q, want original %q", second.Content, "第一份终稿")
+	}
+
+	var count int64
+	if err := DB.Model(&model.ChatMessage{}).Where("session_id = ?", session.ID).Count(&count).Error; err != nil {
+		t.Fatalf("count messages: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("persisted messages = %d, want 1 after duplicate delivery", count)
+	}
+}
+
+func TestSaveFinalReplyOnceUniqueKeyIsRunAndReply(t *testing.T) {
+	dao, session := newChatDAOTestSession(t)
+	ctx := context.Background()
+
+	runA := &model.ChatRun{UUID: uuid.New(), SessionID: session.ID, Status: model.ChatRunStatusRunning, Engine: "langgraph"}
+	runB := &model.ChatRun{UUID: uuid.New(), SessionID: session.ID, Status: model.ChatRunStatusRunning, Engine: "langgraph"}
+	for _, run := range []*model.ChatRun{runA, runB} {
+		if err := dao.CreateRun(ctx, run); err != nil {
+			t.Fatalf("CreateRun(%s) error = %v", run.UUID, err)
+		}
+	}
+
+	// 同 run 不同 reply -> 两行
+	first, err := dao.SaveFinalReplyOnce(ctx, runA.UUID, "reply-1", &model.ChatMessage{UUID: uuid.New(), SessionID: session.ID, Role: "assistant", Content: "runA-reply1"})
+	if err != nil {
+		t.Fatalf("SaveFinalReplyOnce runA/reply-1 error = %v", err)
+	}
+	second, err := dao.SaveFinalReplyOnce(ctx, runA.UUID, "reply-2", &model.ChatMessage{UUID: uuid.New(), SessionID: session.ID, Role: "assistant", Content: "runA-reply2"})
+	if err != nil {
+		t.Fatalf("SaveFinalReplyOnce runA/reply-2 error = %v", err)
+	}
+	if first.ID == second.ID {
+		t.Fatalf("distinct reply ids collided on message ID %d, want two rows", first.ID)
+	}
+
+	// 不同 run 同 reply -> 两行（唯一键是 (run_id, reply_id) 组合，不是 reply_id 单列）
+	third, err := dao.SaveFinalReplyOnce(ctx, runB.UUID, "reply-1", &model.ChatMessage{UUID: uuid.New(), SessionID: session.ID, Role: "assistant", Content: "runB-reply1"})
+	if err != nil {
+		t.Fatalf("SaveFinalReplyOnce runB/reply-1 error = %v", err)
+	}
+	if third.ID == first.ID || third.ID == second.ID {
+		t.Fatalf("different run same reply collided on message ID %d, want a third row", third.ID)
+	}
+
+	var count int64
+	if err := DB.Model(&model.ChatMessage{}).Where("session_id = ?", session.ID).Count(&count).Error; err != nil {
+		t.Fatalf("count messages: %v", err)
+	}
+	if count != 3 {
+		t.Fatalf("persisted messages = %d, want 3", count)
+	}
+
+	// 未知 run -> 稳定错误码
+	_, err = dao.SaveFinalReplyOnce(ctx, uuid.New(), "reply-x", &model.ChatMessage{UUID: uuid.New(), SessionID: session.ID, Role: "assistant", Content: "orphan"})
+	if err == nil || err.GetCode() != "dao.chat.save_final_reply_once" {
+		t.Fatalf("unknown run error = %#v, want dao.chat.save_final_reply_once", err)
 	}
 }

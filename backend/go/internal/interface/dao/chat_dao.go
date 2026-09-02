@@ -51,4 +51,19 @@ type Chat interface {
 
 	// DeleteMember 移出群成员;不存在返回 ErrorTypeRecordNotFound
 	DeleteMember(ctx context.Context, sessionID uint, agentID uint) errors.Error
+
+	// CreateRun 写入编排 run 初始行(status=pending)
+	CreateRun(ctx context.Context, run *model.ChatRun) errors.Error
+
+	// UpdateRunStatus 按状态机校验并迁移 run 状态;合法则落库并回填 run.Status;
+	// 同状态重复更新为幂等 no-op;非法迁移返回 ErrorInvalidRequest
+	UpdateRunStatus(ctx context.Context, run *model.ChatRun, status string) errors.Error
+
+	// TakeRunByUUID 按对外 UUID 查询 run,不存在返回 ErrorTypeRecordNotFound
+	TakeRunByUUID(ctx context.Context, uid uuid.UUID) (*model.ChatRun, errors.Error)
+
+	// SaveFinalReplyOnce 幂等落库最终回复消息:以 (run_id, reply_id) 为幂等键,
+	// 已存在则直接返回已有行(不比较内容);消息 RunID/ReplyID 由实现回填;
+	// 未知 run 返回 ErrorTypeRecordNotFound
+	SaveFinalReplyOnce(ctx context.Context, runUUID uuid.UUID, replyID string, message *model.ChatMessage) (*model.ChatMessage, errors.Error)
 }

@@ -226,3 +226,102 @@ func (d *ChatDao) DeleteMember(ctx context.Context, sessionID uint, agentID uint
 	}
 	return nil
 }
+
+// chatRunStatusTransitions 编排 run 状态机合法迁移表(设计 §10):
+// pending 仅出 running;interrupted 可回 running(续跑);三终态无出路
+var chatRunStatusTransitions = map[string]map[string]bool{
+	model.ChatRunStatusPending:     {model.ChatRunStatusRunning: true},
+	model.ChatRunStatusRunning:     {model.ChatRunStatusCompleted: true, model.ChatRunStatusFailed: true, model.ChatRunStatusInterrupted: true, model.ChatRunStatusCancelled: true},
+	model.ChatRunStatusInterrupted: {model.ChatRunStatusRunning: true},
+	model.ChatRunStatusCompleted:   {},
+	model.ChatRunStatusFailed:      {},
+	model.ChatRunStatusCancelled:   {},
+}
+
+// CreateRun 写入编排 run 初始行(status=pending)
+func (d *ChatDao) CreateRun(ctx context.Context, run *model.ChatRun) errors.Error {
+	if err := GetDB().WithContext(ctx).Create(run).Error; err != nil {
+		return errors.ErrorServerInternalError("dao.chat.create_run")
+	}
+	return nil
+}
+
+// UpdateRunStatus 按状态机校验并迁移 run 状态;合法则落库并回填 run.Status;
+// 同状态重复更新为幂等 no-op;非法迁移返回 ErrorInvalidRequest 且不落库
+func (d *ChatDao) UpdateRunStatus(ctx context.Context, run *model.ChatRun, status string) errors.Error {
+	if run.Status == status {
+		return nil
+	}
+	if !chatRunStatusTransitions[run.Status][status] {
+		return errors.ErrorInvalidRequest("dao.chat.update_run_status")
+	}
+	if err := GetDB().WithContext(ctx).Model(&model.ChatRun{}).
+		Where("id = ?", run.ID).
+		Update("status", status).Error; err != nil {
+		return errors.ErrorServerInternalError("dao.chat.update_run_status")
+	}
+	run.Status = status
+	return nil
+}
+
+// TakeRunByUUID 按对外 UUID 查询 run,不存在返回 ErrorTypeRecordNotFound
+func (d *ChatDao) TakeRunByUUID(ctx context.Context, uid uuid.UUID) (*model.ChatRun, errors.Error) {
+	var run model.ChatRun
+	if err := GetDB().WithContext(ctx).
+		Where("uuid = ?", uid.String()).
+		First(&run).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, errors.ErrorRecordNotFound("dao.chat.take_run_by_uuid")
+		}
+		return nil, errors.ErrorServerInternalError("dao.chat.take_run_by_uuid")
+	}
+	return &run, nil
+}
+
+// SaveFinalReplyOnce 幂等落库最终回复消息:以 (run_id, reply_id) 为幂等键。
+// 先查已有行(重试投递直接返回,不比较内容);并发窗口内的唯一冲突经复查收敛,
+// 不依赖 gorm TranslateError(跨 PG/MySQL/SQLite 行为一致)
+func (d *ChatDao) SaveFinalReplyOnce(ctx context.Context, runUUID uuid.UUID, replyID string, message *model.ChatMessage) (*model.ChatMessage, errors.Error) {
+	code := "dao.chat.save_final_reply_once"
+	var existing model.ChatMessage
+	err := GetDB().WithContext(ctx).
+		Where("run_id = ? AND reply_id = ?", runUUID.String(), replyID).
+		First(&existing).Error
+	if err == nil {
+		return &existing, nil
+	}
+	if err != gorm.ErrRecordNotFound {
+		return nil, errors.ErrorServerInternalError(code)
+	}
+
+	var run model.ChatRun
+	if err := GetDB().WithContext(ctx).
+		Where("uuid = ?", runUUID.String()).
+		First(&run).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, errors.ErrorRecordNotFound(code)
+		}
+		return nil, errors.ErrorServerInternalError(code)
+	}
+
+	message.RunID = &run.UUID
+	message.ReplyID = &replyID
+	if err := GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(message).Error; err != nil {
+			return err
+		}
+		return tx.Model(&model.ChatSession{}).
+			Where("id = ?", message.SessionID).
+			Update("updated_at", time.Now()).Error
+	}); err != nil {
+		// 并发下另一请求已落同一 (run_id, reply_id) → 返回已有行
+		var winner model.ChatMessage
+		if qerr := GetDB().WithContext(ctx).
+			Where("run_id = ? AND reply_id = ?", runUUID.String(), replyID).
+			First(&winner).Error; qerr == nil {
+			return &winner, nil
+		}
+		return nil, errors.ErrorServerInternalError(code)
+	}
+	return message, nil
+}

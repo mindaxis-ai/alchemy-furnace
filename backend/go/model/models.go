@@ -135,6 +135,17 @@ const (
 	SessionTypeGroup  = "group"  // 群聊(多道人)
 )
 
+// 编排 run 状态机（设计 §10）：pending 仅出 running；interrupted 可回 running（续跑）；
+// completed/failed/cancelled 为终态无出路；同状态重复更新=幂等 no-op
+const (
+	ChatRunStatusPending     = "pending"
+	ChatRunStatusRunning     = "running"
+	ChatRunStatusCompleted   = "completed"
+	ChatRunStatusFailed      = "failed"
+	ChatRunStatusInterrupted = "interrupted"
+	ChatRunStatusCancelled   = "cancelled"
+)
+
 // ChatSession 对话会话模型，对应 chat_sessions 表
 // single: 用户与某个道人;group: 用户与多个道人(成员见 session_members,AgentID 为 NULL)
 type ChatSession struct {
@@ -164,15 +175,17 @@ func (ChatSession) TableName() string {
 // role: user(用户提问) / assistant(道人回答) / system(系统提示)
 // sources 字段已废弃，保留 JSONB 列以兼容历史数据，不再写入新数据
 type ChatMessage struct {
-	ID        uint      `json:"id" gorm:"primaryKey;autoIncrement;comment:消息唯一标识"`
-	UUID      uuid.UUID `json:"-" gorm:"type:uuid;uniqueIndex;comment:对外标识"`
-	SessionID uint      `json:"session_id" gorm:"not null;index;comment:所属会话ID"`
-	Role      string    `json:"role" gorm:"size:20;not null;comment:角色: user/assistant/system"`
-	Content   string    `json:"content" gorm:"type:text;not null;comment:消息内容"`
-	Sources   JSONMap   `json:"sources,omitempty" gorm:"serializer:json;comment:废弃: 原RAG引用来源(JSONB格式)"`
-	AgentID   *uint     `json:"agent_id" gorm:"index;comment:发言道人ID(群聊);NULL=用户或系统通知"`
-	Mentions  JSONMap   `json:"mentions,omitempty" gorm:"serializer:json;comment:@提及:{\"agents\":[agent_uuid…],\"user\":bool}"`
-	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
+	ID        uint       `json:"id" gorm:"primaryKey;autoIncrement;comment:消息唯一标识"`
+	UUID      uuid.UUID  `json:"-" gorm:"type:uuid;uniqueIndex;comment:对外标识"`
+	SessionID uint       `json:"session_id" gorm:"not null;index;comment:所属会话ID"`
+	Role      string     `json:"role" gorm:"size:20;not null;comment:角色: user/assistant/system"`
+	Content   string     `json:"content" gorm:"type:text;not null;comment:消息内容"`
+	Sources   JSONMap    `json:"sources,omitempty" gorm:"serializer:json;comment:废弃: 原RAG引用来源(JSONB格式)"`
+	AgentID   *uint      `json:"agent_id" gorm:"index;comment:发言道人ID(群聊);NULL=用户或系统通知"`
+	Mentions  JSONMap    `json:"mentions,omitempty" gorm:"serializer:json;comment:@提及:{\"agents\":[agent_uuid…],\"user\":bool}"`
+	RunID     *uuid.UUID `json:"run_id,omitempty" gorm:"type:uuid;index:idx_chat_run_reply,unique;comment:编排run标识(仅编排产物;NULL=普通消息不受唯一约束)"`
+	ReplyID   *string    `json:"reply_id,omitempty" gorm:"size:64;index:idx_chat_run_reply,unique;comment:最终回复幂等键(与run_id组成复合唯一)"`
+	CreatedAt time.Time  `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 
 	// 关联关系
 	Session ChatSession `json:"session,omitempty" gorm:"foreignKey:SessionID;references:ID;constraint:OnDelete:CASCADE;"`
@@ -182,6 +195,30 @@ type ChatMessage struct {
 // TableName 指定表名
 func (ChatMessage) TableName() string {
 	return "chat_messages"
+}
+
+// ---------- 编排 run ----------
+
+// ChatRun 编排运行记录模型，对应 chat_runs 表
+// 记录一次 LangGraph 编排 run 的持久化身份（Task 9）：
+// Go 侧以 (run UUID, reply ID) 对最终回复消息做幂等落库，重试投递不产生重复行
+type ChatRun struct {
+	ID            uint      `json:"id" gorm:"primaryKey;autoIncrement;comment:运行记录唯一标识"`
+	UUID          uuid.UUID `json:"-" gorm:"type:uuid;uniqueIndex;comment:对外 run 标识"`
+	SessionID     uint      `json:"session_id" gorm:"not null;index;comment:所属会话ID"`
+	UserMessageID uint      `json:"user_message_id" gorm:"not null;default:0;comment:触发本轮的用户消息ID(0=尚未落库)`
+	Status        string    `json:"status" gorm:"size:20;not null;default:pending;index;comment:状态: pending/running/completed/failed/interrupted/cancelled"`
+	Engine        string    `json:"engine" gorm:"size:20;not null;default:langgraph;comment:编排引擎标识"`
+	CreatedAt     time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
+	UpdatedAt     time.Time `json:"updated_at" gorm:"autoUpdateTime;comment:更新时间"`
+
+	// 关联关系
+	Session ChatSession `json:"session,omitempty" gorm:"foreignKey:SessionID;references:ID;constraint:OnDelete:CASCADE;"`
+}
+
+// TableName 指定表名
+func (ChatRun) TableName() string {
+	return "chat_runs"
 }
 
 // ---------- 群聊成员 ----------
