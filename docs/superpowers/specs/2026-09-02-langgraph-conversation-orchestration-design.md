@@ -1,6 +1,6 @@
 # LangGraph Conversation Orchestration Migration Design
 
-**Status:** Approved in conversation; awaiting written-spec review
+**Status:** Approved for implementation
 
 **Date:** 2026-09-02
 
@@ -203,9 +203,12 @@ assistant_delta
 assistant_final
 memory_proposed
 run_interrupted
+permission_required
 run_completed
 run_error
 ```
+
+`permission_required` reserves a typed human-approval interrupt for future tools. The first migration phase defines and transports the event but does not execute any real tool.
 
 Go maps these to the existing public SSE format. Streaming deltas are display-only. Go persists an assistant message only after `assistant_final`, keyed by `run_id` and `reply_id`. It validates and persists `memory_proposed` separately.
 
