@@ -478,25 +478,73 @@ func TestSSEChatEmptyModelOutputReturnsError(t *testing.T) {
 	}
 }
 
-// TurnPlan.MaxTokens 必须经 GenerationOptions 传向引擎
-func TestSSEChatPassesMaxTokensFromPlan(t *testing.T) {
+// TurnPlan 预算必须完整经 GenerationOptions 传向引擎(spec §7.2):token 与句数缺一不可
+// 倾诉=vent 2句/128tok;事实问题=factual 3句/256tok;明确详细=deep_dive 8句/896tok
+func TestSSEChatPassesBudgetFromPlan(t *testing.T) {
+	cases := []struct {
+		name         string
+		message      string
+		maxTokens    int
+		maxSentences int
+	}{
+		{"倾诉", "我今天好烦，只想吐槽一下", 128, 2},
+		{"事实问题", "什么是金丹", 256, 3},
+		{"明确详细", "详细讲讲这个方案", 896, 8},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sessionUID := uuid.New()
+			agentID := uint(7)
+			stub := &sseChatStub{
+				session: &model.ChatSession{
+					ID: 3, UUID: sessionUID, Type: model.SessionTypeSingle, AgentID: &agentID,
+					Agent: model.DaoAgent{ID: agentID, UUID: uuid.New(), Status: "active", ModelName: "test-model"},
+				},
+				streamFull: "ok",
+			}
+
+			w := performSSEChatBody(t, stub, sessionUID, `{"content":"`+tc.message+`"}`)
+			if !strings.Contains(w.Body.String(), "event: done") {
+				t.Fatalf("SSE body = %q, want done", w.Body.String())
+			}
+			if stub.lastOptions.MaxTokens != tc.maxTokens || stub.lastOptions.MaxSentences != tc.maxSentences {
+				t.Fatalf("lastOptions = %+v, want MaxTokens=%d MaxSentences=%d", stub.lastOptions, tc.maxTokens, tc.maxSentences)
+			}
+		})
+	}
+}
+
+// Global Constraint:用户最新消息只以 user role 出现在消息历史,system 不得复制用户原文
+func TestSSEChatDoesNotCopyUserText(t *testing.T) {
 	sessionUID := uuid.New()
 	agentID := uint(7)
+	content := "我今天好烦，只想吐槽一下"
 	stub := &sseChatStub{
 		session: &model.ChatSession{
 			ID: 3, UUID: sessionUID, Type: model.SessionTypeSingle, AgentID: &agentID,
 			Agent: model.DaoAgent{ID: agentID, UUID: uuid.New(), Status: "active", ModelName: "test-model"},
 		},
-		streamFull: "详细回答",
+		recentMessages: []*model.ChatMessage{{SessionID: 3, Role: "user", Content: content}},
+		streamFull:     "先歇会",
 	}
 
-	w := performSSEChatBody(t, stub, sessionUID, `{"content":"详细讲讲这个方案"}`)
+	w := performSSEChatBody(t, stub, sessionUID, `{"content":"`+content+`"}`)
 	if !strings.Contains(w.Body.String(), "event: done") {
 		t.Fatalf("SSE body = %q, want done", w.Body.String())
 	}
-	// 单聊详细:TurnPlan.MaxTokens = deep_dive 档 896(不再提升到 2048)
-	if stub.lastOptions.MaxTokens != 896 {
-		t.Fatalf("lastOptions = %+v, want MaxTokens=896", stub.lastOptions)
+	if len(stub.lastMessages) == 0 {
+		t.Fatal("引擎未被调用")
+	}
+	last := stub.lastMessages[len(stub.lastMessages)-1]
+	if last["role"] != "user" || last["content"] != content {
+		t.Fatalf("消息历史最后一项 = %+v, want 原始 user 消息 %q", last, content)
+	}
+	sys := stub.lastMessages[0]
+	if sys["role"] != "system" {
+		t.Fatalf("首条 = %+v, want system", sys)
+	}
+	if strings.Contains(sys["content"], content) {
+		t.Fatalf("system 复制了用户原文: %q", sys["content"])
 	}
 }
 

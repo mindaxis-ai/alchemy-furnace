@@ -184,7 +184,7 @@ func (cls *Chat) SSEChat(c *gin.Context) {
 	chunkCh := make(chan string)
 	resultCh := make(chan streamResult, 1)
 	go func() {
-		full, canceled, streamErr := cls.chat.StreamChat(ctx, messages, creds, service.GenerationOptions{MaxTokens: plan.MaxTokens}, func(chunk string) {
+		full, canceled, streamErr := cls.chat.StreamChat(ctx, messages, creds, service.GenerationOptions{MaxTokens: plan.MaxTokens, MaxSentences: plan.MaxSentences}, func(chunk string) {
 			select {
 			case chunkCh <- chunk:
 			case <-ctx.Done():
