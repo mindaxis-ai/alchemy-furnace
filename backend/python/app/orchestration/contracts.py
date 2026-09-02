@@ -239,10 +239,14 @@ class RuntimeContext:
 
     事件出口把节点产物以 OrchestrationEvent 发到边界（内部 SSE 或测试收集器）；
     事件负载须经 events.redact_event_payload 脱敏后再投递（由发射方保证）。
+    default_model_ref 是会话「当前配置的默认模型」——群聊 Supervisor 导演用它
+    （非人设、非群成员）；None 表示无默认模型，GroupChatGraph 不得调用 Supervisor，
+    直接走确定性回退。
     """
 
     model_gateway: "ModelGateway"
     credentials_by_model_ref: Mapping[str, ModelCredential]
+    default_model_ref: "ModelRef | None" = None
     debug_enabled: bool = False
     event_sink: Callable[["OrchestrationEvent"], None] | None = None
     cancellation: "CancellationToken" = field(default=None)  # type: ignore[assignment]

@@ -76,6 +76,18 @@ def test_runtime_context_event_sink_defaults_to_none():
     assert "api_key" not in ctx.__dict__ or ctx.credentials_by_model_ref["a1"].api_key
 
 
+def test_runtime_context_default_model_ref_defaults_to_none_and_accepts_ref():
+    bare = RuntimeContext(model_gateway=None, credentials_by_model_ref={})
+    assert bare.default_model_ref is None
+
+    ctx = RuntimeContext(
+        model_gateway=None,
+        credentials_by_model_ref={},
+        default_model_ref=ModelRef(provider_type="deepseek", name="deepseek-reasoner"),
+    )
+    assert ctx.default_model_ref.name == "deepseek-reasoner"
+
+
 def test_graph_transient_channels_are_json_safe_and_secret_free():
     state: ConversationState = ConversationState(
         run_id="run-1",
