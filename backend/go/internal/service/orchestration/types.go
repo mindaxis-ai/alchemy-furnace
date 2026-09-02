@@ -19,7 +19,10 @@ type Request struct {
 	Agents       []Agent               `json:"agent_snapshots"`
 	Memories     []Memory              `json:"memory_snapshots"`
 	Credentials  map[string]Credential `json:"credentials"`
-	DebugEnabled bool                  `json:"debug_enabled"`
+	// DefaultModelRef 当前默认模型引用:群聊 Supervisor(非人格模型)的解析来源;
+	// nil=无可用默认模型,Python 图走确定性回退(主成员发言)。
+	DefaultModelRef *ModelRef `json:"default_model_ref,omitempty"`
+	DebugEnabled    bool      `json:"debug_enabled"`
 }
 
 // UserTurn 本轮用户输入(镜像 UserTurnSnapshot)。
@@ -68,4 +71,13 @@ type Event struct {
 	Name    string
 	RunID   string
 	Payload json.RawMessage
+}
+
+// StateProjection 返回剔除凭据后的请求投影,供调试/日志场景。
+// 投影可安全 JSON 化:不含 API key 与 base_url 等运行期凭据;
+// 请求本体的任何 log/format 均被禁止,调试一律走本投影。
+func (r Request) StateProjection() Request {
+	proj := r
+	proj.Credentials = map[string]Credential{}
+	return proj
 }

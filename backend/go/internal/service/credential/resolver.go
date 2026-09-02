@@ -142,5 +142,11 @@ func (r *ModelResolver) resolveModelCredentials(ctx context.Context, m *model.LL
 	if err != nil {
 		return nil, err
 	}
-	return &ModelCredentials{Model: m.Name, BaseURL: p.BaseURL, APIKey: apiKey}, nil
+	return &ModelCredentials{
+		Model:        m.Name,
+		BaseURL:      p.BaseURL,
+		APIKey:       apiKey,
+		ProviderName: p.Name,
+		ProviderType: p.Protocol,
+	}, nil
 }
