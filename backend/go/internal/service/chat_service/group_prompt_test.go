@@ -61,11 +61,18 @@ func TestBuildGroupSystemPrompt(t *testing.T) {
 	p := BuildGroupSystemPrompt("你是太上老君,清静无为。", "太上老君", 25, []string{"太上老君", "孙悟空"}, false)
 	for _, want := range []string{
 		"你是太上老君", "【群聊规则】", "太上老君、孙悟空", "表达欲:25/100", "[PASS]", "@用户",
-		// 长度与排版(新增)
-		"长度与排版", "闲聊/打趣 ≤ 3 句", "必须用换行分段", "单段不超过 3 行",
 	} {
 		if !strings.Contains(p, want) {
 			t.Fatalf("补丁缺少 %q:\n%s", want, p)
+		}
+	}
+	// Task 8:文体规则已上移导演层(basePrompt),群聊补丁只留协议
+	for _, forbidden := range []string{
+		"认真话题 ≤ 8 句", "必须用换行分段", "单段不超过", "越高越健谈",
+		"正面回答原则", "AI 道人", "与你的表达欲反相关",
+	} {
+		if strings.Contains(p, forbidden) {
+			t.Fatalf("unexpected %q:\n%s", forbidden, p)
 		}
 	}
 	if strings.Contains(p, "禁止[PASS]") {
@@ -83,7 +90,7 @@ func TestBuildGroupSystemPromptPreservesDynamicBase(t *testing.T) {
 	p := BuildGroupSystemPrompt(base, "太上老君", 25, []string{"太上老君", "孙悟空"}, false)
 	for _, want := range []string{
 		"【本轮激活丹性】", "【本地记忆事实】", "【用户当轮要求】", "【回答与群聊预算】",
-		"【群聊规则】", "成员:", "[PASS]", "@用户", "长度与排版",
+		"【群聊规则】", "成员:", "[PASS]", "@用户",
 	} {
 		if !strings.Contains(p, want) {
 			t.Fatalf("输出缺少 %q:\n%s", want, p)

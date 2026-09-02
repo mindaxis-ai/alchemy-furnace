@@ -110,17 +110,10 @@ func BuildGroupSystemPrompt(basePrompt string, selfName string, proactivity int,
 	b.WriteString("- 历史消息格式:【发言者】内容;你只代表「" + selfName + "」发言\n")
 	b.WriteString("- 严禁在回复开头加【" + selfName + "】或[name]等自报家门;发言者标识由系统展示\n")
 	b.WriteString("- 想@其他成员直接写 @名字(不加【】),如 @秃秃 / @" + UserLabel + "\n")
-	fmt.Fprintf(&b, "- 你的表达欲:%d/100(越高越健谈)。结合性格和对话题的兴趣决定说不说\n", proactivity)
+	fmt.Fprintf(&b, "- 你的表达欲:%d/100,只决定是否主动参与。结合性格和对话题的兴趣决定说不说\n", proactivity)
 	b.WriteString("- 无话可说时只输出:[PASS]\n")
 	b.WriteString("- 可 @成员名 邀请对方接话(被@的道人下一轮必回应),也可 @" + UserLabel + " 向用户提问\n")
 	b.WriteString("- 不要复述他人整段话,不要代替其他成员发言\n")
-	b.WriteString("- **正面回答原则**:用户问直接问题(姓名/年龄/性别/事实/技能)时,**直接给答案**,不要用禅机/修仙话术回避\n")
-	b.WriteString("- 不确定就说「不知道」/「这个我不太确定」,不要装懂;实在不懂就用轻松口吻说「贫道/小道/在下修为尚浅,这个真看不出」\n")
-	b.WriteString("- 可以承认自己是 AI 道人(无需硬装真人),但保持人设语气;不要每句都「修真」,像真人聊天一样\n")
-	b.WriteString("- **长度与排版**(强约束):闲聊/打趣 ≤ 3 句;认真话题 ≤ 8 句;严禁长篇大论\n")
-	b.WriteString("- 必须用换行分段:超过 2 句就用空行隔开(让用户扫读舒服),不要一坨文字\n")
-	b.WriteString("- 单段不超过 3 行,每段聚焦一个点;列表/步骤用 - 开头\n")
-	b.WriteString("- 与你的表达欲反相关:表达欲越低,默认越短(PASS 或一句)\n")
 	if mustAnswer {
 		b.WriteString("- 你被@了,本轮必须回应(禁止[PASS])\n")
 	}
