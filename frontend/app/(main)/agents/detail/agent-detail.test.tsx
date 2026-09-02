@@ -494,6 +494,22 @@ describe('AgentDetailPage', () => {
       expect(avatar).toHaveValue('https://example.com/laojun.png')
     })
 
+    it('表达欲说明使用导演层新语义:不暗示越健谈越写长文', async () => {
+      setDetailState({ agent: baseAgent })
+      const user = userEvent.setup()
+      renderPage()
+      await enterEditing(user)
+
+      // 新文案:控制群聊参与/追问意愿,不默认写长文,用户当轮要求优先
+      expect(
+        screen.getByText(
+          '控制道人在群聊中主动参与和自然追问的意愿，不会让单条回复默认变成长文；用户当轮要求始终优先。',
+        ),
+      ).toBeInTheDocument()
+      // 旧「越高越健谈」文案不得残留
+      expect(screen.queryByText(/越高越健谈/)).not.toBeInTheDocument()
+    })
+
     it('保存成功:基础资料 → 重读能力 → 全量编排 → GET 回读,顺序与新编排正确', async () => {
       setDetailState({ agent: baseAgent })
       const fresh: AgentDetail = { ...baseAgent, name: '改名老君', updated_at: '2026-08-23T00:00:00Z' }

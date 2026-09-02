@@ -863,7 +863,7 @@
   "agentDetail": {
     "editor": {
       "proactivity": "主动性",
-      "proactivityHint": "群聊中的发言欲(0-100,越高越健谈)",
+      "proactivityHint": "控制道人在群聊中主动参与和自然追问的意愿，不会让单条回复默认变成长文；用户当轮要求始终优先。",
       "consume": {
         "open": "服用金丹",
         "title": "为「{name}」服用金丹",

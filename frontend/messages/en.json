@@ -863,7 +863,7 @@
   "agentDetail": {
     "editor": {
       "proactivity": "Proactivity",
-      "proactivityHint": "Willingness to speak in group chats (0-100)",
+      "proactivityHint": "Controls willingness to join group conversations and ask a natural follow-up. It does not make each reply longer by default, and the user's current request always takes priority.",
       "consume": {
         "open": "Consume pill",
         "title": "Consume a pill for {name}",
