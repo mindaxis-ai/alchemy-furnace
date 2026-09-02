@@ -901,3 +901,128 @@ func TestGroupTurnMemoryDisabledMemberExcluded(t *testing.T) {
 		t.Fatalf("仍应 turn_done: %v", log.events)
 	}
 }
+
+// ==================== Task 12:导演预算接入群聊 ====================
+// 5 名道人的群聊 fixture:全高表达欲(确定性 volunteer),便于锁定调用次数边界
+func newGroupSvcFive(t *testing.T, replies []string) (*Chat, *fakeChatDao, *scriptEngine, *model.ChatSession) {
+	t.Helper()
+	engine := newScriptEngine(replies)
+	t.Cleanup(engine.server.Close)
+	names := []struct {
+		id   uint
+		name string
+		pro  int
+	}{
+		{1, "太上老君", 100},
+		{2, "孙悟空", 100},
+		{3, "二郎神", 100},
+		{4, "哪吒", 100},
+		{5, "土地公", 100},
+	}
+	agents := &fakeAgentDao{agents: map[string]*model.DaoAgent{}}
+	agentByID := map[uint]*model.DaoAgent{}
+	uids := make([]uuid.UUID, 0, len(names))
+	for _, n := range names {
+		u := uuid.New()
+		a := &model.DaoAgent{ID: n.id, UUID: u, Name: n.name, Avatar: "/avatar.png", Status: "active", Proactivity: n.pro, ModelName: "test-model"}
+		agents.agents[u.String()] = a
+		agentByID[n.id] = a
+		uids = append(uids, u)
+	}
+	chats := &fakeChatDao{sessions: map[string]*model.ChatSession{}, members: map[uint][]*model.SessionMember{}, agentByID: agentByID}
+	svc := New(chats, agents, fakePattern{}, availableCredentialResolver("test-model"), engine.server.URL)
+	s, err := svc.CreateGroupSession(context.Background(), uids, "")
+	if err != nil {
+		t.Fatalf("建群: %v", err)
+	}
+	return svc, chats, engine, s
+}
+
+// Task 12:普通闲聊(casual 1 名额/1 轮)——5 名道人最多 1 次模型调用、1 轮
+func TestGroupDirectorCasualSingleCallOneRound(t *testing.T) {
+	svc, _, engine, s := newGroupSvcFive(t, []string{"就聊聊天气吧。今天确实不错。"})
+	ev := &eventLog{}
+	svc.RunGroupTurn(context.Background(), s.UUID, "今天天气真不错", ev.emit)
+
+	if engine.calls != 1 {
+		t.Fatalf("engine calls = %d, want 1(闲聊 1 名额)", engine.calls)
+	}
+	if countEvent(ev, "speaker_start") != 1 {
+		t.Fatalf("speaker_start = %d, want 1(1 轮 1 人)", countEvent(ev, "speaker_start"))
+	}
+}
+
+// Task 12:情绪倾诉(vent 1 名额/1 轮/2 句)——引擎回放 3 句,句数预算截到 2 句
+func TestGroupDirectorVentAppliesSentenceBudget(t *testing.T) {
+	svc, _, engine, s := newGroupSvcFive(t, []string{"好烦啊。我懂。还有第三句。"})
+	var joined strings.Builder
+	svc.RunGroupTurn(context.Background(), s.UUID, "我今天好烦，只想吐槽一下", func(event string, payload any) {
+		if event != "chunk" {
+			return
+		}
+		data, _ := json.Marshal(payload)
+		var got struct {
+			Content string `json:"content"`
+		}
+		_ = json.Unmarshal(data, &got)
+		joined.WriteString(got.Content)
+	})
+
+	if engine.calls != 1 {
+		t.Fatalf("engine calls = %d, want 1(倾诉 1 名额)", engine.calls)
+	}
+	if joined.String() != "好烦啊。我懂。" {
+		t.Fatalf("输出 = %q, want 句数预算截断为 %q", joined.String(), "好烦啊。我懂。")
+	}
+}
+
+// Task 12:任务请求(task 2 名额/1 轮)——5 名道人最多 2 次模型调用、1 轮
+func TestGroupDirectorTaskLimitsTwoCallsOneRound(t *testing.T) {
+	svc, _, engine, s := newGroupSvcFive(t, []string{"问题在配置。", "再查一下日志。", "[PASS]"})
+	ev := &eventLog{}
+	svc.RunGroupTurn(context.Background(), s.UUID, "帮我排查构建失败", ev.emit)
+
+	if engine.calls > 2 {
+		t.Fatalf("engine calls = %d, want ≤2(任务 2 名额)", engine.calls)
+	}
+	if n := countEvent(ev, "speaker_start"); n > 2 {
+		t.Fatalf("speaker_start = %d, want ≤2(1 轮)", n)
+	}
+}
+
+// Task 12:明确「大家每人一句」(OneEach 全员/1 句)——每名成员最多 1 次、每次 1 句
+func TestGroupDirectorOneEachEveryMemberOnce(t *testing.T) {
+	svc, _, engine, s := newGroupSvcFive(t, []string{"好。就这。", "行。可以。", "没错。很好。", "可以。没问题。", "不错。就它。"})
+	sentenceCount := map[string]int{} // 按发言人统计句末「。」数
+	var agentIDs []string
+	svc.RunGroupTurn(context.Background(), s.UUID, "大家每人一句", func(event string, payload any) {
+		if event != "chunk" {
+			return
+		}
+		data, _ := json.Marshal(payload)
+		var got struct {
+			AgentID string `json:"agent_id"`
+			Content string `json:"content"`
+		}
+		_ = json.Unmarshal(data, &got)
+		if got.AgentID == "" {
+			return
+		}
+		if _, seen := sentenceCount[got.AgentID]; !seen {
+			agentIDs = append(agentIDs, got.AgentID)
+		}
+		sentenceCount[got.AgentID] += strings.Count(got.Content, "。")
+	})
+
+	if engine.calls != 5 {
+		t.Fatalf("engine calls = %d, want 每人恰好 1 次(5)", engine.calls)
+	}
+	if len(agentIDs) != 5 {
+		t.Fatalf("发言人数 = %d, want 5", len(agentIDs))
+	}
+	for _, id := range agentIDs {
+		if sentenceCount[id] != 1 {
+			t.Fatalf("发言人 %s 输出 %d 句, want 每人一句", id, sentenceCount[id])
+		}
+	}
+}

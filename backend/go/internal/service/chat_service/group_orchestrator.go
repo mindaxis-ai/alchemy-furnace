@@ -463,7 +463,7 @@ func (s *Chat) letAgentSpeak(ctx context.Context, session *model.ChatSession, m 
 			chunkForward(rest)
 		}
 	}
-	fullContent, canceled, streamErr := s.StreamChat(ctx, messages, creds, service.GenerationOptions{MaxTokens: memberPlan.MaxTokens}, func(chunk string) {
+	fullContent, canceled, streamErr := s.StreamChat(ctx, messages, creds, service.GenerationOptions{MaxTokens: memberPlan.MaxTokens, MaxSentences: memberPlan.MaxSentences}, func(chunk string) {
 		if passed {
 			return // 已判沉默,后续内容全部丢弃
 		}
