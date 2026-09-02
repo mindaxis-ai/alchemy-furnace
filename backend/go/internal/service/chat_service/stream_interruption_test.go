@@ -87,3 +87,39 @@ func TestStreamChatPassesMaxTokensToEngine(t *testing.T) {
 		t.Fatalf("MaxTokens=0 不应携带 max_tokens: %s", body)
 	}
 }
+
+// Task 10:句数硬限制——SSE 连续输出三句时只发前两句并正常返回
+// (导演策略完成:非取消、非错误)
+func TestStreamChatStopsAtSentenceBudget(t *testing.T) {
+	engine := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: {\"content\":\"我懂。\"}\n\n")
+		fmt.Fprint(w, "data: {\"content\":\"先歇会。还有第三句。\"}\n\n")
+		fmt.Fprint(w, "data: {\"content\":\"第四句。\"}\n\n")
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	t.Cleanup(engine.Close)
+
+	svc := New(nil, nil, nil, nil, engine.URL)
+	var chunks []string
+	full, canceled, err := svc.StreamChat(
+		context.Background(),
+		[]map[string]string{{"role": "user", "content": "question"}},
+		&credential.ModelCredentials{Model: "test-model", APIKey: "secret"},
+		service.GenerationOptions{MaxTokens: 128, MaxSentences: 2},
+		func(chunk string) { chunks = append(chunks, chunk) },
+	)
+
+	if full != "我懂。先歇会。" {
+		t.Fatalf("full = %q, want 只有前两句", full)
+	}
+	if joined := strings.Join(chunks, ""); joined != full {
+		t.Fatalf("chunks = %q, want 与全文一致 %q", joined, full)
+	}
+	if canceled {
+		t.Fatal("句数预算完成不得标记为用户取消")
+	}
+	if err != nil {
+		t.Fatalf("句数预算完成不得报错: %v", err)
+	}
+}

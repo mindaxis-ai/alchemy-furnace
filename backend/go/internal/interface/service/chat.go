@@ -27,7 +27,8 @@ type ChatReadiness struct {
 
 // GenerationOptions 流式对话的显式生成选项(spec §7.2;禁止可变参数/隐藏默认值)
 type GenerationOptions struct {
-	MaxTokens int
+	MaxTokens    int
+	MaxSentences int // Task 10:句数硬限制(完整句边界停止);<=0 表示不限制
 }
 
 // Chat 对话域业务逻辑接口(会话/消息/SSE 流式对话)

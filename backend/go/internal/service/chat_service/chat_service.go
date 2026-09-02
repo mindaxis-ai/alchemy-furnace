@@ -350,6 +350,12 @@ func (s *Chat) StreamChat(ctx context.Context, messages []map[string]string, cre
 	}
 	defer stream.Close()
 
+	// Task 10:句数硬限制(导演预算);MaxSentences<=0 不限制(透传)
+	var limiter *SentenceLimiter
+	if options.MaxSentences > 0 {
+		limiter = NewSentenceLimiter(options.MaxSentences)
+	}
+
 	var full strings.Builder
 	reader := bufio.NewReader(stream)
 	for {
@@ -376,9 +382,20 @@ func (s *Chat) StreamChat(ctx context.Context, messages []map[string]string, cre
 					return full.String(), false, stderrors.New(chunk.Error)
 				}
 				if chunk.Content != "" {
-					full.WriteString(chunk.Content)
-					if onChunk != nil {
-						onChunk(chunk.Content)
+					// Task 10:句数限制器决定可发出部分与是否达到预算上限
+					emit, stop := chunk.Content, false
+					if limiter != nil {
+						emit, stop = limiter.Push(chunk.Content)
+					}
+					if emit != "" {
+						full.WriteString(emit)
+						if onChunk != nil {
+							onChunk(emit)
+						}
+					}
+					if stop {
+						// 导演策略完成:关闭上游由 defer 负责,正常返回已累积内容(非取消非错误)
+						return full.String(), false, nil
 					}
 				}
 			}
