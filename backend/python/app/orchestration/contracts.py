@@ -19,7 +19,7 @@ from typing import (
     operator,
 )
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 if TYPE_CHECKING:  # 仅类型检查；实际类由 Task 3+ 图模块提供
     from orchestration.model_gateway import ModelGateway
@@ -63,6 +63,8 @@ class MessageSnapshot(BaseModel):
 
 class AgentSnapshot(BaseModel):
     """参与会话的道人（含其模型引用）。"""
+
+    model_config = ConfigDict(protected_namespaces=())  # 允许 model_ref 等字段名
 
     agent_id: str
     name: str
