@@ -120,6 +120,45 @@ func countEvent(l *eventLog, name string) int {
 	return n
 }
 
+func TestGroupPromptDebugEmitsEachSpeakersActualModelRequest(t *testing.T) {
+	svc, _, engine, session := newGroupSvc(t, []string{"俺老孙收到，给出一段完整回答。"})
+	ctx := WithPromptDebug(context.Background(), true)
+	var debugPayloads []service.PromptDebugPayload
+
+	svc.RunGroupTurn(ctx, session.UUID, "@孙悟空 请回答", func(event string, payload any) {
+		if event != "prompt_debug" {
+			return
+		}
+		debugPayloads = append(debugPayloads, payload.(service.PromptDebugPayload))
+	})
+
+	if len(debugPayloads) != 1 {
+		t.Fatalf("prompt_debug events = %d, want 1", len(debugPayloads))
+	}
+	debug := debugPayloads[0]
+	if debug.AgentName != "孙悟空" || debug.Model != "test-model" {
+		t.Fatalf("prompt debug identity = %+v", debug)
+	}
+	if len(engine.streamMessages) != 1 || !equalPromptMessages(debug.Messages, engine.streamMessages[0]) {
+		t.Fatalf("debug messages = %#v, actual engine messages = %#v", debug.Messages, engine.streamMessages)
+	}
+	if debug.Generation.MaxTokens <= 0 || debug.Generation.MaxSentences <= 0 {
+		t.Fatalf("debug generation budget = %+v, want positive limits", debug.Generation)
+	}
+}
+
+func equalPromptMessages(a, b []map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i]["role"] != b[i]["role"] || a[i]["content"] != b[i]["content"] {
+			return false
+		}
+	}
+	return true
+}
+
 func TestInactiveGroupMemberStopsTurnBeforeEngine(t *testing.T) {
 	svc, chats, engine, s := newGroupSvc(t, []string{"engine should not run"})
 	for _, member := range chats.members[s.ID] {

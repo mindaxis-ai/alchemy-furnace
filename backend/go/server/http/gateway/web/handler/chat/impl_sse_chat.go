@@ -26,8 +26,9 @@ import (
 
 // sseChatRequest SSE 流式对话请求体
 type sseChatRequest struct {
-	Content string `json:"content"` // 用户问题
-	Retry   bool   `json:"retry"`   // 重试既有用户消息，不重复落库
+	Content     string `json:"content"`      // 用户问题
+	Retry       bool   `json:"retry"`        // 重试既有用户消息，不重复落库
+	DebugPrompt bool   `json:"debug_prompt"` // 返回本次实际模型输入；默认关闭
 }
 
 // SSEChat 标准 SSE 流式对话(RAW handler,不经 Wrapper,自行写出标准 SSE 事件)
@@ -85,7 +86,7 @@ func (cls *Chat) SSEChat(c *gin.Context) {
 	}
 	// 群聊 Type=group 走专门通道(编排器驱动,带心跳保活)
 	if session.Type == model.SessionTypeGroup {
-		cls.runGroupSSE(c, sessionUID, content, body.Retry)
+		cls.runGroupSSE(c, sessionUID, content, body.Retry, body.DebugPrompt)
 		return
 	}
 	// 群聊 AgentID=nil 走单聊入口视为错误(防御性兜底)
@@ -183,12 +184,18 @@ func (cls *Chat) SSEChat(c *gin.Context) {
 		sseWriteEvent(w, flusher, "done", ssePayload{})
 		return
 	}
+	generationOptions := service.GenerationOptions{MaxTokens: plan.MaxTokens, MaxSentences: plan.MaxSentences}
+	if body.DebugPrompt {
+		sseWriteEvent(w, flusher, "prompt_debug", service.NewPromptDebugPayload(
+			session.Agent.UUID.String(), session.Agent.Name, creds.Model, messages, generationOptions,
+		))
+	}
 
 	// 请求级生命周期: 客户端中断 -> ctx 取消 -> 上游 LLM 流中断
 	chunkCh := make(chan string)
 	resultCh := make(chan streamResult, 1)
 	go func() {
-		full, canceled, streamErr := cls.chat.StreamChat(ctx, messages, creds, service.GenerationOptions{MaxTokens: plan.MaxTokens, MaxSentences: plan.MaxSentences}, func(chunk string) {
+		full, canceled, streamErr := cls.chat.StreamChat(ctx, messages, creds, generationOptions, func(chunk string) {
 			select {
 			case chunkCh <- chunk:
 			case <-ctx.Done():

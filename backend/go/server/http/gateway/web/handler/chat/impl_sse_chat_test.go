@@ -153,6 +153,53 @@ func performSSEChatBody(t *testing.T, stub *sseChatStub, sessionUID uuid.UUID, b
 	return w
 }
 
+func TestSSEChatPromptDebugEmitsActualRequestWithoutCredentials(t *testing.T) {
+	sessionUID := uuid.New()
+	agentID := uint(7)
+	stub := &sseChatStub{
+		session: &model.ChatSession{
+			ID: 3, UUID: sessionUID, Type: model.SessionTypeSingle, AgentID: &agentID,
+			Agent: model.DaoAgent{ID: agentID, UUID: uuid.New(), Name: "Debugger", Status: "active", ModelName: "test-model"},
+		},
+		pattern:        &model.LanguagePattern{SystemPrompt: "STRICT_DEBUG_SYSTEM_PROMPT"},
+		recentMessages: []*model.ChatMessage{{Role: "user", Content: "hello debug"}},
+		streamChunks:   []string{"answer"},
+		streamFull:     "answer",
+	}
+
+	w := performSSEChatBody(t, stub, sessionUID, `{"content":"hello debug","debug_prompt":true}`)
+	body := w.Body.String()
+
+	if !strings.Contains(body, "event: prompt_debug") {
+		t.Fatalf("SSE body = %q, want prompt_debug event", body)
+	}
+	for _, want := range []string{`"agent_name":"Debugger"`, `"model":"test-model"`, "STRICT_DEBUG_SYSTEM_PROMPT", "hello debug", `"generation"`, `"max_tokens"`, `"max_sentences"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("SSE body = %q, want %q", body, want)
+		}
+	}
+	if strings.Contains(body, "must-not-leak") {
+		t.Fatalf("SSE body leaked credentials: %q", body)
+	}
+}
+
+func TestSSEChatPromptDebugIsDisabledByDefault(t *testing.T) {
+	sessionUID := uuid.New()
+	agentID := uint(7)
+	stub := &sseChatStub{
+		session: &model.ChatSession{
+			ID: 3, UUID: sessionUID, Type: model.SessionTypeSingle, AgentID: &agentID,
+			Agent: model.DaoAgent{ID: agentID, UUID: uuid.New(), Status: "active", ModelName: "test-model"},
+		},
+		streamFull: "answer",
+	}
+
+	w := performSSEChat(t, stub, sessionUID)
+	if strings.Contains(w.Body.String(), "event: prompt_debug") {
+		t.Fatalf("SSE body = %q, prompt_debug must be opt-in", w.Body.String())
+	}
+}
+
 func TestSSEChatMissingSessionReturnsStableSafeError(t *testing.T) {
 	sessionUID := uuid.New()
 	stub := &sseChatStub{sessionErr: errors.ErrorRecordNotFound("dao.secret.session_lookup")}

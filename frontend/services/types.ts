@@ -300,6 +300,19 @@ export type UpdateMemoryRequest = Partial<CreateMemoryRequest>
 /** 流终止后的显式恢复协议；none 为安全默认。 */
 export type ChatRecoveryMode = 'none' | 'resend' | 'persisted_retry'
 
+/** 调试模式下仅存在于当前前端消息树中的实际模型输入快照。 */
+export interface PromptDebugPayload {
+  agent_id?: string
+  agent_name?: string
+  agent_avatar?: string
+  model: string
+  messages: Array<{ role: string; content: string }>
+  generation: {
+    max_tokens: number
+    max_sentences: number
+  }
+}
+
 /** 对话会话 */
 /** 群成员 */
 export interface GroupMember {
@@ -363,6 +376,8 @@ export interface ChatMessage {
   agent_avatar?: string
   /** @提及: agents=道人 UUID 数组;user=是否@了用户 */
   mentions?: { agents?: string[]; user?: boolean }
+  /** 不由历史 API 持久化；刷新或切换会话后消失。 */
+  prompt_debug?: PromptDebugPayload
 }
 
 // ========== 请求 ==========

@@ -11,7 +11,8 @@
  * - 请求级生命周期，无长驻连接，无需重连
  */
 import { get, post, put, del, buildApiUrl, authHeaders } from './api'
-import type { ChatSession, ChatMessage, ChatReadiness, ChatRecoveryMode, GroupMember, CreateSessionRequest, PagedList, ListParams } from './types'
+import type { ChatSession, ChatMessage, ChatReadiness, ChatRecoveryMode, GroupMember, CreateSessionRequest, PagedList, ListParams, PromptDebugPayload } from './types'
+export type { PromptDebugPayload } from './types'
 
 /**
  * 获取后端权威的可对话就绪状态(active 道人数 / 通过正式凭证校验的道人名单 / 可创建类型)
@@ -105,6 +106,8 @@ export interface StreamErrorInfo extends Partial<StreamSpeakerInfo> {
 export interface StreamOptions {
   /** 重试最近一次同内容用户消息；服务端不得重复保存用户行。 */
   retry?: boolean
+  /** 请求服务端返回本轮实际发送给模型的 Prompt；默认关闭。 */
+  debugPrompt?: boolean
 }
 
 /** 流式对话回调 */
@@ -121,6 +124,8 @@ export interface StreamHandlers {
   onInterrupted: () => void
   /** 服务端已保存或确认复用用户消息；后续传输中断可安全走 persisted_retry。 */
   onAccepted?: () => void
+  /** 调试模式: 模型调用前收到实际 Prompt 快照。 */
+  onPromptDebug?: (payload: PromptDebugPayload) => void
   /** 群聊: 某道人开始发言(气泡身份头) */
   onSpeakerStart?: (info: StreamSpeakerInfo) => void
   /** 群聊: 某道人发言完毕(已入库) */
@@ -176,7 +181,11 @@ export async function streamChatMessage(
         'Content-Type': 'application/json',
         ...authHeaders(),
       },
-      body: JSON.stringify(options.retry ? { content, retry: true } : { content }),
+      body: JSON.stringify({
+        content,
+        ...(options.retry ? { retry: true } : {}),
+        ...(options.debugPrompt ? { debug_prompt: true } : {}),
+      }),
       signal: controller.signal,
     })
 
@@ -223,6 +232,8 @@ export async function streamChatMessage(
         else report()
       } else if (type === 'accepted') {
         handlers.onAccepted?.()
+      } else if (type === 'prompt_debug') {
+        handlers.onPromptDebug?.(payload as unknown as PromptDebugPayload)
       } else if (type === 'speaker_start') {
         handlers.onSpeakerStart?.(payload as unknown as StreamSpeakerInfo)
       } else if (type === 'speaker_done') {

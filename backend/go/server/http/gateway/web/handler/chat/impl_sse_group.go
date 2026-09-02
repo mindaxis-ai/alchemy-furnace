@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/alchemy-furnace/server/internal/context/contextutil"
+	chatservice "github.com/alchemy-furnace/server/internal/service/chat_service"
 	"github.com/alchemy-furnace/server/server/http/response"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -31,7 +32,7 @@ func (s *sseWriter) ping() {
 }
 
 // runGroupSSE 群聊 SSE 通道:编排器驱动事件流,心跳 goroutine 保活至回合结束
-func (cls *Chat) runGroupSSE(c *gin.Context, sessionUID uuid.UUID, content string, retry bool) {
+func (cls *Chat) runGroupSSE(c *gin.Context, sessionUID uuid.UUID, content string, retry, debugPrompt bool) {
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
 		response.InternalError(c, "当前服务不支持流式响应")
@@ -39,6 +40,7 @@ func (cls *Chat) runGroupSSE(c *gin.Context, sessionUID uuid.UUID, content strin
 	}
 	setSSEHeaders(c)
 	ctx := contextutil.NewContextWithGin(c)
+	ctx = chatservice.WithPromptDebug(ctx, debugPrompt)
 
 	sw := &sseWriter{w: c.Writer, flusher: flusher}
 	done := make(chan struct{})

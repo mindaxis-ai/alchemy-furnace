@@ -135,6 +135,16 @@ describe('recoverable chat history and streaming', () => {
     doubles.listSessions.mockResolvedValue({ list: [singleSession], total: 1 })
     doubles.getSession.mockResolvedValue(singleSession)
     doubles.getMessages.mockResolvedValue({ list: [], total: 0 })
+    const localValues = new Map<string, string>()
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => localValues.get(key) ?? null,
+        setItem: (key: string, value: string) => localValues.set(key, value),
+        removeItem: (key: string) => localValues.delete(key),
+        clear: () => localValues.clear(),
+      },
+    })
     doubles.streamChatMessage.mockImplementation(async (_sessionId: string, _content: string, handlers: StreamHandlers) => {
       handlers.onDone()
     })
@@ -603,6 +613,80 @@ describe('recoverable chat history and streaming', () => {
     expect(screen.getByText('beta reply')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Alpha' }).querySelector('img')).toHaveAttribute('src', 'https://example.com/alpha.png')
     expect(screen.getByRole('button', { name: 'Beta' }).querySelector('img')).toHaveAttribute('src', 'https://example.com/beta.png')
+  })
+
+  it('attaches the actual prompt to its answer when prompt debugging is enabled', async () => {
+    window.localStorage.setItem('alchemy.promptDebug', 'true')
+    doubles.streamChatMessage.mockImplementation(async (
+      _sessionId: string,
+      _content: string,
+      handlers: StreamHandlers,
+      options: { debugPrompt?: boolean },
+    ) => {
+      expect(options.debugPrompt).toBe(true)
+      handlers.onPromptDebug?.({
+        agent_id: 'agent-1',
+        agent_name: 'Agent One',
+        model: 'model-agent-1',
+        messages: [{ role: 'system', content: 'STRICT_DEBUG_SYSTEM_PROMPT' }],
+        generation: { max_tokens: 128, max_sentences: 2 },
+      })
+      handlers.onChunk({ content: 'debuggable answer' })
+      handlers.onDone()
+    })
+    const user = userEvent.setup()
+    renderSession(singleSession.id)
+    const input = await screen.findByRole('textbox')
+
+    await user.type(input, 'inspect this turn')
+    await user.click(screen.getByRole('button', { name: 'input.send' }))
+
+    expect(await screen.findByText('debuggable answer')).toBeInTheDocument()
+    const disclosure = screen.getByText('promptDebugShow')
+    expect(screen.queryByText('STRICT_DEBUG_SYSTEM_PROMPT')).not.toBeInTheDocument()
+    await user.click(disclosure)
+    expect(screen.getByText('STRICT_DEBUG_SYSTEM_PROMPT')).toBeInTheDocument()
+    expect(screen.getByText('model-agent-1')).toBeInTheDocument()
+  })
+
+  it('keeps each group prompt attached to the matching daoist answer', async () => {
+    window.localStorage.setItem('alchemy.promptDebug', 'true')
+    doubles.agents = [activeAgent('agent-a', 'Alpha'), activeAgent('agent-b', 'Beta')]
+    doubles.listSessions.mockResolvedValue({ list: [groupSession], total: 1 })
+    doubles.getSession.mockResolvedValue(groupSession)
+    doubles.streamChatMessage.mockImplementation(async (_sessionId: string, _content: string, handlers: StreamHandlers) => {
+      handlers.onPromptDebug?.({
+        agent_id: 'agent-a', agent_name: 'Alpha', model: 'model-alpha',
+        messages: [{ role: 'system', content: 'ALPHA_SYSTEM_PROMPT' }],
+        generation: { max_tokens: 128, max_sentences: 2 },
+      })
+      handlers.onSpeakerStart?.({ agent_id: 'agent-a', agent_name: 'Alpha' })
+      handlers.onChunk({ agent_id: 'agent-a', agent_name: 'Alpha', content: 'alpha answer' })
+      handlers.onSpeakerDone?.({ agent_id: 'agent-a', agent_name: 'Alpha', message_id: 'message-a' })
+      handlers.onPromptDebug?.({
+        agent_id: 'agent-b', agent_name: 'Beta', model: 'model-beta',
+        messages: [{ role: 'system', content: 'BETA_SYSTEM_PROMPT' }],
+        generation: { max_tokens: 128, max_sentences: 2 },
+      })
+      handlers.onSpeakerStart?.({ agent_id: 'agent-b', agent_name: 'Beta' })
+      handlers.onChunk({ agent_id: 'agent-b', agent_name: 'Beta', content: 'beta answer' })
+      handlers.onSpeakerDone?.({ agent_id: 'agent-b', agent_name: 'Beta', message_id: 'message-b' })
+      handlers.onTurnDone?.({ spoke: 2 })
+    })
+    const user = userEvent.setup()
+    renderSession(groupSession.id)
+    const input = await screen.findByRole('textbox')
+
+    await user.type(input, 'inspect group prompts')
+    await user.click(screen.getByRole('button', { name: 'input.send' }))
+
+    const disclosures = await screen.findAllByText('promptDebugShow')
+    expect(disclosures).toHaveLength(2)
+    await user.click(disclosures[0])
+    expect(screen.getByText('ALPHA_SYSTEM_PROMPT')).toBeInTheDocument()
+    expect(screen.queryByText('BETA_SYSTEM_PROMPT')).not.toBeInTheDocument()
+    await user.click(disclosures[1])
+    expect(screen.getByText('BETA_SYSTEM_PROMPT')).toBeInTheDocument()
   })
 
   it('prefers message.agent_avatar over agent profile and member avatars in group chat', async () => {

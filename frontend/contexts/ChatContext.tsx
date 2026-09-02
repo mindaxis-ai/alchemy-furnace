@@ -11,10 +11,11 @@
  */
 import React, { createContext, useContext, useReducer, useCallback, useRef, useEffect } from 'react'
 import * as chatService from '@/services/chatService'
-import type { StreamChunk, StreamSpeakerInfo } from '@/services/chatService'
+import type { PromptDebugPayload, StreamChunk, StreamSpeakerInfo } from '@/services/chatService'
 import { createStreamDispatcher } from '@/services/streamDispatcher'
 import { notifyDesktop } from '@/services/api'
 import type { ChatSession, ChatMessage, ChatRecoveryMode } from '@/services/types'
+import { getPromptDebugEnabled } from '@/lib/prompt-debug-pref'
 
 /** 对话状态 */
 interface ChatState {
@@ -51,7 +52,7 @@ type ChatAction =
   | { type: 'SET_MESSAGES'; payload: ChatMessage[] }
   | { type: 'ADD_MESSAGE'; payload: ChatMessage }
   | { type: 'CONSUME_RECOVERY'; payload: { messageId: string } }
-  | { type: 'ADD_STREAM_CHUNK'; payload: StreamChunk } // 追加流式输出内容
+  | { type: 'ADD_STREAM_CHUNK'; payload: StreamChunk & { prompt_debug?: PromptDebugPayload } } // 追加流式输出内容
   | { type: 'FINISH_STREAM' }
   | { type: 'FINALIZE_STREAM' }
   | { type: 'STOP_STREAM' } // 流式输出被停止(保留部分内容)
@@ -60,7 +61,7 @@ type ChatAction =
   | { type: 'ADD_ERROR_MESSAGE'; payload: { text: string; recovery: ChatRecoveryMode } }
   /** 回合内系统通知(群聊单道人失败等): 追加系统条,不动 streaming 状态 */
   | { type: 'ADD_SYSTEM_NOTICE'; payload: { text: string; isError: boolean; retryable?: boolean } }
-  | { type: 'SPEAKER_START'; payload: { agent_id: string; agent_name: string; agent_avatar?: string } }
+  | { type: 'SPEAKER_START'; payload: { agent_id: string; agent_name: string; agent_avatar?: string; prompt_debug?: PromptDebugPayload } }
   | { type: 'SPEAKER_DONE'; payload: StreamSpeakerInfo }
   /** 群聊:用服务端真实 message_id 替换本地临时 id，可附 mentions */
   | { type: 'FINALIZE_STREAM_WITH_ID'; payload: StreamSpeakerInfo & { message_id: string; mentions?: import('@/services/types').ChatMessage['mentions'] } }
@@ -169,6 +170,7 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
           agent_id: action.payload.agent_id,
           agent_name: action.payload.agent_name,
           agent_avatar: action.payload.agent_avatar,
+          prompt_debug: action.payload.prompt_debug,
           created_at: new Date().toISOString(),
         })
       }
@@ -235,6 +237,7 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
         agent_id: action.payload.agent_id,
         agent_name: action.payload.agent_name,
         agent_avatar: action.payload.agent_avatar,
+        prompt_debug: action.payload.prompt_debug,
         created_at: new Date().toISOString(),
       })
       return { ...state, messages, currentSpeaker: action.payload }
@@ -645,14 +648,21 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     let activeSpeaker: StreamSpeakerInfo | null = null
     let turnTerminated = false
     let accepted = false
+    let singlePromptDebug: PromptDebugPayload | undefined
+    const groupPromptDebug = new Map<string, PromptDebugPayload>()
     dispatch({ type: 'SET_STREAMING', payload: true })
 
     const chunker = createStreamDispatcher({
       onChunk: (chunk) => {
-        if (isActiveStream()) dispatch({ type: 'ADD_STREAM_CHUNK', payload: chunk })
+        if (!isActiveStream()) return
+        dispatch({ type: 'ADD_STREAM_CHUNK', payload: { ...chunk, prompt_debug: singlePromptDebug } })
+        singlePromptDebug = undefined
       },
       onSpeakerStart: (info) => {
-        if (isActiveStream()) dispatch({ type: 'SPEAKER_START', payload: info })
+        if (!isActiveStream()) return
+        const promptDebug = groupPromptDebug.get(info.agent_id)
+        groupPromptDebug.delete(info.agent_id)
+        dispatch({ type: 'SPEAKER_START', payload: { ...info, prompt_debug: promptDebug } })
       },
       onSpeakerDone: (info) => {
         if (!isActiveStream()) return
@@ -756,6 +766,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       onAccepted: () => {
         if (isActiveStream()) accepted = true
       },
+      onPromptDebug: (payload) => {
+        if (!isActiveStream()) return
+        if (isGroup && payload.agent_id) {
+          groupPromptDebug.set(payload.agent_id, payload)
+        } else {
+          singlePromptDebug = payload
+        }
+      },
       onSpeakerStart: (info) => {
         if (!isActiveStream()) return
         activeSpeaker = info
@@ -792,7 +810,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           dispatch({ type: 'SET_SESSION_TITLE', payload: { sessionId, title } })
         }
       },
-    }, { retry: opts?.retry })
+    }, {
+      retry: opts?.retry,
+      ...(getPromptDebugEnabled() ? { debugPrompt: true } : {}),
+    })
   }, [markSessionMutation])
 
   /** 停止当前流式生成(中断连接,服务端保存部分内容) */

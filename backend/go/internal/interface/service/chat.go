@@ -31,6 +31,29 @@ type GenerationOptions struct {
 	MaxSentences int // Task 10:句数硬限制(完整句边界停止);<=0 表示不限制
 }
 
+// PromptDebugPayload 是仅在用户显式开启调试时通过 SSE 返回的实际模型输入。
+// 凭证与 API 地址不属于模型消息，禁止加入该结构。
+type PromptDebugPayload struct {
+	AgentID    string              `json:"agent_id,omitempty"`
+	AgentName  string              `json:"agent_name,omitempty"`
+	Model      string              `json:"model"`
+	Messages   []map[string]string `json:"messages"`
+	Generation struct {
+		MaxTokens    int `json:"max_tokens"`
+		MaxSentences int `json:"max_sentences"`
+	} `json:"generation"`
+}
+
+// NewPromptDebugPayload 从最终模型请求参数创建安全的调试快照。
+func NewPromptDebugPayload(agentID, agentName, modelName string, messages []map[string]string, options GenerationOptions) PromptDebugPayload {
+	payload := PromptDebugPayload{
+		AgentID: agentID, AgentName: agentName, Model: modelName, Messages: messages,
+	}
+	payload.Generation.MaxTokens = options.MaxTokens
+	payload.Generation.MaxSentences = options.MaxSentences
+	return payload
+}
+
 // Chat 对话域业务逻辑接口(会话/消息/SSE 流式对话)
 // 对外以 UUID 标识会话;内部联结仍用自增 ID。SSE 入口按 session UUID 解析
 type Chat interface {

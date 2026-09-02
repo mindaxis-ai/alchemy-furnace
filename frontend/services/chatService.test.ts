@@ -85,6 +85,49 @@ describe('chat SSE transport boundaries', () => {
     expect(JSON.parse(String(request.body))).toEqual({ content: 'same question', retry: true })
   })
 
+  it('opts into prompt debugging only when requested', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(sseResponse('event: done\ndata: {}\n\n'))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await (streamChatMessage as unknown as (
+      sessionId: string,
+      content: string,
+      handlers: StreamHandlers,
+      options: { debugPrompt: boolean },
+    ) => Promise<void>)('session', 'inspect me', handlers(), { debugPrompt: true })
+
+    const request = fetchMock.mock.calls[0][1] as RequestInit
+    expect(JSON.parse(String(request.body))).toEqual({ content: 'inspect me', debug_prompt: true })
+  })
+
+  it('delivers prompt_debug before the answer chunks', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse([
+      'event: prompt_debug',
+      'data: {"agent_id":"agent-a","agent_name":"Alpha","model":"test-model","messages":[{"role":"system","content":"STRICT_DEBUG_SYSTEM_PROMPT"}],"generation":{"max_tokens":128,"max_sentences":2}}',
+      '',
+      'event: chunk',
+      'data: {"content":"answer"}',
+      '',
+      'event: done',
+      'data: {}',
+      '',
+      '',
+    ].join('\n'))))
+    const onPromptDebug = vi.fn()
+    const onChunk = vi.fn()
+
+    await streamChatMessage('session', 'question', handlers({
+      onChunk,
+      ...({ onPromptDebug } as Record<string, unknown>),
+    } as Partial<StreamHandlers>))
+
+    expect(onPromptDebug).toHaveBeenCalledWith(expect.objectContaining({
+      agent_name: 'Alpha',
+      model: 'test-model',
+    }))
+    expect(onPromptDebug.mock.invocationCallOrder[0]).toBeLessThan(onChunk.mock.invocationCallOrder[0])
+  })
+
   it('acknowledges persisted user state before later stream events', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse([
       'event: accepted',

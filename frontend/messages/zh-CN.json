@@ -89,7 +89,10 @@
       "loadFailed": "诊断状态读取失败",
       "recentFailures": "最近接口失败",
       "noFailures": "暂无接口失败记录",
-      "unknownError": "未知错误"
+      "unknownError": "未知错误",
+      "promptDebugTitle": "Prompt 调试",
+      "promptDebugLabel": "开启 Prompt 调试",
+      "promptDebugDescription": "开启后，每条道人回答下方可展开查看本次实际发送给模型的提示词。仅保存在当前界面，不写入会话历史。"
     },
     "fire": {
       "title": "炉火",
@@ -710,7 +713,11 @@
     "userLabel": "你",
     "assistantLabel": "道人",
     "incomplete": "可能不完整",
-    "stopped": "已停止"
+    "stopped": "已停止",
+    "promptDebugShow": "查看本次 Prompt",
+    "promptDebugHide": "收起本次 Prompt",
+    "promptDebugModel": "模型",
+    "promptDebugBudget": "生成预算"
   },
   "firePanel": {},
   "modelsPanel": {

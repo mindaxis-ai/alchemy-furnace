@@ -15,7 +15,7 @@
  */
 import { useRef, useState, useMemo } from 'react'
 import { useTranslations } from 'next-intl'
-import { TriangleAlert, CircleStop } from 'lucide-react'
+import { TriangleAlert, CircleStop, Code2, ChevronDown } from 'lucide-react'
 import type { ChatMessage as ChatMessageType, Agent } from '@/services/types'
 import { MarkdownRenderer } from '@/components/markdown-renderer'
 import { ProfilePopover } from '@/components/profile-popover'
@@ -40,6 +40,7 @@ export function ChatMessage({ message, streaming = false, members, onRetry }: Ch
 
   // 头像 popover 状态
   const [popoverOpen, setPopoverOpen] = useState(false)
+  const [promptDebugOpen, setPromptDebugOpen] = useState(false)
   const avatarAnchorRef = useRef<HTMLButtonElement>(null)
 
   const isUser = message.role === 'user'
@@ -215,6 +216,37 @@ export function ChatMessage({ message, streaming = false, members, onRetry }: Ch
             <span className="inline-block w-1.5 h-4 rounded-full bg-gold/80 ml-1 align-text-bottom animate-pulse" />
           )}
         </div>
+
+        {!isUser && message.prompt_debug && (
+          <div className="mt-1.5 w-full max-w-[82%] pl-1">
+            <button
+              type="button"
+              aria-expanded={promptDebugOpen}
+              onClick={() => setPromptDebugOpen(open => !open)}
+              className="inline-flex items-center gap-1.5 text-[10px] text-muted-foreground transition-colors hover:text-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60"
+            >
+              <Code2 className="h-3 w-3" />
+              {promptDebugOpen ? t('promptDebugHide') : t('promptDebugShow')}
+              <ChevronDown className={`h-3 w-3 transition-transform ${promptDebugOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {promptDebugOpen && (
+              <div className="mt-2 max-h-96 overflow-auto rounded-xl border border-border/70 bg-muted/50 p-3 text-left text-[11px] leading-relaxed">
+                <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
+                  <span>{t('promptDebugModel')}: <code className="text-foreground">{message.prompt_debug.model}</code></span>
+                  <span>{t('promptDebugBudget')}: <code className="text-foreground">{message.prompt_debug.generation.max_tokens} tokens / {message.prompt_debug.generation.max_sentences} sentences</code></span>
+                </div>
+                <div className="space-y-3">
+                  {message.prompt_debug.messages.map((item, index) => (
+                    <div key={`${item.role}-${index}`}>
+                      <div className="mb-1 font-mono uppercase tracking-wide text-gold">{item.role}</div>
+                      <pre className="whitespace-pre-wrap break-words font-mono text-foreground">{item.content}</pre>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* @提及 chips(群聊道人消息) - 可点击 */}
         {!isUser && message.mentions && (message.mentions.agents?.length || message.mentions.user) && (

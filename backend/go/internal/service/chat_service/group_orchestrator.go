@@ -463,7 +463,13 @@ func (s *Chat) letAgentSpeak(ctx context.Context, session *model.ChatSession, m 
 			chunkForward(rest)
 		}
 	}
-	fullContent, canceled, streamErr := s.StreamChat(ctx, messages, creds, service.GenerationOptions{MaxTokens: memberPlan.MaxTokens, MaxSentences: memberPlan.MaxSentences}, func(chunk string) {
+	generationOptions := service.GenerationOptions{MaxTokens: memberPlan.MaxTokens, MaxSentences: memberPlan.MaxSentences}
+	if promptDebugEnabled(ctx) {
+		emit("prompt_debug", service.NewPromptDebugPayload(
+			m.Agent.UUID.String(), m.Agent.Name, creds.Model, messages, generationOptions,
+		))
+	}
+	fullContent, canceled, streamErr := s.StreamChat(ctx, messages, creds, generationOptions, func(chunk string) {
 		if passed {
 			return // 已判沉默,后续内容全部丢弃
 		}

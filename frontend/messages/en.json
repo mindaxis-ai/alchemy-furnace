@@ -89,7 +89,10 @@
       "loadFailed": "Could not read diagnostic status",
       "recentFailures": "Recent API failures",
       "noFailures": "No recent API failures",
-      "unknownError": "Unknown error"
+      "unknownError": "Unknown error",
+      "promptDebugTitle": "Prompt debugging",
+      "promptDebugLabel": "Enable prompt debugging",
+      "promptDebugDescription": "When enabled, each daoist reply can reveal the exact prompt sent to its model. Debug data stays in the current view and is not saved to chat history."
     },
     "fire": {
       "title": "Furnace",
@@ -710,7 +713,11 @@
     "userLabel": "You",
     "assistantLabel": "Daoist",
     "incomplete": "Possibly incomplete",
-    "stopped": "Stopped"
+    "stopped": "Stopped",
+    "promptDebugShow": "View this prompt",
+    "promptDebugHide": "Hide this prompt",
+    "promptDebugModel": "Model",
+    "promptDebugBudget": "Generation budget"
   },
   "firePanel": {},
   "modelsPanel": {
