@@ -170,6 +170,10 @@ func (cls *Chat) SSEChat(c *gin.Context) {
 		systemPrompt = pattern.SystemPrompt // 防御:profile 缺失时用缓存提示词
 	}
 	messages := []map[string]string{{"role": "system", "content": systemPrompt}}
+	// few-shot:system → 示例对话 → 真实历史(Task 13;最新 user 消息仍须是最后一项)
+	if profile != nil {
+		messages = append(messages, behavior.BuildFewShotMessages(profile, 2, 400)...)
+	}
 	for _, m := range recentMessages {
 		messages = append(messages, map[string]string{"role": m.Role, "content": m.Content})
 	}
