@@ -47,6 +47,17 @@ func (l *SentenceLimiter) Push(chunk string) (emit string, stop bool) {
 	return out, false
 }
 
+// Flush 返回尚未发出的缓冲内容并清空(不计数不截断)。
+// 流结束(正常/中断/取消)时调用,保证无句末内容不丢失。
+func (l *SentenceLimiter) Flush() string {
+	if len(l.buffer) == 0 {
+		return ""
+	}
+	out := string(l.buffer)
+	l.buffer = l.buffer[:0]
+	return out
+}
+
 // sentenceEndAt 判断 rune 序列中下标 i 处是否为完整句末。
 func sentenceEndAt(runes []rune, i int) bool {
 	switch r := runes[i]; r {

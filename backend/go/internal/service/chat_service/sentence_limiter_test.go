@@ -55,3 +55,20 @@ func TestSentenceLimiter(t *testing.T) {
 		t.Fatalf("负数也应不限制: emit=%q stop=%v", emit, stop)
 	}
 }
+
+// 流结束时 Flush 返回未完成缓冲内容并清空:无句末内容不得丢失(「好的」等短回复)
+func TestSentenceLimiterFlush(t *testing.T) {
+	l := NewSentenceLimiter(1)
+	if emit, stop := l.Push("你好"); emit != "" || stop {
+		t.Fatalf("无句末应缓存: emit=%q stop=%v", emit, stop)
+	}
+	if tail := l.Flush(); tail != "你好" {
+		t.Fatalf("Flush = %q, want 你好", tail)
+	}
+	if tail := l.Flush(); tail != "" {
+		t.Fatalf("第二次 Flush = %q, want 空", tail)
+	}
+	if tail := NewSentenceLimiter(0).Flush(); tail != "" {
+		t.Fatalf("空缓冲 Flush = %q, want 空", tail)
+	}
+}

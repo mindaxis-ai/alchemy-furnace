@@ -362,6 +362,7 @@ func (s *Chat) StreamChat(ctx context.Context, messages []map[string]string, cre
 		line, readErr := reader.ReadBytes('\n')
 		if ctx.Err() != nil {
 			// 收到停止指令: 返回已累积内容
+			flushSentenceBuffer(limiter, &full, onChunk)
 			return full.String(), true, nil
 		}
 
@@ -369,6 +370,7 @@ func (s *Chat) StreamChat(ctx context.Context, messages []map[string]string, cre
 		if strings.HasPrefix(text, "data: ") {
 			data := strings.TrimPrefix(text, "data: ")
 			if data == "[DONE]" {
+				flushSentenceBuffer(limiter, &full, onChunk)
 				return full.String(), false, nil
 			}
 
@@ -379,6 +381,7 @@ func (s *Chat) StreamChat(ctx context.Context, messages []map[string]string, cre
 			}
 			if jerr := json.Unmarshal([]byte(data), &chunk); jerr == nil {
 				if chunk.Error != "" {
+					flushSentenceBuffer(limiter, &full, onChunk)
 					return full.String(), false, stderrors.New(chunk.Error)
 				}
 				if chunk.Content != "" {
@@ -403,13 +406,30 @@ func (s *Chat) StreamChat(ctx context.Context, messages []map[string]string, cre
 
 		if readErr != nil {
 			if readErr == io.EOF {
+				flushSentenceBuffer(limiter, &full, onChunk)
 				return full.String(), false, &StreamInterruptedError{}
 			}
 			if ctx.Err() != nil || stderrors.Is(readErr, context.Canceled) {
+				flushSentenceBuffer(limiter, &full, onChunk)
 				return full.String(), true, nil
 			}
 			zap.L().Warn("[炼丹炉] SSE 流读取异常", zap.Error(readErr))
+			flushSentenceBuffer(limiter, &full, onChunk)
 			return full.String(), false, &StreamInterruptedError{}
+		}
+	}
+}
+
+// flushSentenceBuffer 流结束/中断时把限制器缓冲的未完成内容发出,
+// 保证无句末内容(「好的」等)在导演预算下不丢失;limiter 为 nil 时零行为变化。
+func flushSentenceBuffer(limiter *SentenceLimiter, full *strings.Builder, onChunk func(string)) {
+	if limiter == nil {
+		return
+	}
+	if tail := limiter.Flush(); tail != "" {
+		full.WriteString(tail)
+		if onChunk != nil {
+			onChunk(tail)
 		}
 	}
 }

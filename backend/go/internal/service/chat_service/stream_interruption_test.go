@@ -123,3 +123,31 @@ func TestStreamChatStopsAtSentenceBudget(t *testing.T) {
 		t.Fatalf("句数预算完成不得报错: %v", err)
 	}
 }
+
+// Task 12 回归:流结束(正常)时限制器缓冲的未完成内容必须发出——
+// 无句末标点的回复(「好的」等)在导演预算下不得丢失
+func TestStreamChatFlushesTrailingBufferAtStreamEnd(t *testing.T) {
+	engine := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: {\"content\":\"好的\"}\n\n")
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	t.Cleanup(engine.Close)
+
+	svc := New(nil, nil, nil, nil, engine.URL)
+	var chunks []string
+	full, canceled, err := svc.StreamChat(
+		context.Background(),
+		[]map[string]string{{"role": "user", "content": "question"}},
+		&credential.ModelCredentials{Model: "test-model", APIKey: "secret"},
+		service.GenerationOptions{MaxTokens: 128, MaxSentences: 2},
+		func(chunk string) { chunks = append(chunks, chunk) },
+	)
+
+	if full != "好的" || strings.Join(chunks, "") != full {
+		t.Fatalf("full = %q, chunks = %q, want 无句末内容在流结束时完整返回", full, chunks)
+	}
+	if canceled || err != nil {
+		t.Fatalf("canceled=%v err=%v, want 正常结束", canceled, err)
+	}
+}
