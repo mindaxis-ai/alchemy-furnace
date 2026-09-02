@@ -12,8 +12,10 @@ from dataclasses import dataclass, field
 from typing import (
     TYPE_CHECKING,
     Annotated,
+    Callable,
     Literal,
     Mapping,
+    NotRequired,
     TypedDict,
     cast,
     operator,
@@ -22,6 +24,7 @@ from typing import (
 from pydantic import BaseModel, ConfigDict
 
 if TYPE_CHECKING:  # 仅类型检查；实际类由 Task 3+ 图模块提供
+    from orchestration.events import OrchestrationEvent
     from orchestration.model_gateway import ModelGateway
     from orchestration.runtime import CancellationToken
 
@@ -168,6 +171,17 @@ class ConversationState(TypedDict):
     pending_agent_ids: list[str]
     replies: Annotated[list[AgentReply], operator.add]
     memory_proposals: Annotated[list[MemoryProposal], operator.add]
+
+    # ---- DaoistGraph 运行期瞬时通道（NotRequired；不进线格式，Go 不感知）----
+    # 节点间中间产物：已筛选记忆、编译好的 prompt 消息、重试计数、待校验回复，
+    # 以及 validate_reply 的重试裁决（条件边的唯一依据，避免节点/路由谓词漂移）。
+    # 全部保持普通 dict/list/bool 形态——可 JSON 序列化进检查点、永不携带凭据。
+    selected_memories: NotRequired[list[dict]]
+    prompt_messages: NotRequired[list[dict]]
+    validation_retries: NotRequired[int]
+    draft_reply: NotRequired[dict]
+    retry_pending: NotRequired[bool]
+
     outcome: RunOutcome | None
 
 
@@ -221,9 +235,14 @@ class OrchestrationRequest(BaseModel):
 
 @dataclass(frozen=True)
 class RuntimeContext:
-    """图节点运行期依赖：模型网关、按模型 ref 的凭据、调试开关与取消信号。"""
+    """图节点运行期依赖：模型网关、按模型 ref 的凭据、调试开关、事件出口与取消信号。
+
+    事件出口把节点产物以 OrchestrationEvent 发到边界（内部 SSE 或测试收集器）；
+    事件负载须经 events.redact_event_payload 脱敏后再投递（由发射方保证）。
+    """
 
     model_gateway: "ModelGateway"
     credentials_by_model_ref: Mapping[str, ModelCredential]
     debug_enabled: bool = False
+    event_sink: Callable[["OrchestrationEvent"], None] | None = None
     cancellation: "CancellationToken" = field(default=None)  # type: ignore[assignment]
