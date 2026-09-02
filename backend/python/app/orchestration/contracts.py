@@ -89,16 +89,37 @@ DirectiveKind = Literal[
 
 
 class Directive(BaseModel):
-    """确定性指令分类结果。kind 为 open 时由 Supervisor 规划发言计划。"""
+    """确定性指令分类结果。kind 为 open 时由 Supervisor 规划发言计划。
+
+    all_members 标记 @全体 等全量地址；mentioned_agent_ids 为显式 @ 命中
+    （按 agents 传入顺序去重保序）。
+    """
 
     kind: DirectiveKind
     mentioned_agent_ids: list[str] = []
+    all_members: bool = False
+
+
+class SpeakingPlanItem(BaseModel):
+    """计划中的一条发言任务。
+
+    ordinal 仅报数任务携带（有序成员序号 1 起）；task 为该发言人的机械
+    约束文本（可空 = 常规回应）。机械约束高于人设/记忆/闲聊风格。
+    """
+
+    agent_id: str
+    ordinal: int | None = None
+    task: str | None = None
 
 
 class SpeakingPlan(BaseModel):
-    """Supervisor 或确定性路由产出的发言计划：发言人顺序 + 收敛理由。"""
+    """确定性路由或 Supervisor 产出的发言计划：有序条目 + 是否需要 Supervisor。
 
-    agent_ids: list[str]
+    requires_supervisor 供调度方区分计划来源；为 False 时节点不得再调模型改写。
+    """
+
+    items: list[SpeakingPlanItem] = []
+    requires_supervisor: bool = False
     reason: str | None = None
 
 
