@@ -14,6 +14,10 @@ type Chat interface {
 	// TakeSessionByUUID 按对外 UUID 查询会话(预加载道人),不存在返回 ErrorTypeRecordNotFound
 	TakeSessionByUUID(ctx context.Context, uid uuid.UUID) (*model.ChatSession, errors.Error)
 
+	// TakeSessionByID 按内部 ID 查询会话(预加载道人),供 run.SessionID 反查(续跑入口);
+	// 不存在返回 ErrorTypeRecordNotFound
+	TakeSessionByID(ctx context.Context, id uint) (*model.ChatSession, errors.Error)
+
 	// FindSessions 分页查询会话列表(agentID>0 时按道人过滤),按更新时间倒序
 	FindSessions(ctx context.Context, agentID uint, page int, size int) (int64, []*model.ChatSession, errors.Error)
 

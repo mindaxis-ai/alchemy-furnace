@@ -133,6 +133,7 @@ func Register(r *gin.Engine, isDesktop bool, guards ...gin.HandlerFunc) error {
 		chatGroup.POST("/sessions/:uuid/members", router.Wrapper(chatHandler.AddMembers))
 		chatGroup.DELETE("/sessions/:uuid/members/:agent_uuid", router.Wrapper(chatHandler.RemoveMember))
 		chatGroup.POST("/sse/:uuid", chatHandler.SSEChat) // RAW: 自行写出标准 SSE 事件(单/群分流)
+		chatGroup.POST("/runs/:run_id/resume", chatHandler.ResumeRunSSE) // RAW: 续跑 interrupted run(Task 14)
 	}
 
 	// 试丹(临时组合「基础性格 + 金丹」预览,无需创建道人)

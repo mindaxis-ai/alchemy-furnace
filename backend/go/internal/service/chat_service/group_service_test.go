@@ -258,11 +258,22 @@ func (f *fakeChatDao) UpdateRunStatus(ctx context.Context, run *model.ChatRun, s
 func (f *fakeChatDao) TakeRunByUUID(ctx context.Context, uid uuid.UUID) (*model.ChatRun, errors.Error) {
 	for _, r := range f.runs {
 		if r.UUID == uid {
-			cp := *r
-			return &cp, nil
+			// 返回存储指针:续跑经 UpdateRunStatus 的状态迁移须透传到 f.runs
+			// (GORM 真实现按 id 更新行并回填,指针语义与之对齐)
+			return r, nil
 		}
 	}
 	return nil, errors.ErrorRecordNotFound("test.fake.take_run")
+}
+
+func (f *fakeChatDao) TakeSessionByID(ctx context.Context, id uint) (*model.ChatSession, errors.Error) {
+	for _, s := range f.sessions {
+		if s.ID == id {
+			cp := *s
+			return &cp, nil
+		}
+	}
+	return nil, errors.ErrorRecordNotFound("test.fake.take_session_by_id")
 }
 func (f *fakeChatDao) SaveFinalReplyOnce(ctx context.Context, runUUID uuid.UUID, replyID string, message *model.ChatMessage) (*model.ChatMessage, errors.Error) {
 	for _, m := range f.messages {

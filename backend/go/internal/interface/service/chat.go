@@ -131,6 +131,10 @@ type Chat interface {
 	// 持久化语义:只落 assistant_final(幂等),取消/中断不保留部分回复。
 	RunConversation(ctx context.Context, cmd ConversationCommand, emit func(event string, payload any))
 
+	// RunConversationResume 续跑 interrupted run(Task 14):按 run 定位会话,以同一事件契约
+	// 消费 Python Resume 流;不落用户消息、不新建 run、不发 accepted。
+	RunConversationResume(ctx context.Context, runUID uuid.UUID, emit func(event string, payload any))
+
 	// RunGroupTurn 群聊回合编排:落用户消息→≤3轮逐道人发言→自动命名→turn_done
 	// emit 由 handler 提供(带锁 + 心跳)
 	RunGroupTurn(ctx context.Context, sessionUID uuid.UUID, content string, emit func(event string, payload any))

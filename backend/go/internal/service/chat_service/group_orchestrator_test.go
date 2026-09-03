@@ -1507,3 +1507,157 @@ func TestLangGraphGroupFirstTurnTitlesAndDistillsMemory(t *testing.T) {
 		t.Fatalf("events = %v, want title 先于 turn_done", result.Events)
 	}
 }
+
+// ---- Task 14:群聊公共事件 run_id 与群聊续跑(设计 §10/§11)----
+
+// rawGroupFixture 直连锚点群 fixture(不经 runGroupFixture 包装),供 run_id/续跑测试取 dao 观测。
+func rawGroupFixture(t *testing.T, server *httptest.Server) (*Chat, *fakeChatDao, *groupMemory, *model.ChatSession) {
+	t.Helper()
+	svc, chats, mem, session := newLangGraphGroupFixture(t)
+	svc.engineBaseURL = engineendpoint.Static(server.URL)
+	return svc, chats, mem, session
+}
+
+// assertGroupRunID 校验某事件全部载荷携带指定 run_id。
+func assertGroupRunID(t *testing.T, rec *turnEventRecorder, event, runID string) {
+	t.Helper()
+	if len(rec.data[event]) == 0 {
+		t.Fatalf("缺少 %s 事件, events = %v", event, rec.events)
+	}
+	for _, raw := range rec.data[event] {
+		var p struct {
+			RunID string `json:"run_id"`
+		}
+		_ = json.Unmarshal([]byte(raw), &p)
+		if p.RunID != runID {
+			t.Fatalf("%s run_id = %q, want %q", event, p.RunID, runID)
+		}
+	}
+}
+
+// TestLangGraphGroupCarriesRunIDOnControlEvents speaker_start/speaker_done/turn_done
+// 携带 run_id;chunk 不携带(高频增量省带宽)。
+func TestLangGraphGroupCarriesRunIDOnControlEvents(t *testing.T) {
+	paths := []string{}
+	server := newGroupOrchestrationServer(t, &paths, groupRollCallScript(t))
+	svc, chats, _, session := rawGroupFixture(t, server)
+
+	rec := newTurnEventRecorder()
+	svc.RunConversation(context.Background(), service.ConversationCommand{SessionUID: session.UUID, Content: "@全体成员 全体都有！报数！"}, rec.emit)
+
+	if len(chats.runs) != 1 {
+		t.Fatalf("runs = %d, want 1", len(chats.runs))
+	}
+	runID := chats.runs[0].UUID.String()
+	for _, event := range []string{"speaker_start", "speaker_done", "turn_done"} {
+		assertGroupRunID(t, rec, event, runID)
+	}
+	for _, raw := range rec.data["chunk"] {
+		var p struct {
+			RunID string `json:"run_id"`
+		}
+		_ = json.Unmarshal([]byte(raw), &p)
+		if p.RunID != "" {
+			t.Fatalf("chunk 携带 run_id = %q, want 空(高频增量省带宽)", p.RunID)
+		}
+	}
+}
+
+// TestLangGraphGroupStoppedCarriesRunID 中断收尾 stopped 携带 run_id(前端由此提供继续按钮)。
+func TestLangGraphGroupStoppedCarriesRunID(t *testing.T) {
+	stream := []turnEvent{
+		{"speaker_started", `{"agent_id":"` + langGraphGroupAgentIDs[0] + `"}`},
+		{"assistant_delta", `{"agent_id":"` + langGraphGroupAgentIDs[0] + `","text":"一"}`},
+		{"run_interrupted", `{}`},
+	}
+	paths := []string{}
+	server := newGroupOrchestrationServer(t, &paths, stream)
+	svc, chats, _, session := rawGroupFixture(t, server)
+
+	rec := newTurnEventRecorder()
+	svc.RunConversation(context.Background(), service.ConversationCommand{SessionUID: session.UUID, Content: "@全体成员 全体都有！报数！"}, rec.emit)
+
+	if len(chats.runs) != 1 || chats.runs[0].Status != model.ChatRunStatusInterrupted {
+		t.Fatalf("run = %d 个, want interrupted", len(chats.runs))
+	}
+	assertGroupRunID(t, rec, "stopped", chats.runs[0].UUID.String())
+}
+
+// TestResumeGroupInterruptedRunReplaysSpeakersWithoutNewRun 群聊续跑:不落新用户消息、
+// 不新建 run、不发 accepted;发言事件携带原 run_id;蒸馏按 resume 流内终稿落账。
+func TestResumeGroupInterruptedRunReplaysSpeakersWithoutNewRun(t *testing.T) {
+	agentID := func(i int) string { return langGraphGroupAgentIDs[i] }
+	firstStream := []turnEvent{
+		{"speaker_started", `{"agent_id":"` + agentID(0) + `"}`},
+		{"assistant_delta", `{"agent_id":"` + agentID(0) + `","text":"只出现一半"}`},
+		{"run_interrupted", `{}`},
+	}
+	paths := []string{}
+	firstServer := newGroupOrchestrationServer(t, &paths, firstStream)
+	svc, chats, mem, session := rawGroupFixture(t, firstServer)
+
+	rec := newTurnEventRecorder()
+	svc.RunConversation(context.Background(), service.ConversationCommand{SessionUID: session.UUID, Content: "@全体成员 报数"}, rec.emit)
+	if len(chats.runs) != 1 || chats.runs[0].Status != model.ChatRunStatusInterrupted {
+		t.Fatalf("首轮 run = %d 个, want interrupted", len(chats.runs))
+	}
+	runID := chats.runs[0].UUID
+	userCount := 0
+	for _, m := range chats.messages {
+		if m.Role == "user" {
+			userCount++
+		}
+	}
+	if userCount != 1 {
+		t.Fatalf("首轮用户消息 = %d, want 1", userCount)
+	}
+
+	resumeStream := []turnEvent{
+		{"speaker_started", `{"agent_id":"` + agentID(0) + `"}`},
+		{"assistant_final", `{"agent_id":"` + agentID(0) + `","reply_id":"r-1","text":"一"}`},
+		{"speaker_started", `{"agent_id":"` + agentID(1) + `"}`},
+		{"assistant_final", `{"agent_id":"` + agentID(1) + `","reply_id":"r-2","text":"二"}`},
+		{"run_completed", `{}`},
+	}
+	resumeServer := newGroupOrchestrationServer(t, &paths, resumeStream)
+	svc.engineBaseURL = engineendpoint.Static(resumeServer.URL)
+	rec2 := newTurnEventRecorder()
+	svc.RunConversationResume(context.Background(), runID, rec2.emit)
+
+	for _, e := range rec2.events {
+		if e == "accepted" {
+			t.Fatalf("resume 不应发 accepted, events = %v", rec2.events)
+		}
+	}
+	assertGroupRunID(t, rec2, "speaker_start", runID.String())
+	assertGroupRunID(t, rec2, "speaker_done", runID.String())
+	assertGroupRunID(t, rec2, "turn_done", runID.String())
+	var done GroupTurnDonePayload
+	_ = json.Unmarshal([]byte(rec2.data["turn_done"][0]), &done)
+	if done.Spoke != 2 || done.Reason != "answered" {
+		t.Fatalf("turn_done = %+v, want spoke=2 answered", done)
+	}
+	// 不重发用户消息、不新建 run、状态推进 completed
+	userCount = 0
+	for _, m := range chats.messages {
+		if m.Role == "user" {
+			userCount++
+		}
+	}
+	if userCount != 1 || len(chats.runs) != 1 || chats.runs[0].Status != model.ChatRunStatusCompleted {
+		t.Fatalf("续跑后 user/run/status = %d/%d/%q, want 1/1/completed", userCount, len(chats.runs), chats.runs[len(chats.runs)-1].Status)
+	}
+	// 两位发言者落库;张/李记忆开启 → 蒸馏 2 条
+	saved := 0
+	for _, m := range chats.messages {
+		if m.Role == "assistant" {
+			saved++
+		}
+	}
+	if saved != 2 {
+		t.Fatalf("落库 assistant = %d, want 2", saved)
+	}
+	if len(mem.distillCalls) != 1 || len(mem.distillCalls[0].Targets) != 2 {
+		t.Fatalf("蒸馏 = %d 组, want 1 组 2 目标(张/李记忆开启)", len(mem.distillCalls))
+	}
+}

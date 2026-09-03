@@ -54,6 +54,9 @@ type sseChatStub struct {
 
 	groupTurnCalls int
 	lastGroupRetry bool
+
+	resumeCalls      int
+	lastResumeRunUID uuid.UUID
 }
 
 // P3 记忆挂载:检索委托 + 蒸馏入队(handler 经 service.Chat 接口调用)
@@ -968,5 +971,54 @@ func TestSSEGroupLangGraphDelegatesToRunConversation(t *testing.T) {
 	cmd := stub.lastCommand
 	if cmd.SessionUID != sessionUID || cmd.Content != "报数" || !cmd.Retry || !cmd.DebugPrompt {
 		t.Fatalf("command = %+v, want 完整透传", cmd)
+	}
+}
+
+// ---- Task 14:resume 端点委托(RAW SSE POST /chat/runs/:run_id/resume)----
+
+// RunConversationResume 覆写:记录 run UUID 并透传两枚事件验证 handler 透传。
+func (s *sseChatStub) RunConversationResume(_ context.Context, runUID uuid.UUID, emit func(string, any)) {
+	s.resumeCalls++
+	s.lastResumeRunUID = runUID
+	emit("chunk", chatservice.ConversationEventPayload{Content: "续"})
+	emit("done", chatservice.ConversationEventPayload{})
+}
+
+// performSSEResume 直接以 gin 测试上下文调用 RAW resume 端点。
+func performSSEResume(t *testing.T, stub *sseChatStub, runID string) *httptest.ResponseRecorder {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/v1/chat/runs/"+runID+"/resume", nil)
+	c.Params = gin.Params{{Key: "run_id", Value: runID}}
+	New(stub).ResumeRunSSE(c)
+	return w
+}
+
+// TestSSEResumeRunDelegatesToService resume 端点解析 run_id 并全权委托服务层,事件原样透传。
+func TestSSEResumeRunDelegatesToService(t *testing.T) {
+	runUID := uuid.New()
+	stub := &sseChatStub{}
+	w := performSSEResume(t, stub, runUID.String())
+
+	if stub.resumeCalls != 1 || stub.lastResumeRunUID != runUID {
+		t.Fatalf("RunConversationResume calls/runUID = %d/%s, want 1/%s", stub.resumeCalls, stub.lastResumeRunUID, runUID)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "event: chunk") || !strings.Contains(body, "event: done") {
+		t.Fatalf("SSE body = %q, want emit 透传 chunk/done", body)
+	}
+}
+
+// TestSSEResumeRunInvalidUUIDRejected 非法 run_id 400,不触达服务层。
+func TestSSEResumeRunInvalidUUIDRejected(t *testing.T) {
+	stub := &sseChatStub{}
+	w := performSSEResume(t, stub, "not-a-uuid")
+	if w.Code != 400 {
+		t.Fatalf("code = %d, want 400", w.Code)
+	}
+	if stub.resumeCalls != 0 {
+		t.Fatalf("resume calls = %d, want 0", stub.resumeCalls)
 	}
 }

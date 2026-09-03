@@ -370,3 +370,225 @@ func TestLangGraphSingleEmptyFinalErrorsWithPersistedRetry(t *testing.T) {
 		t.Fatalf("run status = %q, want failed", result.RunStatus)
 	}
 }
+
+// ---- Task 14:公共事件 run_id 与 RunConversationResume(设计 §10/§11)----
+
+// rawSingleFixture 直连 fixture(不经 runLangGraphSingle 包装),供 run_id/续跑测试取 dao 观测。
+func rawSingleFixture(t *testing.T, server *httptest.Server) (*Chat, *fakeChatDao, *model.ChatSession) {
+	t.Helper()
+	svc, chats, _, session := newTurnFixture(t)
+	svc.engineBaseURL = engineendpoint.Static(server.URL)
+	return svc, chats, session
+}
+
+// singleUserCount 统计落库用户消息数(续跑不得新增)。
+func singleUserCount(chats *fakeChatDao) int {
+	n := 0
+	for _, m := range chats.messages {
+		if m.Role == "user" {
+			n++
+		}
+	}
+	return n
+}
+
+// TestLangGraphSingleCarriesRunIDOnControlEvents accepted/done 携带 run_id,
+// chunk 不携带(高频增量省带宽);run 在 accepted 之前已建行。
+func TestLangGraphSingleCarriesRunIDOnControlEvents(t *testing.T) {
+	server := newGroupOrchestrationServer(t, &[]string{}, []turnEvent{
+		{"assistant_delta", `{"text":"山"}`},
+		{"assistant_final", `{"reply_id":"final-1","text":"山不在高"}`},
+		{"run_completed", `{}`},
+	})
+	defer server.Close()
+	svc, chats, session := rawSingleFixture(t, server)
+	session.Title = "已有标题" // 命名短路:聚焦 run_id 断言,不引入补全调用
+
+	rec := newTurnEventRecorder()
+	svc.RunConversation(context.Background(), service.ConversationCommand{SessionUID: session.UUID, Content: "请回答"}, rec.emit)
+
+	if len(chats.runs) != 1 {
+		t.Fatalf("runs = %d, want 1", len(chats.runs))
+	}
+	runID := chats.runs[0].UUID.String()
+	if len(rec.data["accepted"]) != 1 {
+		t.Fatalf("accepted events = %d, want 1", len(rec.data["accepted"]))
+	}
+	var accepted ConversationEventPayload
+	_ = json.Unmarshal([]byte(rec.data["accepted"][0]), &accepted)
+	if accepted.RunID != runID {
+		t.Fatalf("accepted run_id = %q, want %q", accepted.RunID, runID)
+	}
+	for _, raw := range rec.data["chunk"] {
+		var chunk struct {
+			RunID string `json:"run_id"`
+		}
+		_ = json.Unmarshal([]byte(raw), &chunk)
+		if chunk.RunID != "" {
+			t.Fatalf("chunk 携带 run_id = %q, want 空(高频增量省带宽)", chunk.RunID)
+		}
+	}
+	if len(rec.data["done"]) != 1 {
+		t.Fatalf("done events = %d, want 1", len(rec.data["done"]))
+	}
+	var done ConversationEventPayload
+	_ = json.Unmarshal([]byte(rec.data["done"][0]), &done)
+	if done.RunID != runID {
+		t.Fatalf("done run_id = %q, want %q", done.RunID, runID)
+	}
+}
+
+// TestResumeSingleInterruptedRunReplaysWithoutNewUserMessage 续跑锚点(计划 Task 14
+// "resumes the interrupted run without resending a new user message"):不落新用户消息、
+// 不新建 run、不发 accepted;run 状态机 interrupted→running→completed;增量不落库。
+func TestResumeSingleInterruptedRunReplaysWithoutNewUserMessage(t *testing.T) {
+	paths := []string{}
+	interruptedServer := newGroupOrchestrationServer(t, &paths, []turnEvent{
+		{"assistant_delta", `{"text":"只出现一半"}`},
+		{"run_interrupted", `{}`},
+	})
+	svc, chats, session := rawSingleFixture(t, interruptedServer)
+	rec := newTurnEventRecorder()
+	svc.RunConversation(context.Background(), service.ConversationCommand{SessionUID: session.UUID, Content: "请回答"}, rec.emit)
+	if len(chats.runs) != 1 || chats.runs[0].Status != model.ChatRunStatusInterrupted {
+		t.Fatalf("首轮 run 状态 = %v/%q, want 1 个 interrupted run", len(chats.runs), func() string {
+			if len(chats.runs) == 1 {
+				return chats.runs[0].Status
+			}
+			return ""
+		}())
+	}
+	runID := chats.runs[0].UUID
+	if n := singleUserCount(chats); n != 1 {
+		t.Fatalf("首轮用户消息数 = %d, want 1", n)
+	}
+
+	resumeServer := newGroupOrchestrationServer(t, &paths, []turnEvent{
+		{"assistant_delta", `{"text":"续写"}`},
+		{"assistant_final", `{"reply_id":"final-1","text":"续写完成"}`},
+		{"run_completed", `{}`},
+	})
+	svc.engineBaseURL = engineendpoint.Static(resumeServer.URL)
+	session.Title = "已有标题" // 命名短路:续跑收尾零补全调用
+	rec2 := newTurnEventRecorder()
+	svc.RunConversationResume(context.Background(), runID, rec2.emit)
+
+	for _, e := range rec2.events {
+		if e == "accepted" {
+			t.Fatalf("resume 不应发 accepted, events = %v", rec2.events)
+		}
+	}
+	if got := strings.Join(rec2.contents("chunk"), "|"); got != "续写" {
+		t.Fatalf("resume chunks = %q, want 续写", got)
+	}
+	if len(rec2.data["done"]) != 1 {
+		t.Fatalf("resume events = %v, want 恰一个 done 收尾", rec2.events)
+	}
+	var done ConversationEventPayload
+	_ = json.Unmarshal([]byte(rec2.data["done"][0]), &done)
+	if done.RunID != runID.String() {
+		t.Fatalf("resume done run_id = %q, want %q", done.RunID, runID)
+	}
+	if n := singleUserCount(chats); n != 1 {
+		t.Fatalf("续跑后用户消息数 = %d, want 仍为 1(不重发)", n)
+	}
+	if len(chats.runs) != 1 {
+		t.Fatalf("续跑后 run 数 = %d, want 仍为 1(不新建)", len(chats.runs))
+	}
+	if chats.runs[0].Status != model.ChatRunStatusCompleted {
+		t.Fatalf("续跑后 run 状态 = %q, want completed", chats.runs[0].Status)
+	}
+	saved := 0
+	for _, m := range chats.messages {
+		if m.Role == "assistant" {
+			saved++
+			if m.Content != "续写完成" {
+				t.Fatalf("落库回复 = %q, want 续写完成(首轮增量不落库)", m.Content)
+			}
+		}
+	}
+	if saved != 1 {
+		t.Fatalf("落库 assistant 数 = %d, want 1", saved)
+	}
+}
+
+// TestResumeRejectsCompletedRun 终态 run 不可续:单 error(run_not_resumable),零引擎调用。
+func TestResumeRejectsCompletedRun(t *testing.T) {
+	paths := []string{}
+	server := newGroupOrchestrationServer(t, &paths, []turnEvent{
+		{"assistant_final", `{"reply_id":"final-1","text":"答"}`},
+		{"run_completed", `{}`},
+	})
+	svc, chats, session := rawSingleFixture(t, server)
+	session.Title = "已有标题"
+	rec := newTurnEventRecorder()
+	svc.RunConversation(context.Background(), service.ConversationCommand{SessionUID: session.UUID, Content: "请回答"}, rec.emit)
+	if chats.runs[0].Status != model.ChatRunStatusCompleted {
+		t.Fatalf("run 状态 = %q, want completed", chats.runs[0].Status)
+	}
+
+	rec2 := newTurnEventRecorder()
+	svc.RunConversationResume(context.Background(), chats.runs[0].UUID, rec2.emit)
+	if len(paths) != 1 { // 仅首轮编排流,resume 未触达引擎
+		t.Fatalf("引擎调用 = %d, want 1(首轮)", len(paths))
+	}
+	if len(rec2.events) != 1 || rec2.events[0] != "error" {
+		t.Fatalf("resume events = %v, want 单 error", rec2.events)
+	}
+	var p ConversationEventPayload
+	_ = json.Unmarshal([]byte(rec2.data["error"][0]), &p)
+	if p.ErrorCode != "service.chat.run_not_resumable" || !p.Terminal {
+		t.Fatalf("error payload = %+v, want run_not_resumable+terminal", p)
+	}
+}
+
+// TestResumeRejectsStaleRun run 对应的用户消息不再是会话最新一条(新消息作废旧 run)即拒绝。
+func TestResumeRejectsStaleRun(t *testing.T) {
+	paths := []string{}
+	server := newGroupOrchestrationServer(t, &paths, []turnEvent{
+		{"run_interrupted", `{}`},
+	})
+	svc, chats, session := rawSingleFixture(t, server)
+	rec := newTurnEventRecorder()
+	svc.RunConversation(context.Background(), service.ConversationCommand{SessionUID: session.UUID, Content: "请回答"}, rec.emit)
+	runID := chats.runs[0].UUID
+
+	if err := chats.SaveMessage(context.Background(), &model.ChatMessage{SessionID: session.ID, Role: "user", Content: "新消息作废旧回合"}); err != nil {
+		t.Fatalf("落新用户消息: %v", err)
+	}
+
+	rec2 := newTurnEventRecorder()
+	svc.RunConversationResume(context.Background(), runID, rec2.emit)
+	if len(paths) != 1 {
+		t.Fatalf("引擎调用 = %d, want 1(首轮)", len(paths))
+	}
+	if len(rec2.events) != 1 || rec2.events[0] != "error" {
+		t.Fatalf("resume events = %v, want 单 error", rec2.events)
+	}
+	var p ConversationEventPayload
+	_ = json.Unmarshal([]byte(rec2.data["error"][0]), &p)
+	if p.ErrorCode != "service.chat.run_not_resumable" || !p.Terminal {
+		t.Fatalf("error payload = %+v, want run_not_resumable+terminal", p)
+	}
+}
+
+// TestResumeUnknownRunErrorsWithoutEngineCall 未知 run:单 error,零引擎调用。
+func TestResumeUnknownRunErrorsWithoutEngineCall(t *testing.T) {
+	paths := []string{}
+	server := newGroupOrchestrationServer(t, &paths, nil)
+	svc, _, _ := rawSingleFixture(t, server)
+
+	rec := newTurnEventRecorder()
+	svc.RunConversationResume(context.Background(), uuid.New(), rec.emit)
+	if len(paths) != 0 {
+		t.Fatalf("引擎调用 = %d, want 0", len(paths))
+	}
+	if len(rec.events) != 1 || rec.events[0] != "error" {
+		t.Fatalf("events = %v, want 单 error", rec.events)
+	}
+	var p ConversationEventPayload
+	_ = json.Unmarshal([]byte(rec.data["error"][0]), &p)
+	if p.ErrorCode != "service.chat.run_not_found" || !p.Terminal {
+		t.Fatalf("error payload = %+v, want run_not_found+terminal", p)
+	}
+}

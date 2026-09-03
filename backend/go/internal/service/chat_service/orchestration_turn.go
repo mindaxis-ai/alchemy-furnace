@@ -33,11 +33,14 @@ func orchestrationEngineSelected() bool {
 }
 
 // ConversationEventPayload LangGraph 路径公共事件载荷(JSON 形状与 handler ssePayload 一致)。
+// RunID 注入经 withRunID(设计 §10/§11):accepted/stopped/done/error 等控制事件携带,
+// 前端以此定位停止/续跑控件;chunk 高频增量不携带(省带宽)。
 type ConversationEventPayload struct {
 	Content   string             `json:"content,omitempty"`
 	ErrorCode string             `json:"error_code,omitempty"`
 	Terminal  bool               `json:"terminal,omitempty"`
 	Recovery  StreamRecoveryMode `json:"recovery,omitempty"`
+	RunID     string             `json:"run_id,omitempty"`
 }
 
 // RunConversation 驱动一轮 LangGraph 单聊:校验→落/复用用户消息→run 生命周期→
@@ -63,13 +66,13 @@ func (s *Chat) RunConversation(ctx context.Context, cmd service.ConversationComm
 }
 
 // runSingleConversation LangGraph 单聊轮:落/复用用户消息→run 生命周期→流式映射→收尾。
+// run 建行前移到 accepted 之前(Task 14,设计 §10):accepted 携带 run_id,前端由此定位停止/续跑控件。
 func (s *Chat) runSingleConversation(ctx context.Context, session *model.ChatSession, cmd service.ConversationCommand, emit func(event string, payload any)) {
 	userMessage, perr := s.persistOrReuseUserMessage(ctx, session, cmd, nil)
 	if perr != nil {
 		emit("error", *perr)
 		return
 	}
-	emit("accepted", struct{}{})
 
 	// run 生命周期:pending → running(UUID 显式生成;ChatRun 无 BeforeCreate 钩子)
 	run := &model.ChatRun{
@@ -79,24 +82,122 @@ func (s *Chat) runSingleConversation(ctx context.Context, session *model.ChatSes
 		Status:        model.ChatRunStatusPending,
 	}
 	if cerr := s.chat.CreateRun(ctx, run); cerr != nil {
+		// 用户消息已落库,仍发 accepted(无 run_id)保持既有恢复语义
+		emit("accepted", ConversationEventPayload{})
 		emit("error", turnUnavailable())
 		return
 	}
+	runEmit := withRunID(emit, run.UUID.String())
 	if rerr := s.chat.UpdateRunStatus(ctx, run, model.ChatRunStatusRunning); rerr != nil {
-		emit("error", turnUnavailable())
+		runEmit("accepted", ConversationEventPayload{})
+		runEmit("error", turnUnavailable())
 		return
 	}
+	runEmit("accepted", ConversationEventPayload{})
 
 	req, berr := s.BuildOrchestrationRequest(ctx, session, userMessage, run)
 	if berr != nil {
 		s.settleRun(ctx, run, model.ChatRunStatusFailed)
-		emit("error", ConversationEventPayload{Content: "道人使用的模型不可用，请更换模型后重试", ErrorCode: "service.chat.model_unavailable", Terminal: true, Recovery: StreamRecoveryPersistedRetry})
+		runEmit("error", ConversationEventPayload{Content: "道人使用的模型不可用，请更换模型后重试", ErrorCode: "service.chat.model_unavailable", Terminal: true, Recovery: StreamRecoveryPersistedRetry})
 		return
 	}
 
-	st := &langGraphTurnState{svc: s, ctx: ctx, session: session, run: run, emit: emit}
+	st := &langGraphTurnState{svc: s, ctx: ctx, session: session, run: run, emit: runEmit}
 	streamErr := orchestration.NewClient(s.engineBaseURL).Stream(ctx, req, st.consume)
-	s.finishLangGraphTurn(ctx, run, cmd, st, streamErr, emit)
+	s.finishLangGraphTurn(ctx, run, cmd, st, streamErr, runEmit)
+}
+
+// withRunID 为公共事件载荷注入 run_id(设计 §10/§11:前端以 run_id 定位停止/续跑控件)。
+// chunk 不注入(高频增量省带宽);非 run 载荷(prompt_debug/title/struct{}{})原样透传。
+func withRunID(emit func(event string, payload any), runID string) func(event string, payload any) {
+	return func(event string, payload any) {
+		if event == "chunk" {
+			emit(event, payload)
+			return
+		}
+		switch p := payload.(type) {
+		case ConversationEventPayload:
+			p.RunID = runID
+			emit(event, p)
+		case GroupSpeakerPayload:
+			p.RunID = runID
+			emit(event, p)
+		case GroupTurnDonePayload:
+			p.RunID = runID
+			emit(event, p)
+		default:
+			emit(event, payload)
+		}
+	}
+}
+
+// RunConversationResume 续跑 interrupted run(Task 14;设计 §10/§11):按 run 定位会话与
+// 用户消息,校验可续状态后以同一事件映射消费 Python Resume 流。不落用户消息、不新建
+// run、不发 accepted——前端调起续跑即已知晓轮次上下文。
+func (s *Chat) RunConversationResume(ctx context.Context, runUID uuid.UUID, emit func(event string, payload any)) {
+	run, rerr := s.chat.TakeRunByUUID(ctx, runUID)
+	if rerr != nil {
+		emit("error", ConversationEventPayload{Content: "续跑回合不存在", ErrorCode: "service.chat.run_not_found", Terminal: true})
+		return
+	}
+	// 可续状态门(设计 §10 状态机):pending/running(断线重连)/interrupted 可续;终态拒绝
+	switch run.Status {
+	case model.ChatRunStatusPending, model.ChatRunStatusRunning, model.ChatRunStatusInterrupted:
+	default:
+		emit("error", ConversationEventPayload{Content: "该回合已结束，无法继续", ErrorCode: "service.chat.run_not_resumable", Terminal: true})
+		return
+	}
+	session, serr := s.chat.TakeSessionByID(ctx, run.SessionID)
+	if serr != nil {
+		emit("error", ConversationEventPayload{Content: "会话不存在或已删除", ErrorCode: "service.chat.session_not_found", Terminal: true})
+		return
+	}
+	// 用户消息定位与过期校验:run 对应的用户消息仍是会话最新一条(新用户消息即作废旧 run)
+	latest, lerr := s.chat.TakeLatestUserMessage(ctx, session.ID)
+	if lerr != nil || latest == nil || latest.ID != run.UserMessageID {
+		emit("error", ConversationEventPayload{Content: "该回合已结束，无法继续", ErrorCode: "service.chat.run_not_resumable", Terminal: true})
+		return
+	}
+	if uerr := s.chat.UpdateRunStatus(ctx, run, model.ChatRunStatusRunning); uerr != nil {
+		emit("error", turnUnavailable())
+		return
+	}
+	runEmit := withRunID(emit, run.UUID.String())
+	// 按会话类型续跑:与首轮共用 consume 映射与收尾语义(设计 §11:不重复已完成发言)
+	switch session.Type {
+	case model.SessionTypeSingle:
+		s.resumeSingleConversation(ctx, session, run, latest.Content, runEmit)
+	case model.SessionTypeGroup:
+		s.resumeGroupConversation(ctx, session, run, latest.Content, runEmit)
+	default:
+		runEmit("error", ConversationEventPayload{Content: "该会话不支持对话通道", ErrorCode: "service.chat.session_not_found", Terminal: true})
+	}
+}
+
+// resumeSingleConversation 单聊续跑:复用首轮 consume/收尾,流来自 Python Resume 端点。
+func (s *Chat) resumeSingleConversation(ctx context.Context, session *model.ChatSession, run *model.ChatRun, userContent string, runEmit func(string, any)) {
+	st := &langGraphTurnState{svc: s, ctx: ctx, session: session, run: run, emit: runEmit}
+	streamErr := orchestration.NewClient(s.engineBaseURL).Resume(ctx, run.UUID.String(), st.consume)
+	cmd := service.ConversationCommand{SessionUID: session.UUID, Content: userContent}
+	s.finishLangGraphTurn(ctx, run, cmd, st, streamErr, runEmit)
+}
+
+// resumeGroupConversation 群聊续跑:参与者/模型表按当前成员重建,流来自 Python Resume 端点。
+func (s *Chat) resumeGroupConversation(ctx context.Context, session *model.ChatSession, run *model.ChatRun, userContent string, runEmit func(string, any)) {
+	members, merr := s.chat.FindMembers(ctx, session.ID)
+	if merr != nil {
+		runEmit("error", GroupSpeakerPayload{Content: "获取群成员失败", ErrorCode: "service.chat.stream_unavailable", Terminal: true, Recovery: StreamRecoveryResend})
+		return
+	}
+	participants, modelByAgent := groupParticipantTables(members)
+	st := &langGraphGroupState{
+		svc: s, ctx: ctx, session: session, run: run, emit: runEmit,
+		participants: participants, members: members, modelByAgent: modelByAgent,
+		userContent: userContent,
+		pending:     map[string]bool{}, proposals: map[string]bool{},
+	}
+	streamErr := orchestration.NewClient(s.engineBaseURL).Resume(ctx, run.UUID.String(), st.consume)
+	s.finishLangGraphGroupTurn(ctx, run, st, streamErr, runEmit)
 }
 
 // turnUnavailable 引擎/存储暂不可用的稳定错误载荷(可换 persisted_retry)。

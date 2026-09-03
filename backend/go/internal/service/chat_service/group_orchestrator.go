@@ -26,6 +26,7 @@ import (
 const passProbeRunes = 16
 
 // GroupSpeakerPayload speaker_start/speaker_done/error 事件数据
+// RunID 经 withRunID 注入(设计 §10/§11),前端以 run_id 续跑群轮;chunk 不携带。
 type GroupSpeakerPayload struct {
 	AgentID     string             `json:"agent_id"`
 	AgentName   string             `json:"agent_name"`
@@ -36,6 +37,7 @@ type GroupSpeakerPayload struct {
 	ErrorCode   string             `json:"error_code,omitempty"`
 	Terminal    bool               `json:"terminal"`
 	Recovery    StreamRecoveryMode `json:"recovery,omitempty"`
+	RunID       string             `json:"run_id,omitempty"`
 }
 
 // GroupTurnDonePayload turn_done 事件数据
@@ -43,6 +45,7 @@ type GroupTurnDonePayload struct {
 	Spoke          int    `json:"spoke"`
 	Reason         string `json:"reason"`
 	FailedSpeakers int    `json:"failed_speakers"`
+	RunID          string `json:"run_id,omitempty"`
 }
 
 // GroupTitlePayload title 事件数据
@@ -630,17 +633,29 @@ func (s *Chat) GenerateSessionTitle(ctx context.Context, sessionUID uuid.UUID, u
 // runGroupConversation LangGraph 群聊轮(Task 13,设计 §7/§10):
 // 参与者元数据→用户消息(含 mentions)→run 生命周期→内部事件流式映射→收尾。
 // Go 侧只做元数据查找与公共契约映射,不选候选/不算轮次/不拼提示词/不判 [PASS]。
+// groupParticipantTables 由群成员构建参与者元数据表与 agent→模型 对照表(首轮/续跑共用)。
+// 模型名与 BuildOrchestrationRequest 的 req.Agents 同源(成员 Agent.ModelName);
+// 成员资格与发言顺序由 Python 图权威决策。
+func groupParticipantTables(members []*model.SessionMember) (map[string]*groupParticipant, map[string]string) {
+	participants := make(map[string]*groupParticipant, len(members))
+	modelByAgent := make(map[string]string, len(members))
+	for _, m := range members {
+		participants[m.Agent.UUID.String()] = &groupParticipant{id: m.Agent.ID, name: m.Agent.Name, avatar: m.Agent.Avatar, memoryEnabled: m.Agent.MemoryEnabled}
+		modelByAgent[m.Agent.UUID.String()] = m.Agent.ModelName
+	}
+	return participants, modelByAgent
+}
+
 func (s *Chat) runGroupConversation(ctx context.Context, session *model.ChatSession, cmd service.ConversationCommand, emit func(event string, payload any)) {
 	members, merr := s.chat.FindMembers(ctx, session.ID)
 	if merr != nil {
 		emit("error", GroupSpeakerPayload{Content: "获取群成员失败", ErrorCode: "service.chat.stream_unavailable", Terminal: true, Recovery: StreamRecoveryResend})
 		return
 	}
-	// 参与者元数据查找表(名称/头像/记忆开关);成员资格与发言顺序由 Python 图权威决策
-	participants := make(map[string]*groupParticipant, len(members))
+	// 参与者元数据查找表(名称/头像/记忆开关)
+	participants, modelByAgent := groupParticipantTables(members)
 	memberNames := make([]string, 0, len(members))
 	for _, m := range members {
-		participants[m.Agent.UUID.String()] = &groupParticipant{id: m.Agent.ID, name: m.Agent.Name, avatar: m.Agent.Avatar, memoryEnabled: m.Agent.MemoryEnabled}
 		memberNames = append(memberNames, m.Agent.Name)
 	}
 	mentionedNames, userMentioned := ParseMentions(cmd.Content, memberNames)
@@ -657,30 +672,28 @@ func (s *Chat) runGroupConversation(ctx context.Context, session *model.ChatSess
 		emit("error", turnUnavailable())
 		return
 	}
+	// run 建行后事件切 runEmit:发言/收束事件携带 run_id(Task 14,设计 §10/§11)
+	runEmit := withRunID(emit, run.UUID.String())
 	if rerr := s.chat.UpdateRunStatus(ctx, run, model.ChatRunStatusRunning); rerr != nil {
-		emit("error", turnUnavailable())
+		runEmit("error", turnUnavailable())
 		return
 	}
 
 	req, berr := s.BuildOrchestrationRequest(ctx, session, userMessage, run)
 	if berr != nil {
 		s.settleRun(ctx, run, model.ChatRunStatusFailed)
-		emit("error", turnUnavailable())
+		runEmit("error", turnUnavailable())
 		return
-	}
-	modelByAgent := make(map[string]string, len(req.Agents))
-	for _, a := range req.Agents {
-		modelByAgent[a.AgentID] = a.ModelRef.Name
 	}
 
 	st := &langGraphGroupState{
-		svc: s, ctx: ctx, session: session, run: run, emit: emit,
+		svc: s, ctx: ctx, session: session, run: run, emit: runEmit,
 		participants: participants, members: members, modelByAgent: modelByAgent,
 		userContent: cmd.Content,
 		pending:     map[string]bool{}, proposals: map[string]bool{},
 	}
 	streamErr := orchestration.NewClient(s.engineBaseURL).Stream(ctx, req, st.consume)
-	s.finishLangGraphGroupTurn(ctx, run, st, streamErr, emit)
+	s.finishLangGraphGroupTurn(ctx, run, st, streamErr, runEmit)
 }
 
 // langGraphGroupState 一轮群聊内部事件的累计状态(仅 run 内有效,跨 run 不复用)。

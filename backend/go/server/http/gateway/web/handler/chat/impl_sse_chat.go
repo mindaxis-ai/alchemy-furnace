@@ -378,3 +378,42 @@ func (cls *Chat) runLangGraphSSE(c *gin.Context, sessionUID uuid.UUID, content s
 		DebugPrompt: debugPrompt,
 	}, sw.event)
 }
+
+// ResumeRunSSE 续跑 run 的 RAW SSE 端点(Task 14;设计 §10/§11):
+// POST /api/v1/chat/runs/:run_id/resume
+// 只做传输适配(头/心跳承载/事件写回),校验、编排、持久化全权委托服务层 RunConversationResume。
+// 契约:不发 accepted;chunk/done/error/stopped 与首轮同语义,控制事件携带 run_id。
+func (cls *Chat) ResumeRunSSE(c *gin.Context) {
+	runUID, uerr := uuid.Parse(c.Param("run_id"))
+	if uerr != nil {
+		response.BadRequest(c, "回合ID格式不正确")
+		return
+	}
+	flusher, ok := c.Writer.(http.Flusher)
+	if !ok {
+		response.InternalError(c, "当前服务不支持流式响应")
+		return
+	}
+	setSSEHeaders(c)
+	ctx := contextutil.NewContextWithGin(c)
+
+	sw := &sseWriter{w: c.Writer, flusher: flusher}
+	done := make(chan struct{})
+	defer close(done)
+	go func() { // 心跳:续跑与首轮同语义,防代理空闲超时
+		ticker := time.NewTicker(sseHeartbeatInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				sw.ping()
+			}
+		}
+	}()
+
+	cls.chat.RunConversationResume(ctx, runUID, sw.event)
+}

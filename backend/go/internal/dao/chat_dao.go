@@ -34,6 +34,22 @@ func (d *ChatDao) TakeSessionByUUID(ctx context.Context, uid uuid.UUID) (*model.
 	return &session, nil
 }
 
+// TakeSessionByID 按内部 ID 查询会话(预加载道人),供 run.SessionID 反查(续跑入口);
+// 不存在返回 ErrorTypeRecordNotFound
+func (d *ChatDao) TakeSessionByID(ctx context.Context, id uint) (*model.ChatSession, errors.Error) {
+	var session model.ChatSession
+	if err := GetDB().WithContext(ctx).
+		Preload("Agent").
+		Where("id = ?", id).
+		First(&session).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, errors.ErrorRecordNotFound("dao.chat.take_session_by_id")
+		}
+		return nil, errors.ErrorServerInternalError("dao.chat.take_session_by_id")
+	}
+	return &session, nil
+}
+
 // FindSessions 分页查询会话列表(agentID>0 时按道人过滤),按更新时间倒序
 func (d *ChatDao) FindSessions(ctx context.Context, agentID uint, page int, size int) (int64, []*model.ChatSession, errors.Error) {
 	db := GetDB().WithContext(ctx).Model(&model.ChatSession{})
