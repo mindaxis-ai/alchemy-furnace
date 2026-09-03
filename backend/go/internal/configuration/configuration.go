@@ -30,6 +30,10 @@ type Config struct {
 	// ModelKeySecret 模型 API Key 加密密钥(AES-GCM,经 SHA256 归一化为 32 字节)
 	// 环境变量 MODEL_KEY_SECRET;为空时无法存储/解密模型 API Key
 	ModelKeySecret string `toml:"model_key_secret" mapstructure:"model_key_secret"`
+
+	// OrchestrationEngine 编排引擎迁移开关(临时,设计 §12;langgraph 验收后随 legacy 代码移除)
+	// 合法值 legacy|langgraph;空=legacy(存量部署零改动)。环境变量 AF_ORCHESTRATION_ENGINE。
+	OrchestrationEngine string `toml:"orchestration_engine" mapstructure:"orchestration_engine"`
 }
 
 // ServerConfig HTTP 服务器配置

@@ -31,6 +31,15 @@ type GenerationOptions struct {
 	MaxSentences int // Task 10:句数硬限制(完整句边界停止);<=0 表示不限制
 }
 
+// ConversationCommand 一次对话轮的输入(LangGraph 权威编排入口 RunConversation)。
+// handler 只做参数校验与透传:编排、持久化、事件语义全部由服务层定夺。
+type ConversationCommand struct {
+	SessionUID  uuid.UUID // 会话 UUID(公共标识)
+	Content     string    // 用户消息原文;Retry=true 时须与最近一条用户消息一致
+	Retry       bool      // 重试:复用最近同内容用户消息,不重复落库
+	DebugPrompt bool      // 显式开启模型输入调试(prompt_debug 事件)
+}
+
 // PromptDebugPayload 是仅在用户显式开启调试时通过 SSE 返回的实际模型输入。
 // 凭证与 API 地址不属于模型消息，禁止加入该结构。
 type PromptDebugPayload struct {
@@ -116,6 +125,11 @@ type Chat interface {
 
 	// GenerateSessionTitle 单聊自动命名入口:title 已非空(用户手改)放弃;失败返回 ""
 	GenerateSessionTitle(ctx context.Context, sessionUID uuid.UUID, userContent string, firstReply string) string
+
+	// RunConversation LangGraph 权威编排的统一对话轮入口(迁移期:单聊先行,群聊 Task 13 接线)。
+	// 事件契约:accepted/chunk/prompt_debug/title/done/error/stopped;
+	// 持久化语义:只落 assistant_final(幂等),取消/中断不保留部分回复。
+	RunConversation(ctx context.Context, cmd ConversationCommand, emit func(event string, payload any))
 
 	// RunGroupTurn 群聊回合编排:落用户消息→≤3轮逐道人发言→自动命名→turn_done
 	// emit 由 handler 提供(带锁 + 心跳)

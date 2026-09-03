@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/alchemy-furnace/server/internal/behavior"
+	"github.com/alchemy-furnace/server/internal/configuration"
 	"github.com/alchemy-furnace/server/internal/errors"
 	"github.com/alchemy-furnace/server/internal/interface/service"
 	chatservice "github.com/alchemy-furnace/server/internal/service/chat_service"
@@ -47,6 +48,9 @@ type sseChatStub struct {
 	lastRetrieveAgentID uint
 	lastRetrieveMessage string
 	distillSpecs        []service.DistillationSpec
+
+	runConversationCalls int
+	lastCommand          service.ConversationCommand
 }
 
 // P3 记忆挂载:检索委托 + 蒸馏入队(handler 经 service.Chat 接口调用)
@@ -863,5 +867,67 @@ func TestSSEChatEnqueueDistillationAfterReply(t *testing.T) {
 	if len(tgt.Messages) != 2 || tgt.Messages[0].Role != "user" || tgt.Messages[0].Content != "hello" ||
 		tgt.Messages[1].Role != "assistant" || tgt.Messages[1].Content != "金丹妙不可言" {
 		t.Fatalf("Target.Messages = %+v, want [user/hello, assistant/金丹妙不可言]", tgt.Messages)
+	}
+}
+
+// RunConversation 覆写:记录调用与命令,并发两枚事件验证 handler 的 emit 透传。
+func (s *sseChatStub) RunConversation(_ context.Context, cmd service.ConversationCommand, emit func(string, any)) {
+	s.runConversationCalls++
+	s.lastCommand = cmd
+	emit("accepted", struct{}{})
+	emit("done", struct{}{})
+}
+
+// Task 12:LangGraph 迁移开关(orchestration_engine=langgraph)——
+// handler 只做输入校验与委托,不再触碰 legacy 组装链(TurnPlan/ComposeSystemPrompt/StreamChat)。
+func TestSSEChatLangGraphDelegatesWithoutLegacyComposition(t *testing.T) {
+	configuration.Configuration.OrchestrationEngine = "langgraph"
+	t.Cleanup(func() { configuration.Configuration.OrchestrationEngine = "" })
+
+	sessionUID := uuid.New()
+	agentID := uint(7)
+	stub := &sseChatStub{
+		session: &model.ChatSession{
+			ID: 3, UUID: sessionUID, Type: model.SessionTypeSingle, AgentID: &agentID,
+			Agent: model.DaoAgent{ID: agentID, UUID: uuid.New(), Status: "active", ModelName: "test-model"},
+		},
+	}
+	w := performSSEChatBody(t, stub, sessionUID, `{"content":"hello","retry":true,"debug_prompt":true}`)
+
+	if stub.runConversationCalls != 1 {
+		t.Fatalf("RunConversation calls = %d, want 1", stub.runConversationCalls)
+	}
+	if stub.engineCalls != 0 || stub.patternCalls != 0 {
+		t.Fatalf("legacy composition ran: engineCalls=%d patternCalls=%d", stub.engineCalls, stub.patternCalls)
+	}
+	if !strings.Contains(w.Body.String(), "event: accepted") || !strings.Contains(w.Body.String(), "event: done") {
+		t.Fatalf("SSE body = %q, want emit 透传 accepted/done", w.Body.String())
+	}
+	cmd := stub.lastCommand
+	if cmd.SessionUID != sessionUID || cmd.Content != "hello" || !cmd.Retry || !cmd.DebugPrompt {
+		t.Fatalf("command = %+v, want session/content/retry/debug 完整透传", cmd)
+	}
+}
+
+// 显式 legacy 选择:保持原单聊链路,不进编排入口(存量部署零改动)。
+func TestSSEChatExplicitLegacyEngineKeepsLegacyPath(t *testing.T) {
+	configuration.Configuration.OrchestrationEngine = "legacy"
+	t.Cleanup(func() { configuration.Configuration.OrchestrationEngine = "" })
+
+	sessionUID := uuid.New()
+	agentID := uint(7)
+	stub := &sseChatStub{
+		session: &model.ChatSession{
+			ID: 3, UUID: sessionUID, Type: model.SessionTypeSingle, AgentID: &agentID,
+			Agent: model.DaoAgent{ID: agentID, UUID: uuid.New(), Status: "active", ModelName: "test-model"},
+		},
+		streamFull: "答",
+	}
+	performSSEChat(t, stub, sessionUID)
+	if stub.runConversationCalls != 0 {
+		t.Fatalf("RunConversation calls = %d, want 0 under legacy engine", stub.runConversationCalls)
+	}
+	if stub.engineCalls != 1 {
+		t.Fatalf("StreamChat calls = %d, want 1 (legacy path intact)", stub.engineCalls)
 	}
 }

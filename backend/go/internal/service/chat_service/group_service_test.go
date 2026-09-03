@@ -95,6 +95,7 @@ type fakeChatDao struct {
 	sessions       map[string]*model.ChatSession
 	members        map[uint][]*model.SessionMember
 	messages       []*model.ChatMessage
+	runs           []*model.ChatRun
 	nextID         uint
 	agentByID      map[uint]*model.DaoAgent // 模拟 GORM Preload("Agent")
 	saveErr        errors.Error
@@ -177,6 +178,13 @@ func (f *fakeChatDao) SaveMessage(ctx context.Context, msg *model.ChatMessage) e
 	if f.saveErr != nil {
 		return f.saveErr
 	}
+	if msg.ID == 0 {
+		f.nextID++
+		msg.ID = f.nextID
+	}
+	if msg.UUID == uuid.Nil {
+		msg.UUID = uuid.New()
+	}
 	f.messages = append(f.messages, msg)
 	return nil
 }
@@ -240,16 +248,34 @@ func (f *fakeChatDao) DeleteMember(ctx context.Context, sessionID uint, agentID 
 
 // 编排 run 方法：本文件测试不触及编排持久化，仅满足 dao.Chat 接口
 func (f *fakeChatDao) CreateRun(ctx context.Context, run *model.ChatRun) errors.Error {
+	f.runs = append(f.runs, run)
 	return nil
 }
 func (f *fakeChatDao) UpdateRunStatus(ctx context.Context, run *model.ChatRun, status string) errors.Error {
+	run.Status = status
 	return nil
 }
 func (f *fakeChatDao) TakeRunByUUID(ctx context.Context, uid uuid.UUID) (*model.ChatRun, errors.Error) {
+	for _, r := range f.runs {
+		if r.UUID == uid {
+			cp := *r
+			return &cp, nil
+		}
+	}
 	return nil, errors.ErrorRecordNotFound("test.fake.take_run")
 }
 func (f *fakeChatDao) SaveFinalReplyOnce(ctx context.Context, runUUID uuid.UUID, replyID string, message *model.ChatMessage) (*model.ChatMessage, errors.Error) {
-	return message, nil
+	for _, m := range f.messages {
+		if m.RunID != nil && *m.RunID == runUUID && m.ReplyID != nil && *m.ReplyID == replyID {
+			return m, nil
+		}
+	}
+	cp := *message
+	cp.RunID = &runUUID
+	rid := replyID
+	cp.ReplyID = &rid
+	f.messages = append(f.messages, &cp)
+	return &cp, nil
 }
 
 func newGroupTestSvc() (*Chat, *fakeChatDao, uuid.UUID, uuid.UUID, uuid.UUID) {

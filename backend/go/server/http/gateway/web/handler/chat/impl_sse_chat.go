@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/alchemy-furnace/server/internal/behavior"
+	"github.com/alchemy-furnace/server/internal/configuration"
 	"github.com/alchemy-furnace/server/internal/context/contextutil"
 	ierr "github.com/alchemy-furnace/server/internal/errors"
 	"github.com/alchemy-furnace/server/internal/interface/service"
@@ -92,6 +93,12 @@ func (cls *Chat) SSEChat(c *gin.Context) {
 	// 群聊 AgentID=nil 走单聊入口视为错误(防御性兜底)
 	if session.AgentID == nil {
 		sseWriteEvent(w, flusher, "error", ssePayload{Content: "该会话不支持单聊通道", Terminal: true, Recovery: preflightRecovery})
+		return
+	}
+	// 编排引擎迁移开关(临时,设计 §12):显式 langgraph 时 handler 只做输入校验与委托,
+	// 不触碰 legacy 组装链(TurnPlan/ComposeSystemPrompt/记忆检索/StreamChat);其余值一律 legacy。
+	if orchestrationEngineLangGraph() {
+		cls.runLangGraphSSE(c, sessionUID, content, body.Retry, body.DebugPrompt)
 		return
 	}
 	agentID := *session.AgentID
@@ -326,4 +333,32 @@ func (cls *Chat) finishSSEStream(ctx context.Context, sessionUID uuid.UUID, sess
 		zap.L().Info("[炼丹炉] 论道一轮完成",
 			zap.Uint("session_id", sessionID), zap.Int("response_length", len(res.full)))
 	}
+}
+
+// orchestrationEngineLangGraph 编排引擎迁移开关(临时,设计 §12):
+// 仅显式 langgraph 走权威编排,其余(含空)一律 legacy,存量部署零改动。
+// loader 启动期已归一化(空→legacy,非法值报错);此处防御性再 trim。
+func orchestrationEngineLangGraph() bool {
+	return strings.TrimSpace(configuration.Configuration.OrchestrationEngine) == "langgraph"
+}
+
+// runLangGraphSSE LangGraph 单聊路径:handler 只做传输适配(头/心跳承载/事件写回),
+// 校验、编排、持久化、事件语义全权委托服务层 RunConversation。
+func (cls *Chat) runLangGraphSSE(c *gin.Context, sessionUID uuid.UUID, content string, retry bool, debugPrompt bool) {
+	flusher, ok := c.Writer.(http.Flusher)
+	if !ok {
+		response.InternalError(c, "当前服务不支持流式响应")
+		return
+	}
+	setSSEHeaders(c)
+	w := c.Writer
+	ctx := contextutil.NewContextWithGin(c)
+	cls.chat.RunConversation(ctx, service.ConversationCommand{
+		SessionUID:  sessionUID,
+		Content:     content,
+		Retry:       retry,
+		DebugPrompt: debugPrompt,
+	}, func(event string, payload any) {
+		sseWriteEvent(w, flusher, event, payload)
+	})
 }

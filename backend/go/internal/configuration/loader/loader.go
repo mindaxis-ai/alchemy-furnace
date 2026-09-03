@@ -77,11 +77,32 @@ func LoadConfig(dir string) error {
 	// 多数据库支持: 智能补全 Driver(向后兼容 + 零配置降级)
 	resolveDriver(&configuration.Configuration.Database)
 
+	// 编排引擎迁移开关归一化(临时,设计 §12):空=legacy,非法值启动期报错
+	if err := resolveOrchestrationEngine(&configuration.Configuration); err != nil {
+		return err
+	}
+
 	// desktop 模式 MODEL_KEY_SECRET 兜底(已配置则跳过;否则读 secret.key 或首启生成)
 	if err := resolveModelKeySecret(&configuration.Configuration); err != nil {
 		return fmt.Errorf("初始化 MODEL_KEY_SECRET 失败: %w", err)
 	}
 
+	return nil
+}
+
+// resolveOrchestrationEngine 归一化编排引擎迁移开关(临时,设计 §12)。
+// 空 → legacy(零值兼容,存量部署零改动);legacy|langgraph(大小写/空白容忍)→ 小写保留;
+// 其他值启动期明确报错,不静默回退(迁移开关必须显式可控)。
+func resolveOrchestrationEngine(c *configuration.Config) error {
+	trimmed := strings.ToLower(strings.TrimSpace(c.OrchestrationEngine))
+	switch trimmed {
+	case "":
+		c.OrchestrationEngine = "legacy"
+	case "legacy", "langgraph":
+		c.OrchestrationEngine = trimmed
+	default:
+		return fmt.Errorf("orchestration_engine 配置非法: %q(仅支持 legacy|langgraph)", c.OrchestrationEngine)
+	}
 	return nil
 }
 
