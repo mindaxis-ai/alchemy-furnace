@@ -4,10 +4,16 @@ import (
 	"context"
 
 	"github.com/alchemy-furnace/server/internal/errors"
-	"github.com/alchemy-furnace/server/internal/service/turnpolicy"
 	"github.com/alchemy-furnace/server/model"
 	"github.com/google/uuid"
 )
+
+// MemorySnippet 注入编排上下文的单条本地记忆(spec §10.4;自 turnpolicy 迁入——
+// Task 15 LangGraph 权威化后记忆检索只服务编排快照,归属记忆接口)。
+type MemorySnippet struct {
+	Kind    string
+	Content string
+}
 
 // DistillMessage 蒸馏输入的单条对话消息
 type DistillMessage struct {
@@ -61,7 +67,7 @@ type Memory interface {
 
 	// Retrieve 检索记忆:pinned > 关键词精确 > bigram > importance > 最近访问 > open_loop;
 	// 每轮 ≤6 条 ≤1200 字符,并 Touch 命中记忆的 LastAccessedAt
-	Retrieve(ctx context.Context, agentID uint, userMessage string) ([]turnpolicy.MemorySnippet, errors.Error)
+	Retrieve(ctx context.Context, agentID uint, userMessage string) ([]MemorySnippet, errors.Error)
 
 	// EnqueueDistillation 非阻塞入队蒸馏任务;队列满返回 false(§10.3)
 	EnqueueDistillation(ctx context.Context, spec DistillationSpec) bool

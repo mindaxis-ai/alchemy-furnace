@@ -3,25 +3,22 @@ package chat
 import (
 	"context"
 	"encoding/json"
-	stderrors "errors"
-	"fmt"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"github.com/alchemy-furnace/server/internal/behavior"
-	"github.com/alchemy-furnace/server/internal/configuration"
 	"github.com/alchemy-furnace/server/internal/errors"
 	"github.com/alchemy-furnace/server/internal/interface/service"
 	chatservice "github.com/alchemy-furnace/server/internal/service/chat_service"
 	"github.com/alchemy-furnace/server/internal/service/credential"
-	"github.com/alchemy-furnace/server/internal/service/turnpolicy"
-	"github.com/alchemy-furnace/server/internal/synthesis"
 	"github.com/alchemy-furnace/server/model"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
 
+// sseChatStub handler 层测试桩(Task 15 LangGraph 权威化后 handler 只做传输适配):
+// 只覆盖 handler 传播路径触达的方法;legacy 组装链相关桩(StreamChat/
+// AuthorizeSessionForStream/RunGroupTurn/RetryGroupTurn)已随接口收缩删除。
 type sseChatStub struct {
 	service.Chat
 	session        *model.ChatSession
@@ -30,20 +27,14 @@ type sseChatStub struct {
 	patternErr     errors.Error
 	saveErr        errors.Error
 	saveErrors     map[string]errors.Error
-	engineCalls    int
 	patternCalls   int
 	titleCalls     int
 	generatedTitle string
 	savedRoles     []string
 	recentMessages []*model.ChatMessage
-	streamChunks   []string
-	streamFull     string
-	streamErr      error
-	lastMessages   []map[string]string
-	lastOptions    service.GenerationOptions
 	members        []*model.SessionMember
 
-	retrievedSnippets   []turnpolicy.MemorySnippet
+	retrievedSnippets   []service.MemorySnippet
 	retrieveCalls       int
 	lastRetrieveAgentID uint
 	lastRetrieveMessage string
@@ -52,15 +43,12 @@ type sseChatStub struct {
 	runConversationCalls int
 	lastCommand          service.ConversationCommand
 
-	groupTurnCalls int
-	lastGroupRetry bool
-
 	resumeCalls      int
 	lastResumeRunUID uuid.UUID
 }
 
 // P3 记忆挂载:检索委托 + 蒸馏入队(handler 经 service.Chat 接口调用)
-func (s *sseChatStub) RetrieveMemories(_ context.Context, agentID uint, userMessage string) []turnpolicy.MemorySnippet {
+func (s *sseChatStub) RetrieveMemories(_ context.Context, agentID uint, userMessage string) []service.MemorySnippet {
 	s.retrieveCalls++
 	s.lastRetrieveAgentID = agentID
 	s.lastRetrieveMessage = userMessage
@@ -85,13 +73,6 @@ func (s *sseChatStub) GetOrBuildPattern(context.Context, uint) (*model.LanguageP
 		return s.pattern, nil
 	}
 	return &model.LanguagePattern{SystemPrompt: "test system prompt"}, nil
-}
-
-func (s *sseChatStub) AuthorizeSessionForStream(_ context.Context, session *model.ChatSession) (*credential.ModelCredentials, errors.Error) {
-	if session.Agent.Status != "active" {
-		return nil, errors.New(errors.ErrorTypeInvalidRequest, "service.chat.agent_inactive", "道人已停用")
-	}
-	return &credential.ModelCredentials{Model: session.Agent.ModelName, APIKey: "must-not-leak"}, nil
 }
 
 func (s *sseChatStub) SaveMessage(_ context.Context, sessionID uint, role, content string) (*model.ChatMessage, errors.Error) {
@@ -127,16 +108,6 @@ func (s *sseChatStub) ResolveCredentials(context.Context, string) (*credential.M
 	return &credential.ModelCredentials{Model: "test-model", APIKey: "must-not-leak"}, nil
 }
 
-func (s *sseChatStub) StreamChat(_ context.Context, messages []map[string]string, _ *credential.ModelCredentials, options service.GenerationOptions, onChunk func(string)) (string, bool, error) {
-	s.engineCalls++
-	s.lastMessages = messages
-	s.lastOptions = options
-	for _, chunk := range s.streamChunks {
-		onChunk(chunk)
-	}
-	return s.streamFull, false, s.streamErr
-}
-
 func (s *sseChatStub) GenerateSessionTitle(context.Context, uuid.UUID, string, string) string {
 	s.titleCalls++
 	return s.generatedTitle
@@ -163,53 +134,6 @@ func performSSEChatBody(t *testing.T, stub *sseChatStub, sessionUID uuid.UUID, b
 	return w
 }
 
-func TestSSEChatPromptDebugEmitsActualRequestWithoutCredentials(t *testing.T) {
-	sessionUID := uuid.New()
-	agentID := uint(7)
-	stub := &sseChatStub{
-		session: &model.ChatSession{
-			ID: 3, UUID: sessionUID, Type: model.SessionTypeSingle, AgentID: &agentID,
-			Agent: model.DaoAgent{ID: agentID, UUID: uuid.New(), Name: "Debugger", Status: "active", ModelName: "test-model"},
-		},
-		pattern:        &model.LanguagePattern{SystemPrompt: "STRICT_DEBUG_SYSTEM_PROMPT"},
-		recentMessages: []*model.ChatMessage{{Role: "user", Content: "hello debug"}},
-		streamChunks:   []string{"answer"},
-		streamFull:     "answer",
-	}
-
-	w := performSSEChatBody(t, stub, sessionUID, `{"content":"hello debug","debug_prompt":true}`)
-	body := w.Body.String()
-
-	if !strings.Contains(body, "event: prompt_debug") {
-		t.Fatalf("SSE body = %q, want prompt_debug event", body)
-	}
-	for _, want := range []string{`"agent_name":"Debugger"`, `"model":"test-model"`, "STRICT_DEBUG_SYSTEM_PROMPT", "hello debug", `"generation"`, `"max_tokens"`, `"max_sentences"`} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("SSE body = %q, want %q", body, want)
-		}
-	}
-	if strings.Contains(body, "must-not-leak") {
-		t.Fatalf("SSE body leaked credentials: %q", body)
-	}
-}
-
-func TestSSEChatPromptDebugIsDisabledByDefault(t *testing.T) {
-	sessionUID := uuid.New()
-	agentID := uint(7)
-	stub := &sseChatStub{
-		session: &model.ChatSession{
-			ID: 3, UUID: sessionUID, Type: model.SessionTypeSingle, AgentID: &agentID,
-			Agent: model.DaoAgent{ID: agentID, UUID: uuid.New(), Status: "active", ModelName: "test-model"},
-		},
-		streamFull: "answer",
-	}
-
-	w := performSSEChat(t, stub, sessionUID)
-	if strings.Contains(w.Body.String(), "event: prompt_debug") {
-		t.Fatalf("SSE body = %q, prompt_debug must be opt-in", w.Body.String())
-	}
-}
-
 func TestSSEChatMissingSessionReturnsStableSafeError(t *testing.T) {
 	sessionUID := uuid.New()
 	stub := &sseChatStub{sessionErr: errors.ErrorRecordNotFound("dao.secret.session_lookup")}
@@ -226,178 +150,11 @@ func TestSSEChatMissingSessionReturnsStableSafeError(t *testing.T) {
 	if strings.Contains(body, "dao.secret") {
 		t.Fatalf("SSE body leaked internal error: %q", body)
 	}
-	if stub.engineCalls != 0 {
-		t.Fatalf("StreamChat calls = %d, want 0", stub.engineCalls)
-	}
 	if stub.patternCalls != 0 {
-		t.Fatalf("GetOrBuildPattern calls = %d, want 0 before inactive rejection", stub.patternCalls)
+		t.Fatalf("GetOrBuildPattern calls = %d, want 0 before session resolution", stub.patternCalls)
 	}
 	if len(stub.savedRoles) != 0 {
-		t.Fatalf("SaveMessage roles = %v, want none before inactive rejection", stub.savedRoles)
-	}
-}
-
-func TestSSEChatInterruptedUpstreamRetainsPartialAndNeverEmitsDone(t *testing.T) {
-	sessionUID := uuid.New()
-	agentID := uint(7)
-	stub := &sseChatStub{
-		session: &model.ChatSession{
-			ID: 3, UUID: sessionUID, Type: model.SessionTypeSingle, AgentID: &agentID,
-			Agent: model.DaoAgent{ID: agentID, UUID: uuid.New(), Status: "active", ModelName: "test-model"},
-		},
-		streamChunks: []string{"partial answer"},
-		streamFull:   "partial answer",
-		streamErr:    &chatservice.StreamInterruptedError{},
-	}
-
-	w := performSSEChat(t, stub, sessionUID)
-	body := w.Body.String()
-
-	if !strings.Contains(body, `event: chunk`) || !strings.Contains(body, `partial answer`) {
-		t.Fatalf("SSE body = %q, want retained partial chunk", body)
-	}
-	if !strings.Contains(body, `"error_code":"service.chat.stream_interrupted"`) || !strings.Contains(body, `"terminal":true`) {
-		t.Fatalf("SSE body = %q, want safe terminal interruption", body)
-	}
-	if !strings.Contains(body, `event: accepted`) || !strings.Contains(body, `"recovery":"persisted_retry"`) {
-		t.Fatalf("SSE body = %q, persisted user must be acknowledged before recoverable interruption", body)
-	}
-	if strings.Contains(body, "event: done") {
-		t.Fatalf("SSE body = %q, interrupted stream must not emit done", body)
-	}
-	if strings.Join(stub.savedRoles, ",") != "user" {
-		t.Fatalf("SaveMessage roles = %v, want user only (partial assistant stays client-side)", stub.savedRoles)
-	}
-}
-
-func TestSSEChatAssistantSaveFailureTerminatesWithSanitizedPersistedRetry(t *testing.T) {
-	sessionUID := uuid.New()
-	agentID := uint(7)
-	stub := &sseChatStub{
-		session: &model.ChatSession{
-			ID: 3, UUID: sessionUID, Type: model.SessionTypeSingle, AgentID: &agentID,
-			Agent: model.DaoAgent{ID: agentID, UUID: uuid.New(), Status: "active", ModelName: "test-model"},
-		},
-		streamChunks:   []string{"complete answer"},
-		streamFull:     "complete answer",
-		generatedTitle: "must not be emitted",
-		saveErrors: map[string]errors.Error{
-			"assistant": errors.ErrorServerInternalError("secret.database.assistant_write"),
-		},
-	}
-
-	w := performSSEChat(t, stub, sessionUID)
-	body := w.Body.String()
-
-	if !strings.Contains(body, "event: accepted") {
-		t.Fatalf("SSE body = %q, want accepted after persisted user message", body)
-	}
-	if !strings.Contains(body, "event: error") ||
-		!strings.Contains(body, `"error_code":"service.chat.stream_unavailable"`) ||
-		!strings.Contains(body, `"terminal":true`) ||
-		!strings.Contains(body, `"recovery":"persisted_retry"`) {
-		t.Fatalf("SSE body = %q, want terminal persisted_retry persistence error", body)
-	}
-	if strings.Contains(body, "secret.database") || strings.Contains(body, "must not be emitted") {
-		t.Fatalf("SSE body leaked persistence details or generated a title: %q", body)
-	}
-	if strings.Contains(body, "event: done") || strings.Contains(body, "event: title") {
-		t.Fatalf("SSE body = %q, failed assistant persistence must not emit title/done", body)
-	}
-	if stub.titleCalls != 0 {
-		t.Fatalf("GenerateSessionTitle calls = %d, want 0 after assistant save failure", stub.titleCalls)
-	}
-	if len(stub.savedRoles) != 1 || stub.savedRoles[0] != "user" {
-		t.Fatalf("persisted roles = %v, want only the successful user row", stub.savedRoles)
-	}
-}
-
-func TestSSEChatUnknownStreamErrorDoesNotLeakRawDetails(t *testing.T) {
-	sessionUID := uuid.New()
-	agentID := uint(7)
-	stub := &sseChatStub{
-		session: &model.ChatSession{
-			ID: 3, UUID: sessionUID, Type: model.SessionTypeSingle, AgentID: &agentID,
-			Agent: model.DaoAgent{ID: agentID, UUID: uuid.New(), Status: "active", ModelName: "test-model"},
-		},
-		streamErr: stderrors.New("raw upstream error containing api_key=must-not-leak"),
-	}
-
-	w := performSSEChat(t, stub, sessionUID)
-	body := w.Body.String()
-
-	if strings.Contains(body, "raw upstream") || strings.Contains(body, "must-not-leak") {
-		t.Fatalf("SSE body leaked raw stream error: %q", body)
-	}
-	if !strings.Contains(body, `"error_code":"service.chat.stream_unavailable"`) || !strings.Contains(body, `"terminal":true`) {
-		t.Fatalf("SSE body = %q, want stable terminal stream_unavailable error", body)
-	}
-}
-
-func TestSSEChatPatternFailureOffersNormalResendBeforePersistence(t *testing.T) {
-	sessionUID := uuid.New()
-	agentID := uint(7)
-	stub := &sseChatStub{
-		session: &model.ChatSession{
-			ID: 3, UUID: sessionUID, Type: model.SessionTypeSingle, AgentID: &agentID,
-			Agent: model.DaoAgent{ID: agentID, UUID: uuid.New(), Status: "active", ModelName: "test-model"},
-		},
-		patternErr: errors.ErrorServerInternalError("secret.pattern.failure"),
-	}
-
-	w := performSSEChat(t, stub, sessionUID)
-	body := w.Body.String()
-
-	if !strings.Contains(body, `"recovery":"resend"`) {
-		t.Fatalf("SSE body = %q, pre-persist pattern failure must offer normal resend", body)
-	}
-	if len(stub.savedRoles) != 0 || stub.engineCalls != 0 {
-		t.Fatalf("pattern failure saved roles %v or called engine %d", stub.savedRoles, stub.engineCalls)
-	}
-}
-
-func TestSSEChatUserSaveFailureOffersNormalResend(t *testing.T) {
-	sessionUID := uuid.New()
-	agentID := uint(7)
-	stub := &sseChatStub{
-		session: &model.ChatSession{
-			ID: 3, UUID: sessionUID, Type: model.SessionTypeSingle, AgentID: &agentID,
-			Agent: model.DaoAgent{ID: agentID, UUID: uuid.New(), Status: "active", ModelName: "test-model"},
-		},
-		saveErr: errors.ErrorServerInternalError("secret.user.save.failure"),
-	}
-
-	w := performSSEChat(t, stub, sessionUID)
-	body := w.Body.String()
-
-	if !strings.Contains(body, `"recovery":"resend"`) {
-		t.Fatalf("SSE body = %q, failed user persistence must offer normal resend", body)
-	}
-	if strings.Contains(body, "secret.user.save.failure") || stub.engineCalls != 0 {
-		t.Fatalf("save failure leaked details or called engine: body=%q engine=%d", body, stub.engineCalls)
-	}
-}
-
-func TestSSEChatPersistedRetryPatternFailureNeverOffersNormalResend(t *testing.T) {
-	sessionUID := uuid.New()
-	agentID := uint(7)
-	stub := &sseChatStub{
-		session: &model.ChatSession{
-			ID: 3, UUID: sessionUID, Type: model.SessionTypeSingle, AgentID: &agentID,
-			Agent: model.DaoAgent{ID: agentID, UUID: uuid.New(), Status: "active", ModelName: "test-model"},
-		},
-		patternErr:     errors.ErrorServerInternalError("secret.pattern.failure"),
-		recentMessages: []*model.ChatMessage{{SessionID: 3, Role: "user", Content: "persisted question"}},
-	}
-
-	w := performSSEChatBody(t, stub, sessionUID, `{"content":"persisted question","retry":true}`)
-	body := w.Body.String()
-
-	if !strings.Contains(body, `"recovery":"persisted_retry"`) || strings.Contains(body, `"recovery":"resend"`) {
-		t.Fatalf("SSE body = %q, failure during persisted retry must keep persisted recovery", body)
-	}
-	if len(stub.savedRoles) != 0 {
-		t.Fatalf("SaveMessage roles = %v, persisted retry must not save another user", stub.savedRoles)
+		t.Fatalf("SaveMessage roles = %v, want none before session resolution", stub.savedRoles)
 	}
 }
 
@@ -411,264 +168,6 @@ func TestGroupMemberErrorWirePayloadExplicitlyMarksNonterminal(t *testing.T) {
 
 	if !strings.Contains(w.Body.String(), `"terminal":false`) {
 		t.Fatalf("SSE body = %q, nonterminal member error must serialize terminal=false", w.Body.String())
-	}
-}
-
-func TestSSEChatRetryDoesNotPersistDuplicateUserMessage(t *testing.T) {
-	sessionUID := uuid.New()
-	agentID := uint(7)
-	stub := &sseChatStub{
-		session: &model.ChatSession{
-			ID: 3, UUID: sessionUID, Type: model.SessionTypeSingle, AgentID: &agentID,
-			Agent: model.DaoAgent{ID: agentID, UUID: uuid.New(), Status: "active", ModelName: "test-model"},
-		},
-		recentMessages: []*model.ChatMessage{{SessionID: 3, Role: "user", Content: "hello"}},
-		streamFull:     "completed retry",
-	}
-
-	w := performSSEChatBody(t, stub, sessionUID, `{"content":"hello","retry":true}`)
-	if !strings.Contains(w.Body.String(), "event: done") {
-		t.Fatalf("SSE body = %q, want successful retry", w.Body.String())
-	}
-	for _, role := range stub.savedRoles {
-		if role == "user" {
-			t.Fatalf("SaveMessage roles = %v, retry duplicated persisted user", stub.savedRoles)
-		}
-	}
-}
-
-// 普通单聊:系统消息必须含四个动态分区(§11),且带行为档案时激活丹性规则
-func TestSSEChatSystemMessageIncludesDynamicSections(t *testing.T) {
-	sessionUID := uuid.New()
-	agentID := uint(7)
-	profileJSON, err := behavior.ProfileToJSONMap(behavior.CompileProfile("沉稳", []synthesis.PillInput{{
-		ID: "p1", Name: "古琴丹", Weight: 2.0, SortOrder: 0,
-		SkillSchema: model.JSONMap{
-			"description": "以古琴之道应答",
-			"mental_models": []any{map[string]any{
-				"name": "知音", "one_liner": "先问对方所好再谈琴",
-			}},
-		},
-	}}))
-	if err != nil {
-		t.Fatalf("ProfileToJSONMap() error = %v", err)
-	}
-	stub := &sseChatStub{
-		session: &model.ChatSession{
-			ID: 3, UUID: sessionUID, Type: model.SessionTypeSingle, AgentID: &agentID,
-			Agent: model.DaoAgent{ID: agentID, UUID: uuid.New(), Status: "active", ModelName: "test-model", Proactivity: 60},
-		},
-		pattern:    &model.LanguagePattern{SystemPrompt: "cached static prompt", BehaviorProfile: profileJSON},
-		streamFull: "ok",
-	}
-
-	w := performSSEChatBody(t, stub, sessionUID, `{"content":"聊点音乐"} `)
-	body := w.Body.String()
-	if !strings.Contains(body, "event: done") {
-		t.Fatalf("SSE body = %q, want done", body)
-	}
-	if stub.engineCalls != 1 || len(stub.lastMessages) == 0 {
-		t.Fatalf("engine calls = %d, messages = %d", stub.engineCalls, len(stub.lastMessages))
-	}
-	sys := stub.lastMessages[0]
-	if sys["role"] != "system" {
-		t.Fatalf("首条应为 system: %+v", sys)
-	}
-	for _, title := range []string{"本轮激活丹性", "本地记忆事实", "用户当轮要求", "回答与群聊预算"} {
-		if !strings.Contains(sys["content"], "【"+title+"】") {
-			t.Fatalf("系统消息缺少动态分区 %q:\n%s", title, sys["content"])
-		}
-	}
-	if !strings.Contains(sys["content"], "古琴丹") {
-		t.Fatalf("系统消息应含激活丹性规则:\n%s", sys["content"])
-	}
-}
-
-// 用户明确停止:引擎 0 调用,直接 done
-func TestSSEChatStopRequestSkipsEngine(t *testing.T) {
-	sessionUID := uuid.New()
-	agentID := uint(7)
-	stub := &sseChatStub{
-		session: &model.ChatSession{
-			ID: 3, UUID: sessionUID, Type: model.SessionTypeSingle, AgentID: &agentID,
-			Agent: model.DaoAgent{ID: agentID, UUID: uuid.New(), Status: "active", ModelName: "test-model"},
-		},
-	}
-
-	w := performSSEChatBody(t, stub, sessionUID, `{"content":"够了，别说了"}`)
-	body := w.Body.String()
-	if !strings.Contains(body, "event: done") {
-		t.Fatalf("SSE body = %q, want done for stop request", body)
-	}
-	if strings.Contains(body, "event: chunk") {
-		t.Fatalf("SSE body = %q, stop must not stream chunks", body)
-	}
-	if stub.engineCalls != 0 {
-		t.Fatalf("StreamChat calls = %d, stop must not call engine", stub.engineCalls)
-	}
-	if stub.titleCalls != 0 {
-		t.Fatalf("GenerateSessionTitle calls = %d, stop must not generate title", stub.titleCalls)
-	}
-	if strings.Join(stub.savedRoles, ",") != "user" {
-		t.Fatalf("saved roles = %v, want user only", stub.savedRoles)
-	}
-}
-
-// 空的模型输出不是成功回复：不能发送 done 或触发自动命名。
-func TestSSEChatEmptyModelOutputReturnsError(t *testing.T) {
-	sessionUID := uuid.New()
-	agentID := uint(7)
-	stub := &sseChatStub{
-		session: &model.ChatSession{
-			ID: 1, UUID: sessionUID, AgentID: &agentID,
-			Agent: model.DaoAgent{ID: agentID, UUID: uuid.New(), Name: "测试道人", Status: "active", ModelName: "test-model", Proactivity: 50},
-		},
-		streamFull: "   ",
-	}
-	w := performSSEChat(t, stub, sessionUID)
-	body := w.Body.String()
-	if !strings.Contains(body, "event: error") {
-		t.Fatalf("empty model output must emit error: %q", body)
-	}
-	if strings.Contains(body, "event: done") {
-		t.Fatalf("empty model output must not emit done: %q", body)
-	}
-}
-
-// TurnPlan 预算必须完整经 GenerationOptions 传向引擎(spec §7.2):token 与句数缺一不可
-// 倾诉=vent 2句/128tok;事实问题=factual 3句/256tok;明确详细=deep_dive 8句/896tok
-func TestSSEChatPassesBudgetFromPlan(t *testing.T) {
-	cases := []struct {
-		name         string
-		message      string
-		maxTokens    int
-		maxSentences int
-	}{
-		{"倾诉", "我今天好烦，只想吐槽一下", 128, 2},
-		{"事实问题", "什么是金丹", 256, 3},
-		{"明确详细", "详细讲讲这个方案", 896, 8},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			sessionUID := uuid.New()
-			agentID := uint(7)
-			stub := &sseChatStub{
-				session: &model.ChatSession{
-					ID: 3, UUID: sessionUID, Type: model.SessionTypeSingle, AgentID: &agentID,
-					Agent: model.DaoAgent{ID: agentID, UUID: uuid.New(), Status: "active", ModelName: "test-model"},
-				},
-				streamFull: "ok",
-			}
-
-			w := performSSEChatBody(t, stub, sessionUID, `{"content":"`+tc.message+`"}`)
-			if !strings.Contains(w.Body.String(), "event: done") {
-				t.Fatalf("SSE body = %q, want done", w.Body.String())
-			}
-			if stub.lastOptions.MaxTokens != tc.maxTokens || stub.lastOptions.MaxSentences != tc.maxSentences {
-				t.Fatalf("lastOptions = %+v, want MaxTokens=%d MaxSentences=%d", stub.lastOptions, tc.maxTokens, tc.maxSentences)
-			}
-		})
-	}
-}
-
-// Global Constraint:用户最新消息只以 user role 出现在消息历史,system 不得复制用户原文
-func TestSSEChatDoesNotCopyUserText(t *testing.T) {
-	sessionUID := uuid.New()
-	agentID := uint(7)
-	content := "我今天好烦，只想吐槽一下"
-	stub := &sseChatStub{
-		session: &model.ChatSession{
-			ID: 3, UUID: sessionUID, Type: model.SessionTypeSingle, AgentID: &agentID,
-			Agent: model.DaoAgent{ID: agentID, UUID: uuid.New(), Status: "active", ModelName: "test-model"},
-		},
-		recentMessages: []*model.ChatMessage{{SessionID: 3, Role: "user", Content: content}},
-		streamFull:     "先歇会",
-	}
-
-	w := performSSEChatBody(t, stub, sessionUID, `{"content":"`+content+`"}`)
-	if !strings.Contains(w.Body.String(), "event: done") {
-		t.Fatalf("SSE body = %q, want done", w.Body.String())
-	}
-	if len(stub.lastMessages) == 0 {
-		t.Fatal("引擎未被调用")
-	}
-	last := stub.lastMessages[len(stub.lastMessages)-1]
-	if last["role"] != "user" || last["content"] != content {
-		t.Fatalf("消息历史最后一项 = %+v, want 原始 user 消息 %q", last, content)
-	}
-	sys := stub.lastMessages[0]
-	if sys["role"] != "system" {
-		t.Fatalf("首条 = %+v, want system", sys)
-	}
-	if strings.Contains(sys["content"], content) {
-		t.Fatalf("system 复制了用户原文: %q", sys["content"])
-	}
-}
-
-func TestSSEChatRetryUsesLatestUserBeyondFirstHistoryPage(t *testing.T) {
-	sessionUID := uuid.New()
-	agentID := uint(7)
-	history := []*model.ChatMessage{{SessionID: 3, Role: "user", Content: "stale old question"}}
-	for i := 0; i < 20; i++ {
-		history = append(history, &model.ChatMessage{SessionID: 3, Role: "assistant", Content: fmt.Sprintf("old reply %d", i)})
-	}
-	history = append(history, &model.ChatMessage{SessionID: 3, Role: "user", Content: "latest question"})
-	stub := &sseChatStub{
-		session: &model.ChatSession{
-			ID: 3, UUID: sessionUID, Type: model.SessionTypeSingle, AgentID: &agentID,
-			Agent: model.DaoAgent{ID: agentID, UUID: uuid.New(), Status: "active", ModelName: "test-model"},
-		},
-		recentMessages: history,
-		streamFull:     "completed retry",
-	}
-
-	w := performSSEChatBody(t, stub, sessionUID, `{"content":"latest question","retry":true}`)
-
-	if !strings.Contains(w.Body.String(), "event: done") {
-		t.Fatalf("SSE body = %q, retry should validate the latest user beyond page 1", w.Body.String())
-	}
-	for _, role := range stub.savedRoles {
-		if role == "user" {
-			t.Fatalf("SaveMessage roles = %v, retry duplicated persisted user", stub.savedRoles)
-		}
-	}
-}
-
-func TestStreamInterruptedErrorSupportsErrorsAs(t *testing.T) {
-	var target *chatservice.StreamInterruptedError
-	if !stderrors.As(&chatservice.StreamInterruptedError{}, &target) {
-		t.Fatal("typed interruption must support errors.As at the handler boundary")
-	}
-}
-
-func TestSSEChatInactiveAgentReturnsStableErrorBeforeEngine(t *testing.T) {
-	sessionUID := uuid.New()
-	agentUID := uuid.New()
-	agentID := uint(7)
-	stub := &sseChatStub{session: &model.ChatSession{
-		ID:      3,
-		UUID:    sessionUID,
-		Type:    model.SessionTypeSingle,
-		AgentID: &agentID,
-		Agent: model.DaoAgent{
-			ID: agentID, UUID: agentUID, Name: "Dormant", Status: "inactive", ModelName: "test-model",
-		},
-	}}
-
-	w := performSSEChat(t, stub, sessionUID)
-	body := w.Body.String()
-
-	if !strings.Contains(body, "event: error") || !strings.Contains(body, `"error_code":"service.chat.agent_inactive"`) {
-		t.Fatalf("SSE body = %q, want stable agent_inactive error", body)
-	}
-	if stub.engineCalls != 0 {
-		t.Fatalf("StreamChat calls = %d, want 0", stub.engineCalls)
-	}
-	if stub.patternCalls != 0 {
-		t.Fatalf("GetOrBuildPattern calls = %d, want 0 before inactive authorization failure", stub.patternCalls)
-	}
-	if len(stub.savedRoles) != 0 {
-		t.Fatalf("SaveMessage roles = %v, want no persistence before inactive authorization failure", stub.savedRoles)
 	}
 }
 
@@ -773,109 +272,6 @@ func TestGetSessionReturnsDirectGroupMetadata(t *testing.T) {
 	}
 }
 
-// ---------- P3 本地记忆挂载(§10.3/§10.4) ----------
-
-// memoryProfile 最小档案:仅保证 profile 非 nil,动态四分区正常渲染
-func memoryProfile(t *testing.T) model.JSONMap {
-	t.Helper()
-	m, err := behavior.ProfileToJSONMap(&behavior.DaoistBehaviorProfile{BasePersonality: "以丹道应世"})
-	if err != nil {
-		t.Fatalf("ProfileToJSONMap() error = %v", err)
-	}
-	return m
-}
-
-// P3:memory_enabled 道人 → 检索结果注入 system 记忆分区,以 agentID+用户内容检索
-func TestSSEChatMemoryInjectedIntoPrompt(t *testing.T) {
-	sessionUID := uuid.New()
-	agentID := uint(7)
-	stub := &sseChatStub{
-		session: &model.ChatSession{
-			ID: 3, UUID: sessionUID, Type: model.SessionTypeSingle, AgentID: &agentID,
-			Agent: model.DaoAgent{ID: agentID, UUID: uuid.New(), Status: "active", ModelName: "test-model", MemoryEnabled: true},
-		},
-		pattern:           &model.LanguagePattern{SystemPrompt: "cached static prompt", BehaviorProfile: memoryProfile(t)},
-		streamFull:        "道友请讲",
-		retrievedSnippets: []turnpolicy.MemorySnippet{{Kind: "fact", Content: "用户喜欢围棋"}},
-	}
-
-	w := performSSEChat(t, stub, sessionUID)
-	if !strings.Contains(w.Body.String(), "event: done") {
-		t.Fatalf("SSE body = %q, want done", w.Body.String())
-	}
-	if stub.retrieveCalls != 1 {
-		t.Fatalf("RetrieveMemories calls = %d, want 1", stub.retrieveCalls)
-	}
-	if stub.lastRetrieveAgentID != agentID || stub.lastRetrieveMessage != "hello" {
-		t.Fatalf("检索入参 agentID=%d message=%q, want %d/hello", stub.lastRetrieveAgentID, stub.lastRetrieveMessage, agentID)
-	}
-	sys := stub.lastMessages[0]["content"]
-	if !strings.Contains(sys, "【本地记忆事实】") || !strings.Contains(sys, "用户喜欢围棋") {
-		t.Fatalf("system 消息应含检索记忆:\n%s", sys)
-	}
-}
-
-// P3:MemoryEnabled=false → 不检索不注入不蒸馏(门控)
-func TestSSEChatMemoryDisabledNoInjection(t *testing.T) {
-	sessionUID := uuid.New()
-	agentID := uint(7)
-	stub := &sseChatStub{
-		session: &model.ChatSession{
-			ID: 3, UUID: sessionUID, Type: model.SessionTypeSingle, AgentID: &agentID,
-			Agent: model.DaoAgent{ID: agentID, UUID: uuid.New(), Status: "active", ModelName: "test-model"},
-		},
-		pattern:    &model.LanguagePattern{SystemPrompt: "cached static prompt", BehaviorProfile: memoryProfile(t)},
-		streamFull: "道友请讲",
-	}
-
-	w := performSSEChat(t, stub, sessionUID)
-	if !strings.Contains(w.Body.String(), "event: done") {
-		t.Fatalf("SSE body = %q, want done", w.Body.String())
-	}
-	if stub.retrieveCalls != 0 {
-		t.Fatalf("MemoryEnabled=false 不得检索: calls = %d", stub.retrieveCalls)
-	}
-	if len(stub.distillSpecs) != 0 {
-		t.Fatalf("MemoryEnabled=false 不得蒸馏: %+v", stub.distillSpecs)
-	}
-}
-
-// P3:回复成功后异步入队蒸馏,spec 携带 session/model/用户消息与单目标双消息
-func TestSSEChatEnqueueDistillationAfterReply(t *testing.T) {
-	sessionUID := uuid.New()
-	agentID := uint(7)
-	stub := &sseChatStub{
-		session: &model.ChatSession{
-			ID: 3, UUID: sessionUID, Type: model.SessionTypeSingle, AgentID: &agentID,
-			Agent: model.DaoAgent{ID: agentID, UUID: uuid.New(), Status: "active", ModelName: "test-model", MemoryEnabled: true},
-		},
-		streamFull: "金丹妙不可言",
-	}
-
-	w := performSSEChat(t, stub, sessionUID)
-	if !strings.Contains(w.Body.String(), "event: done") {
-		t.Fatalf("SSE body = %q, want done", w.Body.String())
-	}
-	if len(stub.distillSpecs) != 1 {
-		t.Fatalf("蒸馏 spec 数 = %d, want 1", len(stub.distillSpecs))
-	}
-	spec := stub.distillSpecs[0]
-	if spec.SessionUUID != sessionUID.String() || spec.Model != "test-model" || spec.UserMessage != "hello" {
-		t.Fatalf("spec = %+v, want session/model/userMessage 匹配", spec)
-	}
-	if len(spec.Targets) != 1 {
-		t.Fatalf("Targets = %d, want 1", len(spec.Targets))
-	}
-	tgt := spec.Targets[0]
-	if tgt.AgentID != agentID {
-		t.Fatalf("Target.AgentID = %d, want %d", tgt.AgentID, agentID)
-	}
-	if len(tgt.Messages) != 2 || tgt.Messages[0].Role != "user" || tgt.Messages[0].Content != "hello" ||
-		tgt.Messages[1].Role != "assistant" || tgt.Messages[1].Content != "金丹妙不可言" {
-		t.Fatalf("Target.Messages = %+v, want [user/hello, assistant/金丹妙不可言]", tgt.Messages)
-	}
-}
-
 // RunConversation 覆写:记录调用与命令,并发两枚事件验证 handler 的 emit 透传。
 func (s *sseChatStub) RunConversation(_ context.Context, cmd service.ConversationCommand, emit func(string, any)) {
 	s.runConversationCalls++
@@ -884,22 +280,8 @@ func (s *sseChatStub) RunConversation(_ context.Context, cmd service.Conversatio
 	emit("done", struct{}{})
 }
 
-// RunGroupTurn/RetryGroupTurn 覆写:记录 legacy 群聊通道调用(langgraph 下应为 0)。
-func (s *sseChatStub) RunGroupTurn(_ context.Context, _ uuid.UUID, _ string, _ func(string, any)) {
-	s.groupTurnCalls++
-}
-
-func (s *sseChatStub) RetryGroupTurn(_ context.Context, _ uuid.UUID, _ string, _ func(string, any)) {
-	s.groupTurnCalls++
-	s.lastGroupRetry = true
-}
-
-// Task 12:LangGraph 迁移开关(orchestration_engine=langgraph)——
-// handler 只做输入校验与委托,不再触碰 legacy 组装链(TurnPlan/ComposeSystemPrompt/StreamChat)。
+// Task 15:LangGraph 权威路径——handler 只做输入校验与委托,不存在任何 legacy 组装链。
 func TestSSEChatLangGraphDelegatesWithoutLegacyComposition(t *testing.T) {
-	configuration.Configuration.OrchestrationEngine = "langgraph"
-	t.Cleanup(func() { configuration.Configuration.OrchestrationEngine = "" })
-
 	sessionUID := uuid.New()
 	agentID := uint(7)
 	stub := &sseChatStub{
@@ -913,8 +295,8 @@ func TestSSEChatLangGraphDelegatesWithoutLegacyComposition(t *testing.T) {
 	if stub.runConversationCalls != 1 {
 		t.Fatalf("RunConversation calls = %d, want 1", stub.runConversationCalls)
 	}
-	if stub.engineCalls != 0 || stub.patternCalls != 0 {
-		t.Fatalf("legacy composition ran: engineCalls=%d patternCalls=%d", stub.engineCalls, stub.patternCalls)
+	if stub.patternCalls != 0 {
+		t.Fatalf("GetOrBuildPattern calls = %d, want 0 (composition is service-owned)", stub.patternCalls)
 	}
 	if !strings.Contains(w.Body.String(), "event: accepted") || !strings.Contains(w.Body.String(), "event: done") {
 		t.Fatalf("SSE body = %q, want emit 透传 accepted/done", w.Body.String())
@@ -925,34 +307,8 @@ func TestSSEChatLangGraphDelegatesWithoutLegacyComposition(t *testing.T) {
 	}
 }
 
-// 显式 legacy 选择:保持原单聊链路,不进编排入口(存量部署零改动)。
-func TestSSEChatExplicitLegacyEngineKeepsLegacyPath(t *testing.T) {
-	configuration.Configuration.OrchestrationEngine = "legacy"
-	t.Cleanup(func() { configuration.Configuration.OrchestrationEngine = "" })
-
-	sessionUID := uuid.New()
-	agentID := uint(7)
-	stub := &sseChatStub{
-		session: &model.ChatSession{
-			ID: 3, UUID: sessionUID, Type: model.SessionTypeSingle, AgentID: &agentID,
-			Agent: model.DaoAgent{ID: agentID, UUID: uuid.New(), Status: "active", ModelName: "test-model"},
-		},
-		streamFull: "答",
-	}
-	performSSEChat(t, stub, sessionUID)
-	if stub.runConversationCalls != 0 {
-		t.Fatalf("RunConversation calls = %d, want 0 under legacy engine", stub.runConversationCalls)
-	}
-	if stub.engineCalls != 1 {
-		t.Fatalf("StreamChat calls = %d, want 1 (legacy path intact)", stub.engineCalls)
-	}
-}
-
-// Task 13:langgraph 开关下群聊同样委托 RunConversation(事件透传,legacy 群编排不触)。
+// Task 15:群聊同样唯一经 RunConversation(事件透传,不存在 legacy 群编排分支)。
 func TestSSEGroupLangGraphDelegatesToRunConversation(t *testing.T) {
-	configuration.Configuration.OrchestrationEngine = "langgraph"
-	t.Cleanup(func() { configuration.Configuration.OrchestrationEngine = "" })
-
 	sessionUID := uuid.New()
 	stub := &sseChatStub{
 		session: &model.ChatSession{ID: 4, UUID: sessionUID, Type: model.SessionTypeGroup},
@@ -961,9 +317,6 @@ func TestSSEGroupLangGraphDelegatesToRunConversation(t *testing.T) {
 
 	if stub.runConversationCalls != 1 {
 		t.Fatalf("RunConversation calls = %d, want 1", stub.runConversationCalls)
-	}
-	if stub.groupTurnCalls != 0 {
-		t.Fatalf("legacy group turn calls = %d, want 0", stub.groupTurnCalls)
 	}
 	if !strings.Contains(w.Body.String(), "event: accepted") || !strings.Contains(w.Body.String(), "event: done") {
 		t.Fatalf("SSE body = %q, want emit 透传 accepted/done", w.Body.String())

@@ -1,14 +1,13 @@
 // Package chat_service 对话业务逻辑实现(新架构 internal 分层)
-// 处理会话管理、消息存储与 SSE 流式对话;对外以 UUID 标识会话,内部联结用自增 ID。
-// 流式对话调用 Python 语言引擎 /api/v1/chat/completions/stream(SSE),错误经 engine 包映射为可读中文。
+// 处理会话管理、消息存储与流式对话;对外以 UUID 标识会话,内部联结用自增 ID。
+// 对话轮经 LangGraph 权威编排:内部编排客户端(internal/service/orchestration)调用
+// Python 内部编排 SSE API;非流式短任务(标题生成)调用 /chat/completions。
 package chat_service
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
-	stderrors "errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -23,7 +22,6 @@ import (
 	"github.com/alchemy-furnace/server/internal/interface/service"
 	"github.com/alchemy-furnace/server/internal/service/credential"
 	"github.com/alchemy-furnace/server/internal/service/engine"
-	"github.com/alchemy-furnace/server/internal/service/turnpolicy"
 	"github.com/alchemy-furnace/server/model"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -38,14 +36,6 @@ type Chat struct {
 	engineBaseURL engineendpoint.Provider
 	Memory        service.Memory // P3:可空,空=不启用本地记忆(检索/蒸馏)
 }
-
-// StreamInterruptedError 表示上游 SSE 未按协议完整结束。它只暴露稳定、安全的
-// 客户端语义；底层读取错误仅写服务端日志，避免泄露传输或凭证细节。
-type StreamInterruptedError struct{}
-
-func (*StreamInterruptedError) Error() string { return "语言引擎连接中断，请重试" }
-
-func (*StreamInterruptedError) StreamErrorCode() string { return "service.chat.stream_interrupted" }
 
 // StreamRecoveryMode 明确终止错误的安全恢复方式，避免客户端按错误码或气泡形态猜测。
 type StreamRecoveryMode string
@@ -71,7 +61,7 @@ func NewDynamic(chat dao.Chat, agent dao.Agent, pattern service.LanguagePatternP
 }
 
 // RetrieveMemories 本地记忆检索(§10.4);未装配/出错返回 nil,由 memory_enabled 门控调用
-func (s *Chat) RetrieveMemories(ctx context.Context, agentID uint, userMessage string) []turnpolicy.MemorySnippet {
+func (s *Chat) RetrieveMemories(ctx context.Context, agentID uint, userMessage string) []service.MemorySnippet {
 	if s.Memory == nil {
 		return nil
 	}
@@ -248,19 +238,6 @@ func (s *Chat) GetSessionAgentInfo(ctx context.Context, sessionUID uuid.UUID) (*
 	return session, nil
 }
 
-// AuthorizeSessionForStream 只用于单聊发送授权；GET 历史不会触发 active/model 校验。
-func (s *Chat) AuthorizeSessionForStream(ctx context.Context, session *model.ChatSession) (*credential.ModelCredentials, ierr.Error) {
-	if session == nil || session.AgentID == nil || session.Agent.UUID == uuid.Nil {
-		return nil, ierr.New(ierr.ErrorTypeInvalidRequest, "service.chat.session_unavailable", "会话信息不可用")
-	}
-	agent, credentials, err := s.validateChatAgentAccess(ctx, session.Agent.UUID)
-	if err != nil {
-		return nil, err
-	}
-	session.Agent = *agent
-	return credentials, nil
-}
-
 // GetOrBuildPattern 获取道人语言模式(委托 LanguagePatternProvider)
 func (s *Chat) GetOrBuildPattern(ctx context.Context, agentID uint) (*model.LanguagePattern, ierr.Error) {
 	return s.pattern.GetOrBuildPattern(ctx, agentID)
@@ -334,106 +311,6 @@ func (s *Chat) UpdateSessionTitle(ctx context.Context, sessionUID uuid.UUID, tit
 
 // ==================== SSE 流式对话 ====================
 
-// StreamChat 调用语言引擎流式对话并逐块回调,返回完整内容与取消标记
-//   - 使用 bufio.Reader.ReadBytes('\n') 解析 SSE,无 64KB 行限制
-//   - ctx 取消时返回已累积的部分内容与 canceled=true,err 为 nil
-//   - 引擎错误经 engine.MapEngineError 映射为可读中文描述;SSE error 事件直接透传其消息
-//
-// onChunk 每个内容片段回调一次(通常为转发到客户端 SSE)
-func (s *Chat) StreamChat(ctx context.Context, messages []map[string]string, creds *credential.ModelCredentials, options service.GenerationOptions, onChunk func(string)) (fullContent string, canceled bool, err error) {
-	stream, callErr := s.callChatStream(ctx, messages, creds, options)
-	if callErr != nil {
-		if ctx.Err() != nil {
-			return "", true, nil
-		}
-		return "", false, stderrors.New(engine.MapEngineError(callErr))
-	}
-	defer stream.Close()
-
-	// Task 10:句数硬限制(导演预算);MaxSentences<=0 不限制(透传)
-	var limiter *SentenceLimiter
-	if options.MaxSentences > 0 {
-		limiter = NewSentenceLimiter(options.MaxSentences)
-	}
-
-	var full strings.Builder
-	reader := bufio.NewReader(stream)
-	for {
-		line, readErr := reader.ReadBytes('\n')
-		if ctx.Err() != nil {
-			// 收到停止指令: 返回已累积内容
-			flushSentenceBuffer(limiter, &full, onChunk)
-			return full.String(), true, nil
-		}
-
-		text := strings.TrimRight(string(line), "\r\n")
-		if strings.HasPrefix(text, "data: ") {
-			data := strings.TrimPrefix(text, "data: ")
-			if data == "[DONE]" {
-				flushSentenceBuffer(limiter, &full, onChunk)
-				return full.String(), false, nil
-			}
-
-			// 解析 SSE JSON(语言引擎直接输出 {"content": "..."} 格式,错误时为 {"error": "..."})
-			var chunk struct {
-				Content string `json:"content"`
-				Error   string `json:"error"`
-			}
-			if jerr := json.Unmarshal([]byte(data), &chunk); jerr == nil {
-				if chunk.Error != "" {
-					flushSentenceBuffer(limiter, &full, onChunk)
-					return full.String(), false, stderrors.New(chunk.Error)
-				}
-				if chunk.Content != "" {
-					// Task 10:句数限制器决定可发出部分与是否达到预算上限
-					emit, stop := chunk.Content, false
-					if limiter != nil {
-						emit, stop = limiter.Push(chunk.Content)
-					}
-					if emit != "" {
-						full.WriteString(emit)
-						if onChunk != nil {
-							onChunk(emit)
-						}
-					}
-					if stop {
-						// 导演策略完成:关闭上游由 defer 负责,正常返回已累积内容(非取消非错误)
-						return full.String(), false, nil
-					}
-				}
-			}
-		}
-
-		if readErr != nil {
-			if readErr == io.EOF {
-				flushSentenceBuffer(limiter, &full, onChunk)
-				return full.String(), false, &StreamInterruptedError{}
-			}
-			if ctx.Err() != nil || stderrors.Is(readErr, context.Canceled) {
-				flushSentenceBuffer(limiter, &full, onChunk)
-				return full.String(), true, nil
-			}
-			zap.L().Warn("[炼丹炉] SSE 流读取异常", zap.Error(readErr))
-			flushSentenceBuffer(limiter, &full, onChunk)
-			return full.String(), false, &StreamInterruptedError{}
-		}
-	}
-}
-
-// flushSentenceBuffer 流结束/中断时把限制器缓冲的未完成内容发出,
-// 保证无句末内容(「好的」等)在导演预算下不丢失;limiter 为 nil 时零行为变化。
-func flushSentenceBuffer(limiter *SentenceLimiter, full *strings.Builder, onChunk func(string)) {
-	if limiter == nil {
-		return
-	}
-	if tail := limiter.Flush(); tail != "" {
-		full.WriteString(tail)
-		if onChunk != nil {
-			onChunk(tail)
-		}
-	}
-}
-
 // callChatCompletion 调用 Python 非流式对话接口(标题生成等短任务)
 // 返回 content 字段;错误经 engine.MapEngineError 映射
 func (s *Chat) callChatCompletion(ctx context.Context, messages []map[string]string, creds *credential.ModelCredentials) (string, error) {
@@ -482,54 +359,63 @@ func (s *Chat) callChatCompletion(ctx context.Context, messages []map[string]str
 	return wrapper.Data.Content, nil
 }
 
-// callChatStream 调用 Python 语言引擎的流式对话接口(SSE),返回响应流
-// messages 应已包含合成后的 system 消息;ctx 取消时上游 HTTP 请求随之中断(停止指令贯穿取消链)
-// creds 为按请求传递的模型凭证;base_url/api_key 为空时 Python 回退自身环境变量(向后兼容)
-func (s *Chat) callChatStream(ctx context.Context, messages []map[string]string, creds *credential.ModelCredentials, options service.GenerationOptions) (io.ReadCloser, error) {
-	url := fmt.Sprintf("%s/api/v1/chat/completions/stream", s.engineBaseURL())
-
-	modelName := configuration.Configuration.LLM.DefaultModel
-	if creds != nil && creds.Model != "" {
-		modelName = creds.Model
+// generateSessionTitle 生成会话标题并落库;title 已非空(用户手改)放弃;任何失败返回 ""
+// 单聊: members 传 nil,取 session.Agent.ModelName;群聊:取首成员 ModelName
+func (s *Chat) generateSessionTitle(ctx context.Context, session *model.ChatSession, members []*model.SessionMember, userContent, firstReply string) string {
+	// 重读再判空,防覆盖用户手动改名
+	fresh, err := s.chat.TakeSessionByUUID(ctx, session.UUID)
+	if err != nil || fresh.Title != "" {
+		return ""
 	}
-
-	reqBody := map[string]interface{}{
-		"messages": messages,
-		"model":    modelName,
+	modelName := ""
+	if len(members) > 0 {
+		modelName = members[0].Agent.ModelName
+	} else if fresh.AgentID != nil {
+		modelName = fresh.Agent.ModelName
 	}
-	// max_tokens:显式预算直达引擎(spec §7.2);0 表示不限制,回退 Python 默认 4096
-	if options.MaxTokens > 0 {
-		reqBody["max_tokens"] = options.MaxTokens
+	creds, rerr := s.ResolveCredentials(ctx, modelName)
+	if rerr != nil {
+		return ""
 	}
-	if creds != nil {
-		if creds.BaseURL != "" {
-			reqBody["base_url"] = creds.BaseURL
-		}
-		if creds.APIKey != "" {
-			reqBody["api_key"] = creds.APIKey
-		}
+	if creds == nil {
+		return ""
 	}
-	jsonBody, _ := json.Marshal(reqBody)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonBody))
+	reply := firstReply
+	if utf8.RuneCountInString(reply) > 200 {
+		reply = string([]rune(reply)[:200])
+	}
+	messages := []map[string]string{{"role": "user", "content": fmt.Sprintf(
+		"根据对话开头生成不超过15个字的标题,只输出标题本身,无引号无结尾标点。\n用户:%s\n回复:%s", userContent, reply)}}
+	title, cerr := s.callChatCompletion(ctx, messages, creds)
+	if cerr != nil {
+		zap.L().Warn("[炼丹炉] 自动命名失败", zap.Error(cerr))
+		return ""
+	}
 	if err != nil {
-		return nil, fmt.Errorf("构建流式对话请求失败: %w", err)
+		zap.L().Warn("[炼丹炉] 自动命名失败", zap.Error(err))
+		return ""
 	}
-	req.Header.Set("Content-Type", "application/json")
+	title = strings.TrimSpace(title)
+	title = strings.Trim(title, "\"'「」『』。,.，!！?？")
+	if title == "" {
+		return ""
+	}
+	if utf8.RuneCountInString(title) > 30 {
+		title = string([]rune(title)[:30])
+	}
+	if err := s.chat.UpdateSession(ctx, fresh, map[string]any{"title": title}); err != nil {
+		return ""
+	}
+	return title
+}
 
-	client := &http.Client{Timeout: 120 * time.Second}
-	resp, err := client.Do(req)
+// GenerateSessionTitle 单聊自动命名入口(公共方法)
+func (s *Chat) GenerateSessionTitle(ctx context.Context, sessionUID uuid.UUID, userContent, firstReply string) string {
+	session, err := s.chat.TakeSessionByUUID(ctx, sessionUID)
 	if err != nil {
-		return nil, fmt.Errorf("调用语言引擎流式对话接口失败: %w", err)
+		return ""
 	}
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		return nil, &engine.EngineError{Op: "语言引擎流式接口", StatusCode: resp.StatusCode, Body: string(body)}
-	}
-
-	return resp.Body, nil
+	return s.generateSessionTitle(ctx, session, nil, userContent, firstReply)
 }
 
 // CreateGroupSession 建群:成员≥2、去重、全部 active;title 可选(trim 后空则待自动命名),校验失败不落库

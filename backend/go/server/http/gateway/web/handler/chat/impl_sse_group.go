@@ -32,7 +32,8 @@ func (s *sseWriter) ping() {
 	sseWriteComment(s.w, s.flusher, "ping")
 }
 
-// runGroupSSE 群聊 SSE 通道:编排器驱动事件流,心跳 goroutine 保活至回合结束
+// runGroupSSE 群聊 SSE 通道:LangGraph 权威编排(Task 15 起唯一路径),handler 只做
+// 传输适配(头/心跳/事件写回),编排与持久化全权委托服务层 RunConversation。
 func (cls *Chat) runGroupSSE(c *gin.Context, sessionUID uuid.UUID, content string, retry, debugPrompt bool) {
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
@@ -61,21 +62,10 @@ func (cls *Chat) runGroupSSE(c *gin.Context, sessionUID uuid.UUID, content strin
 		}
 	}()
 
-	// LangGraph 迁移开关(临时,设计 §12):langgraph 下群聊同样经权威编排入口,
-	// handler 只做传输适配(头/心跳/事件写回);legacy 分支保持原样(存量部署零改动)。
-	if orchestrationEngineLangGraph() {
-		cls.chat.RunConversation(ctx, service.ConversationCommand{
-			SessionUID:  sessionUID,
-			Content:     content,
-			Retry:       retry,
-			DebugPrompt: debugPrompt,
-		}, sw.event)
-		return
-	}
-
-	if retry {
-		cls.chat.RetryGroupTurn(ctx, sessionUID, content, sw.event)
-		return
-	}
-	cls.chat.RunGroupTurn(ctx, sessionUID, content, sw.event)
+	cls.chat.RunConversation(ctx, service.ConversationCommand{
+		SessionUID:  sessionUID,
+		Content:     content,
+		Retry:       retry,
+		DebugPrompt: debugPrompt,
+	}, sw.event)
 }

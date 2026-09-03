@@ -6,7 +6,6 @@ import (
 
 	"github.com/alchemy-furnace/server/internal/errors"
 	"github.com/alchemy-furnace/server/internal/service/credential"
-	"github.com/alchemy-furnace/server/internal/service/turnpolicy"
 	"github.com/alchemy-furnace/server/model"
 	"github.com/google/uuid"
 )
@@ -85,19 +84,11 @@ type Chat interface {
 	// GetSessionAgentInfo 按会话 UUID 取会话(预加载道人),供 SSE 构建对话请求(session.ID/AgentID/Agent.ModelName)
 	GetSessionAgentInfo(ctx context.Context, sessionUID uuid.UUID) (*model.ChatSession, errors.Error)
 
-	// AuthorizeSessionForStream 校验单聊会话当前道人仍可用，并返回本轮已校验凭证。
-	// 历史读取不调用此方法，停用道人历史仍保持可读。
-	AuthorizeSessionForStream(ctx context.Context, session *model.ChatSession) (*credential.ModelCredentials, errors.Error)
-
 	// GetOrBuildPattern 获取道人语言模式(委托 LanguagePatternProvider)
 	GetOrBuildPattern(ctx context.Context, agentID uint) (*model.LanguagePattern, errors.Error)
 
 	// ResolveCredentials 解析模型调用凭证(每轮解析,模型停用/换钥即时生效)
 	ResolveCredentials(ctx context.Context, modelName string) (*credential.ModelCredentials, errors.Error)
-
-	// StreamChat 调用语言引擎流式对话并逐块回调,返回完整内容与取消标记
-	// ctx 取消时返回已累积的部分内容与 canceled=true,err 为 nil;引擎错误映射为可读中文描述
-	StreamChat(ctx context.Context, messages []map[string]string, creds *credential.ModelCredentials, options GenerationOptions, onChunk func(string)) (fullContent string, canceled bool, err error)
 
 	// SaveMessage 写入消息并刷新所属会话 updated_at(sources 字段已废弃,不再写入)
 	SaveMessage(ctx context.Context, sessionID uint, role string, content string) (*model.ChatMessage, errors.Error)
@@ -135,14 +126,7 @@ type Chat interface {
 	// 消费 Python Resume 流;不落用户消息、不新建 run、不发 accepted。
 	RunConversationResume(ctx context.Context, runUID uuid.UUID, emit func(event string, payload any))
 
-	// RunGroupTurn 群聊回合编排:落用户消息→≤3轮逐道人发言→自动命名→turn_done
-	// emit 由 handler 提供(带锁 + 心跳)
-	RunGroupTurn(ctx context.Context, sessionUID uuid.UUID, content string, emit func(event string, payload any))
-
-	// RetryGroupTurn 重试最近一个同内容用户回合，不重复保存用户消息。
-	RetryGroupTurn(ctx context.Context, sessionUID uuid.UUID, content string, emit func(event string, payload any))
-
-	// P3 记忆挂载:检索结果注入 TurnPlan.Memories;蒸馏异步触发(实现为空实现=不启用)
-	RetrieveMemories(ctx context.Context, agentID uint, userMessage string) []turnpolicy.MemorySnippet
+	// P3 记忆挂载:检索结果注入编排快照;蒸馏异步触发(实现为空实现=不启用)
+	RetrieveMemories(ctx context.Context, agentID uint, userMessage string) []MemorySnippet
 	EnqueueMemoryDistillation(ctx context.Context, spec DistillationSpec) bool
 }

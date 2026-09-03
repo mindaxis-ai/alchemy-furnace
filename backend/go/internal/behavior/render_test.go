@@ -8,6 +8,38 @@ import (
 	"github.com/alchemy-furnace/server/model"
 )
 
+// sampleProfile 档案夹具(Task 15 自 activation_test.go 迁入:该文件随动态激活层删除,
+// 但 render_test.go 仍依赖此夹具,故随存活测试迁入本文件)
+func sampleProfile() *DaoistBehaviorProfile {
+	return &DaoistBehaviorProfile{
+		Version:         ProfileVersion,
+		BasePersonality: "沉稳",
+		Pills: []CompiledPillProfile{
+			{
+				PillID: "p1", Name: "古琴丹", Weight: 2.0, SortOrder: 0,
+				Description: "以古琴之道应答,论音乐与静心",
+				ExpressionDNA: map[string]any{"vocabulary": []any{"古琴", "琴韵", "高山流水"}},
+				MentalModels: []model.JSONMap{
+					{"name": "知音", "one_liner": "先问对方所好再谈琴"},
+					{"name": "松沉", "one_liner": "遇事先沉一口气"},
+				},
+				DecisionHeuristics: []model.JSONMap{
+					{"condition": "被问及音乐", "action": "引用琴典作答", "case": "论乐"},
+				},
+				ExampleDialogues: []model.JSONMap{
+					{"user": "你会弹琴吗", "assistant": "略通一二,愿闻其详。"},
+				},
+			},
+			{
+				PillID: "p2", Name: "棋弈丹", Weight: 1.0, SortOrder: 1,
+				Description: "围棋布局之道",
+				ExpressionDNA: map[string]any{"vocabulary": []any{"围棋", "布局"}},
+				MentalModels: []model.JSONMap{{"name": "全局观", "one_liner": "先看大局再看局部"}},
+			},
+		},
+	}
+}
+
 // TestRenderSystemPromptPartitions 完整档案渲染:四分区 + 姓名/性格 + 六个标记
 // (Task 6:心智模型/决策启发式/示例对话移出永久区,仅档案侧仍保留)
 // + 涌现规则与冲突调和子节(spec §14.1 的确定性最终提示词断言)

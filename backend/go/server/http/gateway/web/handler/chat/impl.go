@@ -209,10 +209,3 @@ type ssePayload struct {
 	Terminal  bool                           `json:"terminal,omitempty"`
 	Recovery  chatservice.StreamRecoveryMode `json:"recovery,omitempty"`
 }
-
-// streamResult StreamChat goroutine 的收尾结果
-type streamResult struct {
-	full     string
-	canceled bool
-	err      error
-}

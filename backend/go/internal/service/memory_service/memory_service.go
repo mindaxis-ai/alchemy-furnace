@@ -20,7 +20,6 @@ import (
 	"github.com/alchemy-furnace/server/internal/interface/dao"
 	"github.com/alchemy-furnace/server/internal/interface/service"
 	"github.com/alchemy-furnace/server/internal/service/credential"
-	"github.com/alchemy-furnace/server/internal/service/turnpolicy"
 	"github.com/alchemy-furnace/server/model"
 )
 
@@ -196,7 +195,7 @@ func (s *MemoryService) ClearMemories(ctx context.Context, agentID uint) (int64,
 
 // Retrieve 按 pinned > 关键词精确 > bigram > importance > 最近访问 > open_loop 排序,
 // 截 ≤6 条 ≤1200 字符;并 Touch 命中记忆的 LastAccessedAt。
-func (s *MemoryService) Retrieve(ctx context.Context, agentID uint, userMessage string) ([]turnpolicy.MemorySnippet, errors.Error) {
+func (s *MemoryService) Retrieve(ctx context.Context, agentID uint, userMessage string) ([]service.MemorySnippet, errors.Error) {
 	list, err := s.dao.ListMemories(ctx, agentID, "", true)
 	if err != nil {
 		return nil, err
@@ -233,14 +232,14 @@ func (s *MemoryService) Retrieve(ctx context.Context, agentID uint, userMessage 
 			scoredList[j], scoredList[j-1] = scoredList[j-1], scoredList[j]
 		}
 	}
-	out := make([]turnpolicy.MemorySnippet, 0, maxSnippets)
+	out := make([]service.MemorySnippet, 0, maxSnippets)
 	total := 0
 	touched := make([]uint, 0, maxSnippets)
 	for _, s := range scoredList {
 		if len(out) >= maxSnippets || total+len([]rune(s.m.Content)) > maxSnippetChars {
 			break
 		}
-		out = append(out, turnpolicy.MemorySnippet{Kind: s.m.Kind, Content: s.m.Content})
+		out = append(out, service.MemorySnippet{Kind: s.m.Kind, Content: s.m.Content})
 		total += len([]rune(s.m.Content))
 		touched = append(touched, s.m.ID)
 	}

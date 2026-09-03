@@ -16,7 +16,6 @@ import (
 	"github.com/alchemy-furnace/server/internal/engineendpoint"
 	ierr "github.com/alchemy-furnace/server/internal/errors"
 	"github.com/alchemy-furnace/server/internal/interface/service"
-	"github.com/alchemy-furnace/server/internal/service/turnpolicy"
 	"github.com/alchemy-furnace/server/model"
 	"github.com/google/uuid"
 )
@@ -81,11 +80,11 @@ func (r *turnEventRecorder) contents(event string) []string {
 // turnMemory 记录蒸馏入队调用;检索按 agentID 返回预置片段。
 type turnMemory struct {
 	service.Memory
-	byAgent      map[uint][]turnpolicy.MemorySnippet
+	byAgent      map[uint][]service.MemorySnippet
 	enqueueCalls []service.DistillationSpec
 }
 
-func (m *turnMemory) Retrieve(_ context.Context, agentID uint, _ string) ([]turnpolicy.MemorySnippet, ierr.Error) {
+func (m *turnMemory) Retrieve(_ context.Context, agentID uint, _ string) ([]service.MemorySnippet, ierr.Error) {
 	return m.byAgent[agentID], nil
 }
 
@@ -117,7 +116,7 @@ func newTurnFixture(t *testing.T) (*Chat, *fakeChatDao, *turnMemory, *model.Chat
 	agent := *byName["zhang"]
 	session := &model.ChatSession{ID: 2, UUID: uuid.New(), Type: model.SessionTypeSingle, AgentID: &agent.ID, Agent: agent}
 	chats.sessions[session.UUID.String()] = session
-	mem := &turnMemory{byAgent: map[uint][]turnpolicy.MemorySnippet{}}
+	mem := &turnMemory{byAgent: map[uint][]service.MemorySnippet{}}
 	svc.Memory = mem
 	return svc, chats, mem, session
 }

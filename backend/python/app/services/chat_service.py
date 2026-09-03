@@ -6,10 +6,9 @@
 不再进行向量检索——金丹化性系统中，"丹"已化为"性"（系统提示词）。
 """
 import asyncio
-import json
 import logging
 from urllib.parse import urlsplit
-from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 from openai import (
@@ -96,7 +95,7 @@ class ChatService:
     对话服务 - 道人智慧核心
 
     接收含合成系统提示词的完整消息列表，直接调用 LLM。
-    支持流式（SSE）和非流式输出。
+    仅非流式输出（流式对话由 LangGraph 内部编排 SSE API 负责）。
 
     凭证策略（T016）：调用级 api_key/base_url 优先；缺省回退到环境变量配置
     的共享客户端，不修改共享状态。api_key 为空但 base_url 指向本地服务
@@ -322,117 +321,3 @@ class ChatService:
                     await temp_client.close()
                 except Exception:
                     logger.debug("关闭异步临时 OpenAI 客户端异常", exc_info=True)
-
-    async def chat_completion_stream(
-        self,
-        messages: List[Dict[str, str]],
-        model: str = None,
-        temperature: float = 0.7,
-        max_tokens: int = 4096,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
-    ) -> AsyncGenerator[str, None]:
-        """
-        流式对话 - 道人缓缓道来 (SSE)
-
-        格式: data: {"content": "..."}\\n\\n ... data: [DONE]\\n\\n
-        出错时: data: {"error": "...", "code": "..."} 后接 data: [DONE]
-
-        取消语义（T024）：客户端断开 / asyncio.CancelledError / GeneratorExit 时，
-        显式关闭上游 OpenAI 流以停止 token 消耗，finally 块释放全部资源。
-        """
-        model = model or settings.default_model
-        eff_key, eff_url, is_override = self._resolve_credentials(api_key, base_url)
-
-        if not self._credentials_usable(eff_key, eff_url, is_override):
-            error_data = json.dumps(
-                {"error": "OPENAI_API_KEY 未配置，无法调用 LLM", "code": "AUTH_FAILED"},
-                ensure_ascii=False,
-            )
-            yield f"data: {error_data}\n\n"
-            yield "data: [DONE]\n\n"
-            return
-
-        temp_client: Optional[AsyncOpenAI] = None
-        client = self.async_client
-        if is_override:
-            temp_client = self._build_async_client(eff_key, eff_url)
-            client = temp_client
-            logger.info(
-                "使用调用级凭证(流式) - base_url: %s, api_key: %s",
-                eff_url, mask_api_key(eff_key),
-            )
-
-        stream = None
-        finish_reason = None
-        reasoning_seen = False
-        full_content = []
-        try:
-            logger.info(f"求道之问(流式) - 模型: {model}")
-            chat_messages = self._normalize_messages(messages)
-
-            create_kwargs = _chat_create_kwargs(
-                model, chat_messages, temperature, max_tokens, stream=True, base_url=eff_url,
-            )
-            stream = await client.chat.completions.create(**create_kwargs)
-
-            async for chunk in stream:
-                # usage-only 尾帧可能 choices=[]，不能因此丢掉结束元数据。
-                if getattr(chunk, "usage", None) is not None:
-                    usage = chunk.usage
-                    details = getattr(usage, "completion_tokens_details", None)
-                    reasoning_seen = reasoning_seen or bool(
-                        details and getattr(details, "reasoning_tokens", 0)
-                    )
-                if not chunk.choices:
-                    continue
-                choice = chunk.choices[0]
-                finish_reason = getattr(choice, "finish_reason", None) or finish_reason
-                delta = choice.delta
-                if getattr(delta, "reasoning_content", None):
-                    reasoning_seen = True
-                if delta.content:
-                    full_content.append(delta.content)
-                    data = json.dumps({"content": delta.content}, ensure_ascii=False)
-                    yield f"data: {data}\n\n"
-
-            # [DONE] 只表示 SSE 传输结束，不代表业务上有可见回答。
-            # 空正文必须先发结构化错误，Go 网关才不会将其当作成功 done。
-            if not "".join(full_content).strip():
-                if finish_reason == "length":
-                    message, code = "模型在生成可见回答前达到长度上限，请稍后重试", "OUTPUT_LIMIT_REACHED"
-                elif finish_reason == "content_filter":
-                    message, code = "模型未返回可显示的回答内容", "CONTENT_FILTERED"
-                else:
-                    message, code = "模型未返回有效回答，请稍后重试", "EMPTY_RESPONSE"
-                error_data = json.dumps({"error": message, "code": code}, ensure_ascii=False)
-                yield f"data: {error_data}\n\n"
-            yield "data: [DONE]\n\n"
-            logger.info("道人回答流式传输完毕")
-
-        except (asyncio.CancelledError, GeneratorExit):
-            # 客户端断开 / Go 网关取消：安静收尾，不刷 traceback
-            logger.info("流式对话被取消（客户端断开或收到停止指令），终止上游 LLM 流")
-            raise
-        except Exception as e:
-            message, code = map_llm_error(e)
-            logger.error(f"道人回答(流式)失败 [{code}]: {e}")
-            error_data = json.dumps(
-                {"error": message, "code": code}, ensure_ascii=False
-            )
-            yield f"data: {error_data}\n\n"
-            yield "data: [DONE]\n\n"
-        finally:
-            # 释放上游流，停止 token 消耗
-            if stream is not None:
-                try:
-                    close = getattr(stream, "aclose", None) or getattr(stream, "close", None)
-                    if close is not None:
-                        await close()
-                except Exception:
-                    logger.debug("关闭上游 LLM 流异常", exc_info=True)
-            if temp_client is not None:
-                try:
-                    await temp_client.close()
-                except Exception:
-                    logger.debug("关闭临时 OpenAI 异步客户端异常", exc_info=True)

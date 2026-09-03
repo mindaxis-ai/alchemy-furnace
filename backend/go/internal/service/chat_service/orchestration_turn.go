@@ -1,6 +1,6 @@
 package chat_service
 
-// RunConversation:LangGraph 权威编排的统一对话轮入口(Task 12;迁移开关设计 §12)。
+// RunConversation:LangGraph 权威编排的统一对话轮入口(Task 12;Task 15 起唯一编排路径)。
 //
 // 职责边界:handler 只做输入校验与委托;本入口全权负责编排请求组装、内部事件映射、
 // run 生命周期与持久化语义;按会话类型路由单聊/群聊实现(Task 12/13)。
@@ -17,20 +17,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 
-	"github.com/alchemy-furnace/server/internal/configuration"
 	"github.com/alchemy-furnace/server/internal/interface/service"
 	"github.com/alchemy-furnace/server/internal/service/orchestration"
 	"github.com/alchemy-furnace/server/model"
 	"github.com/google/uuid"
 )
-
-// orchestrationEngineSelected 编排引擎迁移开关的 service 侧读取(临时,设计 §12)。
-// 与 handler 侧 orchestrationEngineLangGraph 同判据:仅显式 langgraph 走权威编排。
-func orchestrationEngineSelected() bool {
-	return strings.TrimSpace(configuration.Configuration.OrchestrationEngine) == "langgraph"
-}
 
 // ConversationEventPayload LangGraph 路径公共事件载荷(JSON 形状与 handler ssePayload 一致)。
 // RunID 注入经 withRunID(设计 §10/§11):accepted/stopped/done/error 等控制事件携带,

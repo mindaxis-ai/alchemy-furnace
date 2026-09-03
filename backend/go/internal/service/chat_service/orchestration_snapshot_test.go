@@ -14,7 +14,6 @@ import (
 	ierr "github.com/alchemy-furnace/server/internal/errors"
 	"github.com/alchemy-furnace/server/internal/interface/service"
 	"github.com/alchemy-furnace/server/internal/service/credential"
-	"github.com/alchemy-furnace/server/internal/service/turnpolicy"
 	"github.com/alchemy-furnace/server/model"
 	"github.com/google/uuid"
 )
@@ -22,10 +21,10 @@ import (
 // snapshotMemory 仅实现 Retrieve;快照构建只读检索,其余接口方法不应被触达。
 type snapshotMemory struct {
 	service.Memory
-	byAgent map[uint][]turnpolicy.MemorySnippet
+	byAgent map[uint][]service.MemorySnippet
 }
 
-func (m snapshotMemory) Retrieve(_ context.Context, agentID uint, _ string) ([]turnpolicy.MemorySnippet, ierr.Error) {
+func (m snapshotMemory) Retrieve(_ context.Context, agentID uint, _ string) ([]service.MemorySnippet, ierr.Error) {
 	return m.byAgent[agentID], nil
 }
 
@@ -65,7 +64,7 @@ func buildSnapshotFixture(t *testing.T) (*Chat, *fakeChatDao, map[string]*model.
 		agentByID: byID,
 	}
 	svc := New(chats, agents, fakePattern{}, snapshotResolver(), "")
-	svc.Memory = snapshotMemory{byAgent: map[uint][]turnpolicy.MemorySnippet{
+	svc.Memory = snapshotMemory{byAgent: map[uint][]service.MemorySnippet{
 		byName["zhang"].ID: {{Kind: "preference", Content: "zhang 记忆一"}},
 		byName["jia"].ID:   {{Kind: "preference", Content: "jia 记忆一"}},
 	}}

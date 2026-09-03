@@ -24,7 +24,7 @@
 │                     │    │                            │
 │  ┌───────────────┐  │    │  - 首页                     │
 │  │   REST API    │  │    │  - 道人 (Agents)            │
-│  │   WebSocket   │  │    │  - 金丹 (Pills)             │
+│  │   SSE 流式     │  │    │  - 金丹 (Pills)             │
 │  └───────┬───────┘  │    │  - 论道 (Chat)              │
 └──────────┼──────────┘    │  - 设置                     │
            │               └────────────────────────────┘
@@ -34,9 +34,9 @@
 │           端口: 8000                                │
 │                                                     │
 │  ┌────────────────────┐  ┌────────────────────┐     │
-│  │ 语言模式合成引擎     │  │   LLM 对话服务      │     │
-│  │ (结构化合并 +        │  │  (流式/非流式,      │     │
-│  │  LLM 涌现推导)      │  │   OpenAI 兼容)     │     │
+│  │ 语言模式合成引擎     │  │  对话编排(LangGraph) │     │
+│  │ (结构化合并 +        │  │  (单聊/群聊状态图,   │     │
+│  │  LLM 涌现推导)      │  │   SSE 事件流)      │     │
 │  └────────────────────┘  └────────────────────┘     │
 └─────────────────────────────────────────────────────┘
            │
@@ -70,8 +70,8 @@
   - 接收前端 HTTP / WebSocket 请求
   - 业务数据管理（道人、金丹、服用记录、会话、消息）
   - 语言模式缓存（LanguagePattern）的读取与失效管理
-  - 调用 Python 语言引擎（合成 / 对话）
-  - 流式对话转发
+  - 调用 Python 语言引擎（合成 / 对话编排）
+  - SSE 流式对话：传输适配层，编排/事件映射/持久化全权委托服务层（LangGraph 权威路径）
 - **架构模式**: 分层架构（handler → service → dao）
 
 ### 3. Python 语言引擎
@@ -79,7 +79,8 @@
 - **技术栈**: FastAPI + OpenAI SDK + httpx
 - **职责**:
   - **语言模式合成**：将道人基础性格与所服金丹的 skill_schema 按权重/顺序做结构化合并（加权 blending、去重、冲突检测），再用一次 LLM 调用推导融合后的"丹性"与涌现规则，生成最终系统提示词
-  - **LLM 对话**：以合成后的系统提示词调用 OpenAI 兼容接口，支持流式与非流式回复
+  - **对话编排（LangGraph）**：单聊/群聊对话由 LangGraph 状态图权威编排（发言顺序、@ 提及、记忆提案、轮次收束、沉默处理），经 SSE 向 Go 网关推送事件流（chunk/speaker_start/speaker_done/turn_done/done/error）；run 可中断后续跑
+  - **非流式补全**：`/chat/completions` 保留非流式对话（自动命名等场景）
   - **试丹预览**：对临时组合执行同样的合成与对话流程，不落库
 
 ### 4. 数据存储
@@ -98,6 +99,7 @@
 | LanguagePattern | `language_patterns` | 语言模式缓存：合成后的系统提示词、涌现规则、冲突、来源指纹 |
 | ChatSession | `chat_sessions` | 对话会话 |
 | ChatMessage | `chat_messages` | 对话消息（`sources` 字段废弃，保留为空） |
+| ChatRun | `chat_runs` | 一轮对话编排的 run 生命周期（pending/running/completed/failed/interrupted/cancelled），中断后可经 resume 续跑 |
 
 详细字段见 [specs/001-skill-persona-alchemy-pivot/data-model.md](../specs/001-skill-persona-alchemy-pivot/data-model.md)。
 
@@ -127,8 +129,11 @@ Python 语言引擎:
     ▼
 Go API:
   4. 写入/更新 language_patterns 缓存
-  5. 以合成提示词 + 会话消息调用 LLM（流式）
-  6. 通过 WebSocket 流式转发给客户端并保存消息
+  5. 单聊/群聊：服务层组装编排请求（会话/成员/记忆快照/按请求解析的凭证），
+     委托 Python LangGraph 状态图执行一轮 run（chat_runs 落库）
+  6. Python 经 SSE 推送事件流，Go 映射为公共事件契约
+     （accepted/chunk/speaker_start/speaker_done/turn_done/title/done/error）转发前端并落库
+  7. 中断的 run（interrupted）可经 POST /chat/runs/:run_id/resume 续跑
 ```
 
 ### 缓存失效规则
