@@ -51,6 +51,9 @@ type sseChatStub struct {
 
 	runConversationCalls int
 	lastCommand          service.ConversationCommand
+
+	groupTurnCalls int
+	lastGroupRetry bool
 }
 
 // P3 记忆挂载:检索委托 + 蒸馏入队(handler 经 service.Chat 接口调用)
@@ -878,6 +881,16 @@ func (s *sseChatStub) RunConversation(_ context.Context, cmd service.Conversatio
 	emit("done", struct{}{})
 }
 
+// RunGroupTurn/RetryGroupTurn 覆写:记录 legacy 群聊通道调用(langgraph 下应为 0)。
+func (s *sseChatStub) RunGroupTurn(_ context.Context, _ uuid.UUID, _ string, _ func(string, any)) {
+	s.groupTurnCalls++
+}
+
+func (s *sseChatStub) RetryGroupTurn(_ context.Context, _ uuid.UUID, _ string, _ func(string, any)) {
+	s.groupTurnCalls++
+	s.lastGroupRetry = true
+}
+
 // Task 12:LangGraph 迁移开关(orchestration_engine=langgraph)——
 // handler 只做输入校验与委托,不再触碰 legacy 组装链(TurnPlan/ComposeSystemPrompt/StreamChat)。
 func TestSSEChatLangGraphDelegatesWithoutLegacyComposition(t *testing.T) {
@@ -929,5 +942,31 @@ func TestSSEChatExplicitLegacyEngineKeepsLegacyPath(t *testing.T) {
 	}
 	if stub.engineCalls != 1 {
 		t.Fatalf("StreamChat calls = %d, want 1 (legacy path intact)", stub.engineCalls)
+	}
+}
+
+// Task 13:langgraph 开关下群聊同样委托 RunConversation(事件透传,legacy 群编排不触)。
+func TestSSEGroupLangGraphDelegatesToRunConversation(t *testing.T) {
+	configuration.Configuration.OrchestrationEngine = "langgraph"
+	t.Cleanup(func() { configuration.Configuration.OrchestrationEngine = "" })
+
+	sessionUID := uuid.New()
+	stub := &sseChatStub{
+		session: &model.ChatSession{ID: 4, UUID: sessionUID, Type: model.SessionTypeGroup},
+	}
+	w := performSSEChatBody(t, stub, sessionUID, `{"content":"报数","retry":true,"debug_prompt":true}`)
+
+	if stub.runConversationCalls != 1 {
+		t.Fatalf("RunConversation calls = %d, want 1", stub.runConversationCalls)
+	}
+	if stub.groupTurnCalls != 0 {
+		t.Fatalf("legacy group turn calls = %d, want 0", stub.groupTurnCalls)
+	}
+	if !strings.Contains(w.Body.String(), "event: accepted") || !strings.Contains(w.Body.String(), "event: done") {
+		t.Fatalf("SSE body = %q, want emit 透传 accepted/done", w.Body.String())
+	}
+	cmd := stub.lastCommand
+	if cmd.SessionUID != sessionUID || cmd.Content != "报数" || !cmd.Retry || !cmd.DebugPrompt {
+		t.Fatalf("command = %+v, want 完整透传", cmd)
 	}
 }

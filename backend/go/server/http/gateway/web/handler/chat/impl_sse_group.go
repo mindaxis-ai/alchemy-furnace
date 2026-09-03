@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/alchemy-furnace/server/internal/context/contextutil"
+	"github.com/alchemy-furnace/server/internal/interface/service"
 	chatservice "github.com/alchemy-furnace/server/internal/service/chat_service"
 	"github.com/alchemy-furnace/server/server/http/response"
 	"github.com/gin-gonic/gin"
@@ -59,6 +60,18 @@ func (cls *Chat) runGroupSSE(c *gin.Context, sessionUID uuid.UUID, content strin
 			}
 		}
 	}()
+
+	// LangGraph 迁移开关(临时,设计 §12):langgraph 下群聊同样经权威编排入口,
+	// handler 只做传输适配(头/心跳/事件写回);legacy 分支保持原样(存量部署零改动)。
+	if orchestrationEngineLangGraph() {
+		cls.chat.RunConversation(ctx, service.ConversationCommand{
+			SessionUID:  sessionUID,
+			Content:     content,
+			Retry:       retry,
+			DebugPrompt: debugPrompt,
+		}, sw.event)
+		return
+	}
 
 	if retry {
 		cls.chat.RetryGroupTurn(ctx, sessionUID, content, sw.event)

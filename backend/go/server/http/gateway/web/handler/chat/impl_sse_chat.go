@@ -351,14 +351,30 @@ func (cls *Chat) runLangGraphSSE(c *gin.Context, sessionUID uuid.UUID, content s
 		return
 	}
 	setSSEHeaders(c)
-	w := c.Writer
 	ctx := contextutil.NewContextWithGin(c)
+
+	sw := &sseWriter{w: c.Writer, flusher: flusher}
+	done := make(chan struct{})
+	defer close(done)
+	go func() { // 心跳:思考型模型长时间静默时防代理空闲超时(与 legacy/群聊通道同语义)
+		ticker := time.NewTicker(sseHeartbeatInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				sw.ping()
+			}
+		}
+	}()
+
 	cls.chat.RunConversation(ctx, service.ConversationCommand{
 		SessionUID:  sessionUID,
 		Content:     content,
 		Retry:       retry,
 		DebugPrompt: debugPrompt,
-	}, func(event string, payload any) {
-		sseWriteEvent(w, flusher, event, payload)
-	})
+	}, sw.event)
 }

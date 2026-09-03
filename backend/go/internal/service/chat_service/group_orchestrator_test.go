@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/alchemy-furnace/server/internal/behavior"
+	"github.com/alchemy-furnace/server/internal/configuration"
 	concretedao "github.com/alchemy-furnace/server/internal/dao"
 	"github.com/alchemy-furnace/server/internal/engineendpoint"
 	"github.com/alchemy-furnace/server/internal/errors"
@@ -1063,5 +1064,446 @@ func TestGroupDirectorOneEachEveryMemberOnce(t *testing.T) {
 		if sentenceCount[id] != 1 {
 			t.Fatalf("发言人 %s 输出 %d 句, want 每人一句", id, sentenceCount[id])
 		}
+	}
+}
+
+// ---- Task 13:LangGraph 群聊公共契约映射(计划锚点) ----
+
+// groupMemoryCall 一次 CreateMemory 调用的观测。
+type groupMemoryCall struct {
+	agentID uint
+	in      service.MemoryInput
+}
+
+// groupMemory 记忆服务测试替身:记录 CreateMemory/蒸馏入队,检索返回预置片段。
+type groupMemory struct {
+	service.Memory
+	byAgent      map[uint][]turnpolicy.MemorySnippet
+	memoryCalls  []groupMemoryCall
+	distillCalls []service.DistillationSpec
+}
+
+func (m *groupMemory) Retrieve(_ context.Context, agentID uint, _ string) ([]turnpolicy.MemorySnippet, errors.Error) {
+	return m.byAgent[agentID], nil
+}
+
+func (m *groupMemory) CreateMemory(_ context.Context, agentID uint, in service.MemoryInput) (*model.AgentMemory, errors.Error) {
+	m.memoryCalls = append(m.memoryCalls, groupMemoryCall{agentID: agentID, in: in})
+	return &model.AgentMemory{AgentID: agentID, Kind: in.Kind, Content: in.Content}, nil
+}
+
+func (m *groupMemory) EnqueueDistillation(_ context.Context, spec service.DistillationSpec) bool {
+	m.distillCalls = append(m.distillCalls, spec)
+	return true
+}
+
+// groupRun 一轮 LangGraph 群聊的观测结果。
+type groupRun struct {
+	Events                     []string
+	SpeakerReplies             []string // "道人名:内容"(按落库序)
+	SpeakerStarts              []string // 发言开始的道人名(按事件序)
+	TurnDoneReason             string
+	TurnDoneSpoke              int
+	TurnDoneFailed             int
+	SupervisorCalls            int // 非编排流请求次数(0=除编排流外零模型调用)
+	Chunks                     []string
+	PromptDebug                []string
+	TitleEvents                []string
+	MemoryCalls                []groupMemoryCall
+	DistillCount               int
+	PersistedAssistantContents []string
+	UserMessageCount           int
+	RunStatus                  string
+	Payloads                   map[string][]string
+}
+
+// newGroupOrchestrationServer 假 Python 引擎(群聊):编排路径按序吐事件,
+// /chat/completions 路径回统一包络 JSON(自动命名调用),记录全部请求路径。
+func newGroupOrchestrationServer(t *testing.T, paths *[]string, events []turnEvent) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*paths = append(*paths, r.URL.Path)
+		if strings.Contains(r.URL.Path, "/chat/completions") {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":{"content":"自动标题"}}`))
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		for _, e := range events {
+			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", e.name, e.payload)
+			flusher.Flush()
+		}
+	}))
+}
+
+// langGraphGroupAgentIDs 锚点群确定性道人 UUID(脚本可直接引用)。
+var langGraphGroupAgentIDs = []string{
+	"11111111-1111-1111-1111-111111111111", // 张雪峰
+	"22222222-2222-2222-2222-222222222222", // 李雪琴
+	"33333333-3333-3333-3333-333333333333", // 贾玲
+	"44444444-4444-4444-4444-444444444444", // 沈腾
+}
+
+// newLangGraphGroupFixture 计划锚点群:张雪峰/李雪琴/贾玲/沈腾(贾玲记忆关闭),
+// 标题预置"初始标题"(默认轮不触发自动命名,SupervisorCalls 计数纯净)。
+func newLangGraphGroupFixture(t *testing.T) (*Chat, *fakeChatDao, *groupMemory, *model.ChatSession) {
+	t.Helper()
+	uids := make([]uuid.UUID, 0, len(langGraphGroupAgentIDs))
+	for _, raw := range langGraphGroupAgentIDs {
+		uids = append(uids, uuid.MustParse(raw))
+	}
+	names := []string{"张雪峰", "李雪琴", "贾玲", "沈腾"}
+	agents := &fakeAgentDao{agents: map[string]*model.DaoAgent{}}
+	byID := map[uint]*model.DaoAgent{}
+	for i, uid := range uids {
+		agent := &model.DaoAgent{ID: uint(i + 1), UUID: uid, Name: names[i], Status: "active", ModelName: "test-model", MemoryEnabled: i != 2}
+		agents.agents[uid.String()] = agent
+		byID[agent.ID] = agent
+	}
+	chats := &fakeChatDao{
+		sessions:  map[string]*model.ChatSession{},
+		members:   map[uint][]*model.SessionMember{},
+		agentByID: byID,
+	}
+	svc := New(chats, agents, fakePattern{}, availableCredentialResolver("test-model"), "unused")
+	session, err := svc.CreateGroupSession(context.Background(), uids, "初始标题")
+	if err != nil {
+		t.Fatalf("建群: %v", err)
+	}
+	mem := &groupMemory{byAgent: map[uint][]turnpolicy.MemorySnippet{}}
+	svc.Memory = mem
+	return svc, chats, mem, session
+}
+
+// runGroupFixture 计划锚点入口:默认命令驱动一轮群聊。
+func runGroupFixture(t *testing.T, stream []turnEvent) groupRun {
+	return runGroupFixtureCmd(t, stream, service.ConversationCommand{Content: "@全体成员 全体都有！报数！"}, nil)
+}
+
+// runGroupFixtureCmd 驱动一轮 RunConversation 群聊并汇总观测结果。
+func runGroupFixtureCmd(t *testing.T, stream []turnEvent, cmd service.ConversationCommand, prepare func(*Chat, *fakeChatDao, *model.ChatSession)) groupRun {
+	t.Helper()
+	paths := []string{}
+	server := newGroupOrchestrationServer(t, &paths, stream)
+	t.Cleanup(server.Close)
+
+	svc, chats, mem, session := newLangGraphGroupFixture(t)
+	svc.engineBaseURL = engineendpoint.Static(server.URL)
+	if prepare != nil {
+		prepare(svc, chats, session)
+	}
+	cmd.SessionUID = session.UUID
+	rec := newTurnEventRecorder()
+	svc.RunConversation(context.Background(), cmd, rec.emit)
+
+	out := groupRun{Events: rec.events, Payloads: rec.data}
+	out.Chunks = rec.contents("chunk")
+	out.PromptDebug = rec.data["prompt_debug"]
+	out.TitleEvents = rec.data["title"]
+	out.SupervisorCalls = len(paths) - 1 // 编排流之外的非流式调用(自动命名)
+	for _, raw := range rec.data["speaker_start"] {
+		var p GroupSpeakerPayload
+		if json.Unmarshal([]byte(raw), &p) == nil {
+			out.SpeakerStarts = append(out.SpeakerStarts, p.AgentName)
+		}
+	}
+	if len(rec.data["turn_done"]) > 0 {
+		var done GroupTurnDonePayload
+		_ = json.Unmarshal([]byte(rec.data["turn_done"][0]), &done)
+		out.TurnDoneReason, out.TurnDoneSpoke, out.TurnDoneFailed = done.Reason, done.Spoke, done.FailedSpeakers
+	}
+	for _, m := range chats.messages {
+		switch m.Role {
+		case "assistant":
+			out.PersistedAssistantContents = append(out.PersistedAssistantContents, m.Content)
+			if m.AgentID != nil {
+				if a, ok := chats.agentByID[*m.AgentID]; ok {
+					out.SpeakerReplies = append(out.SpeakerReplies, a.Name+":"+m.Content)
+				}
+			}
+		case "user":
+			out.UserMessageCount++
+		}
+	}
+	out.MemoryCalls = mem.memoryCalls
+	out.DistillCount = len(mem.distillCalls)
+	if len(chats.runs) > 0 {
+		out.RunStatus = chats.runs[len(chats.runs)-1].Status
+	}
+	return out
+}
+
+// groupRollCallScript 计划锚点事件脚本:deterministic 路由 + 四道人按序报数。
+// 每道人 speaker_started→两个增量→assistant_final(文本=序数)。
+func groupRollCallScript(t *testing.T) []turnEvent {
+	t.Helper()
+	stream := []turnEvent{{"plan_created", `{"source":"deterministic","plan":{"steps":4}}`}}
+	for i, id := range langGraphGroupAgentIDs {
+		stream = append(stream,
+			turnEvent{"speaker_started", fmt.Sprintf(`{"agent_id":%q,"task":"报数"}`, id)},
+			turnEvent{"assistant_delta", fmt.Sprintf(`{"agent_id":%q,"text":"%d."}`, id, i+1)},
+			turnEvent{"assistant_delta", fmt.Sprintf(`{"agent_id":%q,"text":"到！"}`, id)},
+			turnEvent{"assistant_final", fmt.Sprintf(`{"agent_id":%q,"reply_id":"reply-%d","text":"%d"}`, id, i+1, i+1)},
+		)
+	}
+	stream = append(stream, turnEvent{"run_completed", `{}`})
+	return stream
+}
+
+// 锚点(计划 Task 13 Step 1):deterministic 路由四道人按序报数,公共序 speaker_start→
+// chunk→speaker_done,turn_done answered;标题已预置→编排外零模型调用。
+func TestLangGraphGroupRollCallMapsFourOrderedReplies(t *testing.T) {
+	result := runGroupFixture(t, groupRollCallScript(t))
+	if got, want := strings.Join(result.SpeakerReplies, "|"), "张雪峰:1|李雪琴:2|贾玲:3|沈腾:4"; got != want {
+		t.Fatalf("speaker replies = %q, want %q", got, want)
+	}
+	if result.SupervisorCalls != 0 {
+		t.Fatalf("supervisor calls = %d, want 0 (标题已预置,编排外零模型调用)", result.SupervisorCalls)
+	}
+	if got, want := strings.Join(result.SpeakerStarts, "|"), "张雪峰|李雪琴|贾玲|沈腾"; got != want {
+		t.Fatalf("speaker starts = %q, want %q", got, want)
+	}
+	if result.TurnDoneReason != "answered" || result.TurnDoneSpoke != 4 || result.TurnDoneFailed != 0 {
+		t.Fatalf("turn_done = spoke %d reason %q failed %d, want 4/answered/0", result.TurnDoneSpoke, result.TurnDoneReason, result.TurnDoneFailed)
+	}
+	if result.RunStatus != model.ChatRunStatusCompleted {
+		t.Fatalf("run status = %q, want completed", result.RunStatus)
+	}
+	if result.UserMessageCount != 1 {
+		t.Fatalf("user messages = %d, want 1", result.UserMessageCount)
+	}
+}
+
+// 单道人失败续跑:张雪峰 started+delta 后无终稿(dispatch 吞异常,无终态事件),
+// Go 以 started-无-final 判定失败→非终态 error(可继续)→李雪琴照常完成,计 failed_speakers。
+func TestLangGraphGroupFailedSpeakerContinuesTurn(t *testing.T) {
+	z, li := langGraphGroupAgentIDs[0], langGraphGroupAgentIDs[1]
+	stream := []turnEvent{
+		{"speaker_started", fmt.Sprintf(`{"agent_id":%q,"task":"报数"}`, z)},
+		{"assistant_delta", fmt.Sprintf(`{"agent_id":%q,"text":"我"}`, z)},
+		{"speaker_started", fmt.Sprintf(`{"agent_id":%q,"task":"报数"}`, li)},
+		{"assistant_final", fmt.Sprintf(`{"agent_id":%q,"reply_id":"reply-2","text":"2"}`, li)},
+		{"run_completed", `{}`},
+	}
+	result := runGroupFixture(t, stream)
+	if got, want := strings.Join(result.SpeakerReplies, "|"), "李雪琴:2"; got != want {
+		t.Fatalf("speaker replies = %q, want %q", got, want)
+	}
+	continued := false
+	for _, raw := range result.Payloads["error"] {
+		var p GroupSpeakerPayload
+		if json.Unmarshal([]byte(raw), &p) == nil && p.AgentName == "张雪峰" {
+			continued = true
+			if p.Terminal || p.ErrorCode != "service.chat.stream_unavailable" {
+				t.Fatalf("failed speaker error = %+v, want 非终态 stream_unavailable", p)
+			}
+		}
+	}
+	if !continued {
+		t.Fatalf("errors = %v, want 张雪峰 非终态失败提示", result.Payloads["error"])
+	}
+	if result.TurnDoneReason != "answered" || result.TurnDoneSpoke != 1 || result.TurnDoneFailed != 1 {
+		t.Fatalf("turn_done = spoke %d reason %q failed %d, want 1/answered/1", result.TurnDoneSpoke, result.TurnDoneReason, result.TurnDoneFailed)
+	}
+	if result.RunStatus != model.ChatRunStatusCompleted {
+		t.Fatalf("run status = %q, want completed (个别失败不拖垮整轮)", result.RunStatus)
+	}
+}
+
+// prompt_debug 关联发言人:内部 agent_id→公共 PromptDebugPayload(身份/模型/原文 messages)。
+func TestLangGraphGroupPromptDebugAssociatesSpeaker(t *testing.T) {
+	z := langGraphGroupAgentIDs[0]
+	stream := []turnEvent{
+		{"prompt_debug", fmt.Sprintf(`{"agent_id":%q,"task":"报数","model_ref":{"name":"test-model"},"messages":[{"role":"system","content":"人设"}]}`, z)},
+		{"speaker_started", fmt.Sprintf(`{"agent_id":%q,"task":"报数"}`, z)},
+		{"assistant_final", fmt.Sprintf(`{"agent_id":%q,"reply_id":"reply-1","text":"1"}`, z)},
+		{"run_completed", `{}`},
+	}
+	result := runGroupFixtureCmd(t, stream, service.ConversationCommand{Content: "报数", DebugPrompt: true}, nil)
+	if len(result.PromptDebug) != 1 {
+		t.Fatalf("prompt_debug payloads = %d, want 1", len(result.PromptDebug))
+	}
+	var p service.PromptDebugPayload
+	if err := json.Unmarshal([]byte(result.PromptDebug[0]), &p); err != nil {
+		t.Fatalf("prompt_debug payload: %v", err)
+	}
+	if p.AgentName != "张雪峰" || p.Model != "test-model" {
+		t.Fatalf("prompt debug identity = %q/%q, want 张雪峰/test-model", p.AgentName, p.Model)
+	}
+	if len(p.Messages) != 1 || p.Messages[0]["content"] != "人设" {
+		t.Fatalf("prompt debug messages = %#v, want 原文转发", p.Messages)
+	}
+}
+
+// 客户端停止:run_interrupted→stopped,零持久化(不保留半截发言,设计 §10),无 turn_done。
+func TestLangGraphGroupStopKeepsNoPartialPersistence(t *testing.T) {
+	z := langGraphGroupAgentIDs[0]
+	stream := []turnEvent{
+		{"speaker_started", fmt.Sprintf(`{"agent_id":%q,"task":"报数"}`, z)},
+		{"assistant_delta", fmt.Sprintf(`{"agent_id":%q,"text":"半"}`, z)},
+		{"run_interrupted", `{"reason":"cancelled"}`},
+	}
+	result := runGroupFixture(t, stream)
+	if len(result.PersistedAssistantContents) != 0 {
+		t.Fatalf("partial persisted = %v, want none (中断不保留不完整发言)", result.PersistedAssistantContents)
+	}
+	if n := len(result.Events); n == 0 || result.Events[n-1] != "stopped" {
+		t.Fatalf("events = %v, want stopped 收尾", result.Events)
+	}
+	if result.TurnDoneReason != "" {
+		t.Fatalf("turn_done reason = %q, want 无 turn_done", result.TurnDoneReason)
+	}
+	if result.RunStatus != model.ChatRunStatusInterrupted {
+		t.Fatalf("run status = %q, want interrupted", result.RunStatus)
+	}
+}
+
+// run_error 终态:terminal error(persisted_retry),零持久化,run failed,无 turn_done。
+func TestLangGraphGroupRunErrorTerminatesTurn(t *testing.T) {
+	z := langGraphGroupAgentIDs[0]
+	stream := []turnEvent{
+		{"speaker_started", fmt.Sprintf(`{"agent_id":%q,"task":"报数"}`, z)},
+		{"assistant_delta", fmt.Sprintf(`{"agent_id":%q,"text":"半"}`, z)},
+		{"run_error", `{"error":"ProviderTimeout"}`},
+	}
+	result := runGroupFixture(t, stream)
+	if n := len(result.Events); n == 0 || result.Events[n-1] != "error" {
+		t.Fatalf("events = %v, want terminal error 收尾", result.Events)
+	}
+	var p GroupSpeakerPayload
+	if err := json.Unmarshal([]byte(result.Payloads["error"][len(result.Payloads["error"])-1]), &p); err != nil {
+		t.Fatalf("error payload: %v", err)
+	}
+	if !p.Terminal || p.ErrorCode != "service.chat.stream_unavailable" || p.Recovery != StreamRecoveryPersistedRetry {
+		t.Fatalf("error payload = %+v, want terminal stream_unavailable+persisted_retry", p)
+	}
+	if len(result.PersistedAssistantContents) != 0 {
+		t.Fatalf("persisted = %v, want none on terminal error", result.PersistedAssistantContents)
+	}
+	if result.TurnDoneReason != "" {
+		t.Fatalf("turn_done reason = %q, want 无 turn_done", result.TurnDoneReason)
+	}
+	if result.RunStatus != model.ChatRunStatusFailed {
+		t.Fatalf("run status = %q, want failed", result.RunStatus)
+	}
+}
+
+// 兼容入口:langgraph 开关下 RunGroupTurn 委托 RunConversation(群路由),
+// 既有公共契约不变(turn_done answered + 四有序发言);开关关走 legacy(既有 legacy 测试覆盖)。
+func TestRunGroupTurnDelegatesUnderLangGraphEngine(t *testing.T) {
+	previous := configuration.Configuration.OrchestrationEngine
+	configuration.Configuration.OrchestrationEngine = "langgraph"
+	t.Cleanup(func() { configuration.Configuration.OrchestrationEngine = previous })
+
+	paths := []string{}
+	server := newGroupOrchestrationServer(t, &paths, groupRollCallScript(t))
+	t.Cleanup(server.Close)
+	svc, chats, _, session := newLangGraphGroupFixture(t)
+	svc.engineBaseURL = engineendpoint.Static(server.URL)
+
+	rec := newTurnEventRecorder()
+	svc.RunGroupTurn(context.Background(), session.UUID, "@全体成员 全体都有！报数！", rec.emit)
+
+	replies := make([]string, 0, 4)
+	for _, m := range chats.messages {
+		if m.Role == "assistant" && m.AgentID != nil {
+			if a, ok := chats.agentByID[*m.AgentID]; ok {
+				replies = append(replies, a.Name+":"+m.Content)
+			}
+		}
+	}
+	if got, want := strings.Join(replies, "|"), "张雪峰:1|李雪琴:2|贾玲:3|沈腾:4"; got != want {
+		t.Fatalf("speaker replies = %q, want %q (委托 LangGraph 权威编排)", got, want)
+	}
+	if len(paths)-1 != 0 {
+		t.Fatalf("supervisor calls = %d, want 0", len(paths)-1)
+	}
+	if n := len(rec.events); n == 0 || rec.events[n-1] != "turn_done" {
+		t.Fatalf("events tail = %v, want turn_done", rec.events[max(n-3, 0):])
+	}
+}
+
+// memory_proposed 接线 e2e:有效提案经校验落库(episode),来源 run/会话可溯;
+// 未知 agent 拒绝;同 proposal_id 幂等(只存一次)。
+func TestLangGraphGroupMemoryProposalPersistsValidated(t *testing.T) {
+	li := langGraphGroupAgentIDs[1]
+	stream := []turnEvent{
+		{"speaker_started", fmt.Sprintf(`{"agent_id":%q,"task":"报数"}`, li)},
+		{"assistant_final", fmt.Sprintf(`{"agent_id":%q,"reply_id":"reply-1","text":"2"}`, li)},
+		{"memory_proposed", fmt.Sprintf(`{"proposal_id":"p1","agent_id":%q,"content":"李雪琴辰时约饭"}`, li)},
+		{"memory_proposed", fmt.Sprintf(`{"proposal_id":"p1","agent_id":%q,"content":"重复提案应被幂等拒绝"}`, li)},
+		{"memory_proposed", `{"proposal_id":"p2","agent_id":"99999999-9999-9999-9999-999999999999","content":"未知道人应被拒绝"}`},
+		{"run_completed", `{}`},
+	}
+	var mem *groupMemory
+	var chats *fakeChatDao
+	var session *model.ChatSession
+	result := runGroupFixtureCmd(t, stream, service.ConversationCommand{Content: "报数"}, func(svc *Chat, c *fakeChatDao, s *model.ChatSession) {
+		mem = svc.Memory.(*groupMemory)
+		chats, session = c, s
+	})
+	if len(mem.memoryCalls) != 1 {
+		t.Fatalf("memory calls = %d, want 1 (重复+未知拒绝)", len(mem.memoryCalls))
+	}
+	call := mem.memoryCalls[0]
+	if call.agentID != 2 {
+		t.Fatalf("memory agent id = %d, want 2 (李雪琴)", call.agentID)
+	}
+	if call.in.Kind != "episode" {
+		t.Fatalf("memory kind = %q, want episode", call.in.Kind)
+	}
+	if call.in.Content != "李雪琴辰时约饭" {
+		t.Fatalf("memory content = %q", call.in.Content)
+	}
+	if call.in.SourceSessionID != session.UUID.String() {
+		t.Fatalf("source session = %q, want %q", call.in.SourceSessionID, session.UUID.String())
+	}
+	if call.in.SourceMessageID != chats.runs[0].UUID.String() {
+		t.Fatalf("source run = %q, want 当前 run %q", call.in.SourceMessageID, chats.runs[0].UUID.String())
+	}
+	if result.TurnDoneReason != "answered" {
+		t.Fatalf("turn_done reason = %q, want answered (提案失败不影响发言)", result.TurnDoneReason)
+	}
+}
+
+// 首轮自动命名+蒸馏:标题空→title 事件+1 次命名补全;蒸馏仅 MemoryEnabled 终稿者(贾玲关)。
+func TestLangGraphGroupFirstTurnTitlesAndDistillsMemory(t *testing.T) {
+	var mem *groupMemory
+	result := runGroupFixtureCmd(t, groupRollCallScript(t), service.ConversationCommand{Content: "@全体成员 全体都有！报数！"},
+		func(svc *Chat, _ *fakeChatDao, session *model.ChatSession) {
+			session.Title = ""
+			mem = svc.Memory.(*groupMemory)
+		})
+	if len(result.TitleEvents) != 1 {
+		t.Fatalf("title events = %v, want 1", result.TitleEvents)
+	}
+	var tp GroupTitlePayload
+	if err := json.Unmarshal([]byte(result.TitleEvents[0]), &tp); err != nil || tp.Title != "自动标题" {
+		t.Fatalf("title payload = %v (err=%v), want 自动标题", result.TitleEvents, err)
+	}
+	if result.SupervisorCalls != 1 {
+		t.Fatalf("supervisor calls = %d, want 1 (仅自动命名补全)", result.SupervisorCalls)
+	}
+	if result.DistillCount != 1 {
+		t.Fatalf("distill enqueue = %d, want 1 (单 spec 多 target)", result.DistillCount)
+	}
+	if len(mem.distillCalls) != 1 || len(mem.distillCalls[0].Targets) != 3 {
+		t.Fatalf("distill targets = %#v, want 3 (MemoryEnabled 终稿者,贾玲关闭)", mem.distillCalls)
+	}
+	if mem.distillCalls[0].Model != "test-model" {
+		t.Fatalf("distill model = %q, want 首位发言人模型 test-model", mem.distillCalls[0].Model)
+	}
+	titleIdx, doneIdx := -1, -1
+	for i, e := range result.Events {
+		if e == "title" && titleIdx == -1 {
+			titleIdx = i
+		}
+		if e == "turn_done" {
+			doneIdx = i
+		}
+	}
+	if titleIdx == -1 || doneIdx == -1 || titleIdx > doneIdx {
+		t.Fatalf("events = %v, want title 先于 turn_done", result.Events)
 	}
 }

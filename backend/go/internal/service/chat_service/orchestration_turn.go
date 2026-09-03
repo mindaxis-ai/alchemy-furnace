@@ -3,7 +3,7 @@ package chat_service
 // RunConversation:LangGraph 权威编排的统一对话轮入口(Task 12;迁移开关设计 §12)。
 //
 // 职责边界:handler 只做输入校验与委托;本入口全权负责编排请求组装、内部事件映射、
-// run 生命周期与持久化语义。Task 12 覆盖单聊;群聊接线在 Task 13。
+// run 生命周期与持久化语义;按会话类型路由单聊/群聊实现(Task 12/13)。
 //
 // 事件契约(公共 SSE,与 legacy 单聊一致):accepted/chunk/prompt_debug/title/done/error/stopped。
 // 持久化语义:只落 assistant_final(经 SaveFinalReplyOnce 按 run+reply 幂等),增量不落库;
@@ -17,12 +17,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
+	"github.com/alchemy-furnace/server/internal/configuration"
 	"github.com/alchemy-furnace/server/internal/interface/service"
 	"github.com/alchemy-furnace/server/internal/service/orchestration"
 	"github.com/alchemy-furnace/server/model"
 	"github.com/google/uuid"
 )
+
+// orchestrationEngineSelected 编排引擎迁移开关的 service 侧读取(临时,设计 §12)。
+// 与 handler 侧 orchestrationEngineLangGraph 同判据:仅显式 langgraph 走权威编排。
+func orchestrationEngineSelected() bool {
+	return strings.TrimSpace(configuration.Configuration.OrchestrationEngine) == "langgraph"
+}
 
 // ConversationEventPayload LangGraph 路径公共事件载荷(JSON 形状与 handler ssePayload 一致)。
 type ConversationEventPayload struct {
@@ -43,13 +51,20 @@ func (s *Chat) RunConversation(ctx context.Context, cmd service.ConversationComm
 		emit("error", ConversationEventPayload{Content: "会话不存在或已删除", ErrorCode: "service.chat.session_not_found", Terminal: true, Recovery: StreamRecoveryResend})
 		return
 	}
-	// 群聊走 RunGroupTurn(迁移期防御;Task 13 接线后移除)
-	if session.Type != model.SessionTypeSingle {
-		emit("error", ConversationEventPayload{Content: "该会话不支持单聊通道", ErrorCode: "service.chat.session_not_found", Terminal: true, Recovery: StreamRecoveryResend})
-		return
+	// 按会话类型路由(Task 13):单聊/群聊共用入口、run 生命周期与持久化语义
+	switch session.Type {
+	case model.SessionTypeSingle:
+		s.runSingleConversation(ctx, session, cmd, emit)
+	case model.SessionTypeGroup:
+		s.runGroupConversation(ctx, session, cmd, emit)
+	default:
+		emit("error", ConversationEventPayload{Content: "该会话不支持对话通道", ErrorCode: "service.chat.session_not_found", Terminal: true, Recovery: StreamRecoveryResend})
 	}
+}
 
-	userMessage, perr := s.persistOrReuseUserMessage(ctx, session, cmd)
+// runSingleConversation LangGraph 单聊轮:落/复用用户消息→run 生命周期→流式映射→收尾。
+func (s *Chat) runSingleConversation(ctx context.Context, session *model.ChatSession, cmd service.ConversationCommand, emit func(event string, payload any)) {
+	userMessage, perr := s.persistOrReuseUserMessage(ctx, session, cmd, nil)
 	if perr != nil {
 		emit("error", *perr)
 		return
@@ -202,8 +217,9 @@ func (s *Chat) finishLangGraphTurn(ctx context.Context, run *model.ChatRun, cmd 
 }
 
 // persistOrReuseUserMessage 新回合落库用户消息;重试复用最近一条同内容用户消息(legacy 同语义)。
+// mentions 非 nil(群聊)时随用户消息落库({"agents":[uuid],"user":bool});单聊传 nil。
 // 返回 nil payload=成功;非 nil=应作为公共 error 事件直出的稳定载荷。
-func (s *Chat) persistOrReuseUserMessage(ctx context.Context, session *model.ChatSession, cmd service.ConversationCommand) (*model.ChatMessage, *ConversationEventPayload) {
+func (s *Chat) persistOrReuseUserMessage(ctx context.Context, session *model.ChatSession, cmd service.ConversationCommand, mentions model.JSONMap) (*model.ChatMessage, *ConversationEventPayload) {
 	if cmd.Retry {
 		latest, err := s.chat.TakeLatestUserMessage(ctx, session.ID)
 		if err != nil || latest == nil {
@@ -213,6 +229,17 @@ func (s *Chat) persistOrReuseUserMessage(ctx context.Context, session *model.Cha
 			return nil, &ConversationEventPayload{Content: "无法重试该消息，请重新发送", ErrorCode: "service.chat.retry_unavailable", Terminal: true}
 		}
 		return latest, nil
+	}
+	if mentions != nil {
+		if err := s.chat.SaveMessage(ctx, &model.ChatMessage{SessionID: session.ID, Role: "user", Content: cmd.Content, Mentions: mentions}); err != nil {
+			return nil, &ConversationEventPayload{Content: "保存消息失败", ErrorCode: "service.chat.stream_unavailable", Terminal: true, Recovery: StreamRecoveryResend}
+		}
+		// DAO SaveMessage 无返回值,取回已落库消息(run 的 user_message_id 需真实 UUID/ID)
+		saved, ferr := s.chat.TakeLatestUserMessage(ctx, session.ID)
+		if ferr != nil || saved == nil {
+			return nil, &ConversationEventPayload{Content: "保存消息失败", ErrorCode: "service.chat.stream_unavailable", Terminal: true, Recovery: StreamRecoveryResend}
+		}
+		return saved, nil
 	}
 	saved, err := s.SaveMessage(ctx, session.ID, "user", cmd.Content)
 	if err != nil {
