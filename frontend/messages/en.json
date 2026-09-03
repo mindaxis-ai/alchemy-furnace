@@ -706,6 +706,7 @@
     "empty": "Send a message to start the discourse",
     "emptyHint": "The daoist will reply in a persona shaped by bound pills",
     "retry": "Retry",
+    "continue": "Continue",
     "copy": "Copy",
     "copied": "Copied",
     "error": "Error: {message}",

@@ -378,6 +378,8 @@ export interface ChatMessage {
   mentions?: { agents?: string[]; user?: boolean }
   /** 不由历史 API 持久化；刷新或切换会话后消失。 */
   prompt_debug?: PromptDebugPayload
+  /** 编排回合标识(仅流式临时消息携带,不持久化):续跑控件据此定位 interrupted run */
+  run_id?: string
 }
 
 // ========== 请求 ==========

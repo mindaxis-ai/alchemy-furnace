@@ -14,6 +14,7 @@ const doubles = vi.hoisted(() => ({
   getSession: vi.fn(),
   getMessages: vi.fn(),
   streamChatMessage: vi.fn(),
+  resumeChatRun: vi.fn(),
   stopStream: vi.fn(),
   fetchAgents: vi.fn(),
   listProviders: vi.fn(),
@@ -34,6 +35,7 @@ vi.mock('@/services/chatService', () => ({
   getSession: doubles.getSession,
   getMessages: doubles.getMessages,
   streamChatMessage: doubles.streamChatMessage,
+  resumeChatRun: doubles.resumeChatRun,
   stopStream: doubles.stopStream,
   createSession: vi.fn(),
   createGroupSession: vi.fn(),
@@ -421,6 +423,99 @@ describe('recoverable chat history and streaming', () => {
       expect.any(Object),
       { retry: true },
     )
+  })
+
+
+  it('resumes the interrupted run without resending a new user message', async () => {
+    doubles.streamChatMessage.mockImplementationOnce(async (_sessionId: string, _content: string, handlers: StreamHandlers) => {
+      handlers.onAccepted?.('run-1')
+      handlers.onChunk({ content: 'partial answer' })
+      handlers.onInterrupted()
+    })
+    doubles.resumeChatRun.mockImplementationOnce(async (_runId: string, handlers: StreamHandlers) => {
+      handlers.onChunk({ content: 'resumed tail' })
+      handlers.onDone()
+    })
+    const user = userEvent.setup()
+    renderSession(singleSession.id)
+    const input = await screen.findByRole('textbox')
+
+    await user.type(input, 'original question')
+    await user.click(screen.getByRole('button', { name: 'input.send' }))
+
+    expect(await screen.findByText('partial answer')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'continue' }))
+
+    await waitFor(() => expect(doubles.resumeChatRun).toHaveBeenCalledWith('run-1', expect.any(Object)))
+    expect(doubles.streamChatMessage).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText('partial answer')).not.toBeInTheDocument()
+    expect(await screen.findByText('resumed tail')).toBeInTheDocument()
+    expect(screen.getAllByText('original question')).toHaveLength(1)
+  })
+
+  it('keeps completed group replies and removes only the interrupted fragment on continue', async () => {
+    doubles.agents = [activeAgent('agent-a', 'Alpha'), activeAgent('agent-b', 'Beta')]
+    doubles.listSessions.mockResolvedValue({ list: [groupSession], total: 1 })
+    doubles.getSession.mockResolvedValue(groupSession)
+    doubles.streamChatMessage.mockImplementationOnce(async (_sessionId: string, _content: string, handlers: StreamHandlers) => {
+      handlers.onAccepted?.('run-g')
+      handlers.onSpeakerStart?.({ agent_id: 'agent-a', agent_name: 'Alpha' })
+      handlers.onChunk({ agent_id: 'agent-a', agent_name: 'Alpha', content: 'alpha full' })
+      handlers.onSpeakerDone?.({ agent_id: 'agent-a', agent_name: 'Alpha', message_id: 'message-a' })
+      handlers.onSpeakerStart?.({ agent_id: 'agent-b', agent_name: 'Beta' })
+      handlers.onChunk({ agent_id: 'agent-b', agent_name: 'Beta', content: 'half b' })
+      handlers.onInterrupted()
+    })
+    doubles.resumeChatRun.mockImplementationOnce(async (_runId: string, handlers: StreamHandlers) => {
+      handlers.onSpeakerStart?.({ agent_id: 'agent-b', agent_name: 'Beta' })
+      handlers.onChunk({ agent_id: 'agent-b', agent_name: 'Beta', content: 'rest b' })
+      handlers.onSpeakerDone?.({ agent_id: 'agent-b', agent_name: 'Beta', message_id: 'message-b2' })
+      handlers.onTurnDone?.({ spoke: 2 })
+    })
+    const user = userEvent.setup()
+    renderSession(groupSession.id)
+    const input = await screen.findByRole('textbox')
+
+    await user.type(input, 'group question')
+    await user.click(screen.getByRole('button', { name: 'input.send' }))
+
+    expect(await screen.findByText('alpha full')).toBeInTheDocument()
+    expect(await screen.findByText('half b')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'continue' }))
+
+    await waitFor(() => expect(doubles.resumeChatRun).toHaveBeenCalledWith('run-g', expect.any(Object)))
+    expect(screen.getByText('alpha full')).toBeInTheDocument()
+    expect(screen.queryByText('half b')).not.toBeInTheDocument()
+    expect(await screen.findByText('rest b')).toBeInTheDocument()
+  })
+
+  it('cancels the old run control when a new user message starts a new run', async () => {
+    doubles.streamChatMessage
+      .mockImplementationOnce(async (_sessionId: string, _content: string, handlers: StreamHandlers) => {
+        handlers.onAccepted?.('run-1')
+        handlers.onChunk({ content: 'old partial' })
+        handlers.onInterrupted()
+      })
+      .mockImplementationOnce(async (_sessionId: string, _content: string, handlers: StreamHandlers) => {
+        handlers.onAccepted?.('run-2')
+        handlers.onChunk({ content: 'new answer' })
+        handlers.onDone()
+      })
+    const user = userEvent.setup()
+    renderSession(singleSession.id)
+    const input = await screen.findByRole('textbox')
+
+    await user.type(input, 'first question')
+    await user.click(screen.getByRole('button', { name: 'input.send' }))
+    expect(await screen.findByText('old partial')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'continue' })).toBeInTheDocument()
+
+    await user.type(input, 'second question')
+    await user.click(screen.getByRole('button', { name: 'input.send' }))
+
+    await waitFor(() => expect(doubles.streamChatMessage).toHaveBeenCalledTimes(2))
+    expect(screen.queryByRole('button', { name: 'continue' })).not.toBeInTheDocument()
+    expect(screen.queryByText('old partial')).toBeInTheDocument()
   })
 
   it('resends a single pre-persist failure normally without duplicating the optimistic user bubble', async () => {

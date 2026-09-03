@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { streamChatMessage, type StreamHandlers } from '@/services/chatService'
+import { resumeChatRun, streamChatMessage, type StreamHandlers } from '@/services/chatService'
 
 function handlers(overrides: Partial<StreamHandlers> = {}): StreamHandlers {
   return {
@@ -162,5 +162,42 @@ describe('chat SSE transport boundaries', () => {
       terminal: true,
       recovery: 'none',
     }))
+  })
+})
+
+describe('run-aware resume transport', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('resumes the interrupted run without resending a new user message', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(sseResponse('event: done\ndata: {}\n\n'))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await resumeChatRun('run-1', handlers())
+
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/runs/run-1/resume'), expect.anything())
+    const request = fetchMock.mock.calls[0][1] as RequestInit
+    expect(request.method).toBe('POST')
+    expect(request.body).toBeUndefined()
+  })
+
+  it('delivers run_id from accepted and stopped events to the control callbacks', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse([
+      'event: accepted',
+      'data: {"run_id":"run-1"}',
+      '',
+      'event: stopped',
+      'data: {"run_id":"run-1"}',
+      '',
+      '',
+    ].join('\n'))))
+    const onAccepted = vi.fn()
+    const onStopped = vi.fn()
+    const onInterrupted = vi.fn()
+
+    await resumeChatRun('run-1', handlers({ onAccepted, onStopped, onInterrupted }))
+
+    expect(onAccepted).toHaveBeenCalledWith('run-1')
+    expect(onStopped).toHaveBeenCalledWith('run-1')
+    expect(onInterrupted).not.toHaveBeenCalled()
   })
 })

@@ -11,7 +11,7 @@
  */
 import React, { createContext, useContext, useReducer, useCallback, useRef, useEffect } from 'react'
 import * as chatService from '@/services/chatService'
-import type { PromptDebugPayload, StreamChunk, StreamSpeakerInfo } from '@/services/chatService'
+import type { PromptDebugPayload, StreamChunk, StreamSpeakerInfo, StreamHandlers } from '@/services/chatService'
 import { createStreamDispatcher } from '@/services/streamDispatcher'
 import { notifyDesktop } from '@/services/api'
 import type { ChatSession, ChatMessage, ChatRecoveryMode } from '@/services/types'
@@ -42,6 +42,8 @@ interface ChatState {
   }
   /** 群聊: 当前正在发言的道人(用于 typing 指示器显示名字/头像) */
   currentSpeaker: { agent_id: string; agent_name: string; agent_avatar?: string } | null
+  /** 当前被中断的编排回合 run_id(仅中断时非空;续跑控件据此定位,不持久化) */
+  interruptedRunId: string | null
 }
 
 /** 操作类型 */
@@ -52,7 +54,7 @@ type ChatAction =
   | { type: 'SET_MESSAGES'; payload: ChatMessage[] }
   | { type: 'ADD_MESSAGE'; payload: ChatMessage }
   | { type: 'CONSUME_RECOVERY'; payload: { messageId: string } }
-  | { type: 'ADD_STREAM_CHUNK'; payload: StreamChunk & { prompt_debug?: PromptDebugPayload } } // 追加流式输出内容
+  | { type: 'ADD_STREAM_CHUNK'; payload: StreamChunk & { prompt_debug?: PromptDebugPayload; run_id?: string } } // 追加流式输出内容
   | { type: 'FINISH_STREAM' }
   | { type: 'FINALIZE_STREAM' }
   | { type: 'STOP_STREAM' } // 流式输出被停止(保留部分内容)
@@ -61,7 +63,7 @@ type ChatAction =
   | { type: 'ADD_ERROR_MESSAGE'; payload: { text: string; recovery: ChatRecoveryMode } }
   /** 回合内系统通知(群聊单道人失败等): 追加系统条,不动 streaming 状态 */
   | { type: 'ADD_SYSTEM_NOTICE'; payload: { text: string; isError: boolean; retryable?: boolean } }
-  | { type: 'SPEAKER_START'; payload: { agent_id: string; agent_name: string; agent_avatar?: string; prompt_debug?: PromptDebugPayload } }
+  | { type: 'SPEAKER_START'; payload: { agent_id: string; agent_name: string; agent_avatar?: string; prompt_debug?: PromptDebugPayload; run_id?: string } }
   | { type: 'SPEAKER_DONE'; payload: StreamSpeakerInfo }
   /** 群聊:用服务端真实 message_id 替换本地临时 id，可附 mentions */
   | { type: 'FINALIZE_STREAM_WITH_ID'; payload: StreamSpeakerInfo & { message_id: string; mentions?: import('@/services/types').ChatMessage['mentions'] } }
@@ -81,6 +83,9 @@ type ChatAction =
   | { type: 'HISTORY_LOAD_OLDER_SUCCESS'; payload: { messages: ChatMessage[]; page: number; pageSize: number; total: number } }
   | { type: 'HISTORY_LOAD_OLDER_ERROR'; payload: string }
   | { type: 'CLEAR_CURRENT' }
+  | { type: 'SET_INTERRUPTED_RUN'; payload: string }
+  | { type: 'CLEAR_INTERRUPTED_RUN' }
+  | { type: 'DISCARD_RUN_FRAGMENT'; payload: { runId: string } }
 
 /** 初始状态 */
 const initialState: ChatState = {
@@ -94,6 +99,7 @@ const initialState: ChatState = {
   sessionLoad: { status: 'idle' },
   history: { page: 1, pageSize: 200, total: 0, hasOlder: false, loadingOlder: false, olderError: null },
   currentSpeaker: null,
+  interruptedRunId: null,
 }
 
 let localMessageSequence = 0
@@ -160,6 +166,7 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
           agent_id: action.payload.agent_id || current.agent_id,
           agent_name: action.payload.agent_name || current.agent_name,
           agent_avatar: action.payload.agent_avatar || current.agent_avatar,
+          run_id: action.payload.run_id || current.run_id,
         }
       } else {
         messages.push({
@@ -171,6 +178,7 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
           agent_name: action.payload.agent_name,
           agent_avatar: action.payload.agent_avatar,
           prompt_debug: action.payload.prompt_debug,
+          run_id: action.payload.run_id,
           created_at: new Date().toISOString(),
         })
       }
@@ -238,6 +246,7 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
         agent_name: action.payload.agent_name,
         agent_avatar: action.payload.agent_avatar,
         prompt_debug: action.payload.prompt_debug,
+        run_id: action.payload.run_id,
         created_at: new Date().toISOString(),
       })
       return { ...state, messages, currentSpeaker: action.payload }
@@ -303,6 +312,7 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
         loading: true,
         streaming: false,
         currentSpeaker: null,
+        interruptedRunId: null,
         sessionLoad: { status: 'loading' },
         history: { page: 1, pageSize: 200, total: 0, hasOlder: false, loadingOlder: false, olderError: null },
       }
@@ -314,6 +324,7 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
         loading: false,
         streaming: false,
         currentSpeaker: null,
+        interruptedRunId: null,
         sessionLoad: { status: 'ready' },
         history: {
           page: action.payload.page,
@@ -332,6 +343,7 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
         loading: false,
         streaming: false,
         currentSpeaker: null,
+        interruptedRunId: null,
         sessionLoad: { status: 'not-found' },
         history: { page: 1, pageSize: 200, total: 0, hasOlder: false, loadingOlder: false, olderError: null },
       }
@@ -343,6 +355,7 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
         loading: false,
         streaming: false,
         currentSpeaker: null,
+        interruptedRunId: null,
         sessionLoad: { status: 'error', message: action.payload },
         history: { page: 1, pageSize: 200, total: 0, hasOlder: false, loadingOlder: false, olderError: null },
       }
@@ -366,6 +379,17 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
     }
     case 'HISTORY_LOAD_OLDER_ERROR':
       return { ...state, history: { ...state.history, loadingOlder: false, olderError: action.payload } }
+    case 'SET_INTERRUPTED_RUN':
+      return { ...state, interruptedRunId: action.payload }
+    case 'CLEAR_INTERRUPTED_RUN':
+      return { ...state, interruptedRunId: null }
+    case 'DISCARD_RUN_FRAGMENT':
+      // 续跑前移除该 run 的不完整片段(已完成的回复保留;新流将重建完整终稿气泡)
+      return {
+        ...state,
+        messages: state.messages.filter(message =>
+          !(message.role === 'assistant' && message.incomplete && message.run_id === action.payload.runId)),
+      }
     case 'CLEAR_CURRENT':
       return {
         ...state,
@@ -374,6 +398,7 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
         loading: false,
         streaming: false,
         currentSpeaker: null,
+        interruptedRunId: null,
         sessionLoad: { status: 'idle' },
         history: { page: 1, pageSize: 200, total: 0, hasOlder: false, loadingOlder: false, olderError: null },
       }
@@ -404,6 +429,8 @@ interface ChatContextType {
   }) => Promise<void>
   /** 停止当前流式生成(中断 SSE 连接,部分内容落定为「已停止」) */
   stopStream: () => void
+  /** 续跑当前 interrupted run(Task 14):不重发用户消息,消费 Python Resume 流 */
+  continueRun: () => Promise<void>
 }
 
 const ChatContext = createContext<ChatContextType | null>(null)
@@ -423,6 +450,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const sessionListRequestRef = useRef(0)
   const sessionMutationVersionRef = useRef(0)
   const sessionMutationByIDRef = useRef(new Map<string, number>())
+  const interruptedRunRef = useRef<string | null>(null)
 
   const markSessionMutation = useCallback((sessionId: string) => {
     const version = ++sessionMutationVersionRef.current
@@ -441,6 +469,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     historyRef.current = state.history
   }, [state.history])
+
+  useEffect(() => {
+    interruptedRunRef.current = state.interruptedRunId
+  }, [state.interruptedRunId])
 
   /** 获取会话列表 */
   const fetchSessions = useCallback(async () => {
@@ -615,34 +647,19 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'CLEAR_CURRENT' })
   }, [])
 
-  /** 发送或重试消息(SSE 流式接收回复)。重试不追加本地用户气泡。 */
-  const streamMessage = useCallback(async (
+  /** 一轮对话的流式流水线(Task 14 提取):与发送/续跑共用同一事件契约与收尾纪律。
+   * transport 决定发起路径(streamChatMessage / resumeChatRun),其余状态机完全一致。 */
+  const runStreamPipeline = useCallback(async (
     sessionId: string,
-    content: string,
-    opts?: { retry?: boolean; reuseUserMessage?: boolean; retryBoundaryText?: string; interruptedText?: string },
+    isGroup: boolean,
+    transport: (handlers: StreamHandlers) => Promise<void>,
+    opts?: { interruptedText?: string },
   ) => {
     const generation = ++streamGenerationRef.current
-    const session = currentSessionRef.current?.id === sessionId
-      ? currentSessionRef.current
-      : sessionsRef.current.find(item => item.id === sessionId)
-    const isGroup = session?.type === 'group'
     const isActiveStream = () => generation === streamGenerationRef.current && currentSessionRef.current?.id === sessionId
-    if (!opts?.reuseUserMessage) {
-      dispatch({
-        type: 'ADD_MESSAGE',
-        payload: {
-          id: localMessageID('user'),
-          session_id: sessionId,
-          role: 'user',
-          content,
-          created_at: new Date().toISOString(),
-        },
-      })
-    } else if (isGroup && opts.retryBoundaryText) {
-      dispatch({ type: 'ADD_SYSTEM_NOTICE', payload: { text: opts.retryBoundaryText, isError: false } })
-    }
 
     // 每个请求独立持有部分内容/当前发言人/终止状态；迟到的旧请求回调不能污染新回合。
+    let turnRunId = '' // accepted 携带的 run_id(中断收尾的回退定位)
     let turnPartial = false
     let speakerPartial = false
     let activeSpeaker: StreamSpeakerInfo | null = null
@@ -655,14 +672,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     const chunker = createStreamDispatcher({
       onChunk: (chunk) => {
         if (!isActiveStream()) return
-        dispatch({ type: 'ADD_STREAM_CHUNK', payload: { ...chunk, prompt_debug: singlePromptDebug } })
+        dispatch({ type: 'ADD_STREAM_CHUNK', payload: { ...chunk, prompt_debug: singlePromptDebug, run_id: turnRunId } })
         singlePromptDebug = undefined
       },
       onSpeakerStart: (info) => {
         if (!isActiveStream()) return
         const promptDebug = groupPromptDebug.get(info.agent_id)
         groupPromptDebug.delete(info.agent_id)
-        dispatch({ type: 'SPEAKER_START', payload: { ...info, prompt_debug: promptDebug } })
+        dispatch({ type: 'SPEAKER_START', payload: { ...info, prompt_debug: promptDebug, run_id: turnRunId } })
       },
       onSpeakerDone: (info) => {
         if (!isActiveStream()) return
@@ -710,7 +727,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       turnPartial = false
     }
 
-    await chatService.streamChatMessage(sessionId, content, {
+    await transport({
       onChunk: (chunk) => {
         if (!isActiveStream()) return
         turnPartial = true
@@ -735,9 +752,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         // T6: 回合完成提醒(窗口未聚焦时 Dock 弹跳)
         notifyDesktop()
       },
-      onStopped: () => {
+      onStopped: (runId) => {
         if (!isActiveStream() || turnTerminated) return
         turnTerminated = true
+        // 中断的 run 保留可续跑状态:服务端 stopped 事件的 run_id 优先,本地 abort 回退 accepted 值
+        const interruptedRun = runId || turnRunId
+        if (interruptedRun) dispatch({ type: 'SET_INTERRUPTED_RUN', payload: interruptedRun })
         chunker.flushNow()
         activeSpeaker = null
         speakerPartial = false
@@ -762,9 +782,15 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         }
         chunker.pushNotice(error, true, false)
       },
-      onInterrupted: () => finishTerminal(opts?.interruptedText || '', accepted ? 'persisted_retry' : 'none'),
-      onAccepted: () => {
-        if (isActiveStream()) accepted = true
+      onInterrupted: () => {
+        if (!isActiveStream() || turnTerminated) return
+        if (turnRunId) dispatch({ type: 'SET_INTERRUPTED_RUN', payload: turnRunId })
+        finishTerminal(opts?.interruptedText || '', accepted ? 'persisted_retry' : 'none')
+      },
+      onAccepted: (runId) => {
+        if (!isActiveStream()) return
+        accepted = true
+        if (runId) turnRunId = runId
       },
       onPromptDebug: (payload) => {
         if (!isActiveStream()) return
@@ -810,11 +836,53 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           dispatch({ type: 'SET_SESSION_TITLE', payload: { sessionId, title } })
         }
       },
-    }, {
-      retry: opts?.retry,
-      ...(getPromptDebugEnabled() ? { debugPrompt: true } : {}),
     })
   }, [markSessionMutation])
+
+  /** 发送或重试消息(SSE 流式接收回复)。重试不追加本地用户气泡。 */
+  const streamMessage = useCallback(async (
+    sessionId: string,
+    content: string,
+    opts?: { retry?: boolean; reuseUserMessage?: boolean; retryBoundaryText?: string; interruptedText?: string },
+  ) => {
+    const session = currentSessionRef.current?.id === sessionId
+      ? currentSessionRef.current
+      : sessionsRef.current.find(item => item.id === sessionId)
+    const isGroup = session?.type === 'group'
+    if (!opts?.reuseUserMessage) {
+      dispatch({
+        type: 'ADD_MESSAGE',
+        payload: {
+          id: localMessageID('user'),
+          session_id: sessionId,
+          role: 'user',
+          content,
+          created_at: new Date().toISOString(),
+        },
+      })
+    } else if (isGroup && opts.retryBoundaryText) {
+      dispatch({ type: 'ADD_SYSTEM_NOTICE', payload: { text: opts.retryBoundaryText, isError: false } })
+    }
+    // 新用户消息作废旧 run(Task 14):清除上一轮的续跑控件定位
+    dispatch({ type: 'CLEAR_INTERRUPTED_RUN' })
+
+    await runStreamPipeline(sessionId, isGroup, (handlers) => chatService.streamChatMessage(sessionId, content, handlers, {
+      retry: opts?.retry,
+      ...(getPromptDebugEnabled() ? { debugPrompt: true } : {}),
+    }), { interruptedText: opts?.interruptedText })
+  }, [runStreamPipeline])
+
+  /** 续跑当前 interrupted run(Task 14):不重发用户消息、不新建 run,消费 Python Resume 流。 */
+  const continueRun = useCallback(async () => {
+    const runId = interruptedRunRef.current
+    const sessionId = currentSessionRef.current?.id
+    if (!runId || !sessionId) return
+    const isGroup = currentSessionRef.current?.type === 'group'
+    interruptedRunRef.current = null
+    dispatch({ type: 'CLEAR_INTERRUPTED_RUN' })
+    dispatch({ type: 'DISCARD_RUN_FRAGMENT', payload: { runId } })
+    await runStreamPipeline(sessionId, isGroup, (handlers) => chatService.resumeChatRun(runId, handlers))
+  }, [runStreamPipeline])
 
   /** 停止当前流式生成(中断连接,服务端保存部分内容) */
   const stopStream = useCallback(() => {
@@ -837,6 +905,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         clearCurrent,
         streamMessage,
         stopStream,
+        continueRun,
       }}
     >
       {children}

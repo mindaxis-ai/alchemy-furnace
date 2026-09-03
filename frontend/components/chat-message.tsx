@@ -48,7 +48,7 @@ export function ChatMessage({ message, streaming = false, members, onRetry }: Ch
   // 头像 popover 数据
   const { profile: userProfile } = useUser()
   const { state: agentState } = useAgent()
-  const { state: chatState } = useChat()
+  const { state: chatState, continueRun } = useChat()
   const currentSession = chatState.currentSession
   // 单聊会话身份兜底(群聊不得使用单聊的 session 身份;群聊 agent_name/agent_avatar 为空)
   const sessionAgentName = currentSession && currentSession.type !== 'group' ? currentSession.agent_name : undefined
@@ -108,6 +108,13 @@ export function ChatMessage({ message, streaming = false, members, onRetry }: Ch
     }
     return null
   }, [isUser, message.agent_id, message.agent_name, message.created_at, agentState.agents, chatState.currentSession, members])
+
+  // Task 14:该消息是当前 interrupted run 的不完整片段时,提供「继续」续跑动作
+  // (重发/重试路径另行保留;续跑按 run_id 定位,不重发用户消息)
+  const canContinue = !isUser
+    && Boolean(message.incomplete)
+    && Boolean(message.run_id)
+    && chatState.interruptedRunId === message.run_id
 
   const memberAvatar = members?.find(member => member.agent_id === message.agent_id)?.avatar
   const avatarSrc = isUser ? userProfile?.avatar : (message.agent_avatar || agentProfile?.avatar || memberAvatar || sessionAgentAvatar)
@@ -281,6 +288,15 @@ export function ChatMessage({ message, streaming = false, members, onRetry }: Ch
                   <TriangleAlert className="w-3 h-3 shrink-0" />
                   {t('incomplete')}
                 </span>
+                {canContinue && (
+                  <button
+                    type="button"
+                    onClick={() => { void continueRun() }}
+                    className="text-[10px] font-medium text-gold hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60"
+                  >
+                    {t('continue')}
+                  </button>
+                )}
                 {onRetry && (
                   <button
                     type="button"
