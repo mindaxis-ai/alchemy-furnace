@@ -107,8 +107,8 @@ type PillInventory interface {
 	// DiscardItem 弃置金丹实例（available→discarded 终态）；幂等
 	DiscardItem(context.Context, DiscardItemRequest) errors.Error
 
-	// ListRecipes 丹方分页；includeArchived 含归档；返回每丹方可用实例数
-	ListRecipes(ctx context.Context, page, size int, keyword string, includeArchived bool) (int64, []RecipeListItem, map[uint]int64, errors.Error)
+	// ListRecipes 丹方分页；includeArchived 含归档；返回每丹方可用实例数（键为丹方 UUID 文本）
+	ListRecipes(ctx context.Context, page, size int, keyword string, includeArchived bool) (int64, []RecipeListItem, map[string]int64, errors.Error)
 	// GetRecipe 丹方详情（含当前版本内容；任意状态可读）
 	GetRecipe(ctx context.Context, uid uuid.UUID) (*model.PillRecipe, *model.PillRecipeRevision, errors.Error)
 	// GetRecipeRevision 读指定版本；归属校验：版本必须属于该丹方，否则 404

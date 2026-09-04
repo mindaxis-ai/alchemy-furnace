@@ -372,8 +372,8 @@ func (d *AgentDao) ListActiveEffects(ctx context.Context, agentUID string) ([]id
 		if err != nil {
 			return err
 		}
-		itemIDs := make([]uint, 0, len(effects))
-		revIDs := make([]uint, 0, len(effects))
+		itemIDs := make([]string, 0, len(effects))
+		revIDs := make([]string, 0, len(effects))
 		for _, ef := range effects {
 			itemIDs = append(itemIDs, ef.ItemID)
 			revIDs = append(revIDs, ef.RecipeRevisionID)

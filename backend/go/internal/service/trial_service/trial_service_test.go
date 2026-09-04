@@ -21,10 +21,10 @@ import (
 // 其余方法由嵌入接口兜底,误用即 nil panic)
 type fakeInventory struct {
 	iservice.PillInventory
-	recipes    map[string]*model.PillRecipe
-	revisions  map[string]*model.PillRecipeRevision
-	byInternal map[uint]*model.PillRecipeRevision // 内部 ID → 版本
-	legacy     map[string]uuid.UUID               // "kind:legacyID" -> 目标 UUID
+	recipes   map[string]*model.PillRecipe
+	revisions map[string]*model.PillRecipeRevision
+	byUID     map[string]*model.PillRecipeRevision // 版本 UUID 文本 → 版本(当前版本指针已翻转为 UUID 文本)
+	legacy    map[string]uuid.UUID                 // "kind:legacyID" -> 目标 UUID
 }
 
 func (f *fakeInventory) GetRecipe(ctx context.Context, uid uuid.UUID) (*model.PillRecipe, *model.PillRecipeRevision, appErrors.Error) {
@@ -32,7 +32,7 @@ func (f *fakeInventory) GetRecipe(ctx context.Context, uid uuid.UUID) (*model.Pi
 	if !ok || recipe.CurrentRevisionID == nil {
 		return nil, nil, appErrors.ErrorRecordNotFound("recipe.not_found")
 	}
-	rev, ok := f.byInternal[*recipe.CurrentRevisionID]
+	rev, ok := f.byUID[*recipe.CurrentRevisionID]
 	if !ok {
 		return nil, nil, appErrors.ErrorRecordNotFound("recipe.revision_not_found")
 	}
@@ -42,7 +42,7 @@ func (f *fakeInventory) GetRecipe(ctx context.Context, uid uuid.UUID) (*model.Pi
 func (f *fakeInventory) GetRecipeRevision(ctx context.Context, recipeID, revisionID uuid.UUID) (*model.PillRecipeRevision, appErrors.Error) {
 	rev, ok := f.revisions[revisionID.String()]
 	recipe, rOK := f.recipes[recipeID.String()]
-	if !ok || !rOK || rev.RecipeID != recipe.ID {
+	if !ok || !rOK || rev.RecipeID != recipe.UUID.String() {
 		return nil, appErrors.ErrorRecordNotFound("recipe.revision_not_found")
 	}
 	return rev, nil
@@ -122,30 +122,32 @@ func trialMarkerSchema(versionMarker string) model.JSONMap {
 	}
 }
 
+// trialMarkers 静态提示词应渲染的标记。心智模型/决策启发式/示例对话自 e76f6fc 起
+// 移出永久区(仅入 P2 激活区或 few-shot,见 behavior/render_test.go),不再断言出现。
 var trialMarkers = []string{
-	"IDENTITY_MARKER", "DNA_MARKER", "MENTAL_MODEL_MARKER", "HEURISTIC_MARKER",
-	"VALUE_MARKER", "ANTI_PATTERN_MARKER", "HONEST_LIMIT_MARKER",
-	"EXAMPLE_MARKER", "UNKNOWN_FIELD_MARKER",
+	"IDENTITY_MARKER", "DNA_MARKER", "VALUE_MARKER", "ANTI_PATTERN_MARKER",
+	"HONEST_LIMIT_MARKER", "UNKNOWN_FIELD_MARKER",
 }
 
 // trialInventory 造一份丹方: v1/v2 两个版本,当前指向 v2;旧 pill ID 映射到该丹方
 func trialInventory() *fakeInventory {
 	recipeUUID := uuid.MustParse(recipeUUIDStr)
 	recipeID := uint(1)
+	recipeUID := recipeUUID.String()
 	rev1 := &model.PillRecipeRevision{
-		ID: 11, UUID: uuid.MustParse(rev1UUIDStr), RecipeID: recipeID, Revision: 1,
+		ID: 11, UUID: uuid.MustParse(rev1UUIDStr), RecipeID: recipeUID, Revision: 1,
 		Name: "丹方 v1", SkillSchema: trialMarkerSchema("V1_MARKER"),
 	}
 	rev2 := &model.PillRecipeRevision{
-		ID: 12, UUID: uuid.MustParse(rev2UUIDStr), RecipeID: recipeID, Revision: 2,
+		ID: 12, UUID: uuid.MustParse(rev2UUIDStr), RecipeID: recipeUID, Revision: 2,
 		Name: "丹方 v2", SkillSchema: trialMarkerSchema("V2_MARKER"),
 	}
-	cur := rev2.ID
+	curUID := rev2.UUID.String()
 	return &fakeInventory{
-		recipes:    map[string]*model.PillRecipe{recipeUUID.String(): {ID: recipeID, UUID: recipeUUID, CurrentRevisionID: &cur}},
-		revisions:  map[string]*model.PillRecipeRevision{rev1UUIDStr: rev1, rev2UUIDStr: rev2},
-		byInternal: map[uint]*model.PillRecipeRevision{11: rev1, 12: rev2},
-		legacy:     map[string]uuid.UUID{"pill:" + legacyPillUUID: recipeUUID},
+		recipes:   map[string]*model.PillRecipe{recipeUID: {ID: recipeID, UUID: recipeUUID, CurrentRevisionID: &curUID}},
+		revisions: map[string]*model.PillRecipeRevision{rev1UUIDStr: rev1, rev2UUIDStr: rev2},
+		byUID:     map[string]*model.PillRecipeRevision{rev1UUIDStr: rev1, rev2UUIDStr: rev2},
+		legacy:    map[string]uuid.UUID{"pill:" + legacyPillUUID: recipeUUID},
 	}
 }
 
@@ -351,8 +353,9 @@ func TestSynthesizeLegacyPillUnmapped(t *testing.T) {
 func TestSynthesizeRevisionOfOtherRecipe(t *testing.T) {
 	otherRecipeUUID := uuid.MustParse("44444444-4444-4444-8444-444444444444")
 	inv := trialInventory()
+	rev2UID := rev2UUIDStr
 	inv.recipes[otherRecipeUUID.String()] = &model.PillRecipe{
-		ID: 2, UUID: otherRecipeUUID, CurrentRevisionID: &[]uint{12}[0],
+		ID: 2, UUID: otherRecipeUUID, CurrentRevisionID: &rev2UID,
 	}
 	svc := newTrialService(inv, &fakeSynth{resp: &synthesis.CombineResponse{}})
 

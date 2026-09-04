@@ -133,15 +133,15 @@ func TestConfirmFusionAtomicallyProducesOutput(t *testing.T) {
 	if err := db.Where("uuid = ?", res.RevisionID.String()).First(&rev).Error; err != nil {
 		t.Fatalf("查新版本失败: %v", err)
 	}
-	if rev.RecipeID != recipe.ID || rev.Revision != 1 || rev.Name != "融合新丹" {
+	if rev.RecipeID != recipe.UUID.String() || rev.Revision != 1 || rev.Name != "融合新丹" {
 		t.Fatalf("新版本字段异常: %+v (recipe=%d)", rev, recipe.ID)
 	}
 	var out model.PillItem
 	if err := db.Where("uuid = ?", res.ItemIDs[0].String()).First(&out).Error; err != nil {
 		t.Fatalf("查产物失败: %v", err)
 	}
-	if out.State != model.PillAvailable || out.RecipeRevisionID != rev.ID {
-		t.Fatalf("产物状态/版本异常: state=%s rev=%d", out.State, out.RecipeRevisionID)
+	if out.State != model.PillAvailable || out.RecipeRevisionID != rev.UUID.String() {
+		t.Fatalf("产物状态/版本异常: state=%s rev=%s", out.State, out.RecipeRevisionID)
 	}
 
 	// 预览绑定本次操作 + lineage 写入（父实例/版本/名称 + 操作 UUID + 操作者）

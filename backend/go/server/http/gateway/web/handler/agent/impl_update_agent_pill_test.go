@@ -79,7 +79,7 @@ func seedConsumedPair(t *testing.T, db *gorm.DB) (string, string) {
 		t.Fatalf("创建测试丹方失败: %v", err)
 	}
 	rev := model.PillRecipeRevision{
-		RecipeID:    recipe.ID,
+		RecipeID:    recipe.UUID.String(),
 		Revision:    1,
 		Name:        "测试丹方",
 		SkillSchema: model.JSONMap{"expression_dna": map[string]interface{}{"rhythm": "快"}},
@@ -87,14 +87,14 @@ func seedConsumedPair(t *testing.T, db *gorm.DB) (string, string) {
 	if err := db.Create(&rev).Error; err != nil {
 		t.Fatalf("创建测试丹方版本失败: %v", err)
 	}
-	item := model.PillItem{RecipeRevisionID: rev.ID, State: model.PillConsumedByAgent}
+	item := model.PillItem{RecipeRevisionID: rev.UUID.String(), State: model.PillConsumedByAgent}
 	if err := db.Create(&item).Error; err != nil {
 		t.Fatalf("创建测试金丹实例失败: %v", err)
 	}
 	if err := db.Create(&model.AgentPillEffect{
 		AgentID:          agent.UUID.String(),
-		ItemID:           item.ID,
-		RecipeRevisionID: rev.ID,
+		ItemID:           item.UUID.String(),
+		RecipeRevisionID: rev.UUID.String(),
 		NameSnapshot:     "测试丹方",
 		SchemaSnapshot:   rev.SkillSchema,
 		Weight:           1.0,

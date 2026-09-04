@@ -62,7 +62,7 @@ func (s *Inventory) Consume(ctx context.Context, req service.ConsumePillRequest)
 			}
 			// 3) CAS 消耗：available→consumed_by_agent；竞争/重复/已消耗 0 行 → 409。
 			//    先于活跃能力预检：同实例二次服用报「实例不可用」，不误导为能力重复
-			ok, err := dao.ConsumePillItemCAS(tx, item.ID, s.now(), op.ID)
+			ok, err := dao.ConsumePillItemCAS(tx, item.ID, s.now(), op.UUID.String())
 			if err != nil {
 				return nil, err
 			}
@@ -71,7 +71,7 @@ func (s *Inventory) Consume(ctx context.Context, req service.ConsumePillRequest)
 					"金丹不可服用（已被服用/融合/弃置）")
 			}
 			// 4) 同版本活跃能力预检（唯一索引兜底并发）；失败时 CAS 随事务一起回滚
-			n, err := dao.CountActiveEffectByAgentRevision(tx, agent.UUID.String(), rev.ID)
+			n, err := dao.CountActiveEffectByAgentRevision(tx, agent.UUID.String(), rev.UUID.String())
 			if err != nil {
 				return nil, err
 			}
@@ -90,8 +90,8 @@ func (s *Inventory) Consume(ctx context.Context, req service.ConsumePillRequest)
 			}
 			ef := &model.AgentPillEffect{
 				AgentID:          agent.UUID.String(),
-				ItemID:           item.ID,
-				RecipeRevisionID: rev.ID,
+				ItemID:           item.UUID.String(),
+				RecipeRevisionID: rev.UUID.String(),
 				NameSnapshot:     rev.Name,
 				SchemaSnapshot:   deepCopySchema(rev.SkillSchema),
 				Weight:           weight,

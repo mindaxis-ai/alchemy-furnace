@@ -168,7 +168,7 @@ func seedTrialRecipe(t *testing.T, db *gorm.DB, n int) (model.PillRecipe, []mode
 	revs := make([]model.PillRecipeRevision, 0, n)
 	for i := 1; i <= n; i++ {
 		rev := model.PillRecipeRevision{
-			RecipeID:    recipe.ID,
+			RecipeID:    recipe.UUID.String(),
 			Revision:    i,
 			Name:        fmt.Sprintf("丹方 v%d", i),
 			Description: fmt.Sprintf("第 %d 版简介", i),
@@ -181,7 +181,7 @@ func seedTrialRecipe(t *testing.T, db *gorm.DB, n int) (model.PillRecipe, []mode
 		revs = append(revs, rev)
 	}
 	latest := revs[len(revs)-1]
-	if err := db.Model(&recipe).Update("current_revision_id", latest.ID).Error; err != nil {
+	if err := db.Model(&recipe).Update("current_revision_id", latest.UUID.String()).Error; err != nil {
 		t.Fatalf("指向当前版本失败: %v", err)
 	}
 	return recipe, revs

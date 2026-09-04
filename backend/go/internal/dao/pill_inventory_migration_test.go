@@ -107,14 +107,14 @@ func TestMigratePillInventoryPreservesConsumption(t *testing.T) {
 
 	// 未绑定丹：1 枚可用实例，来源为迁移操作，origin_index=0
 	var item model.PillItem
-	if err := db.Where("recipe_revision_id IN (SELECT id FROM pill_recipe_revisions WHERE name = ?)", "无绑定丹").First(&item).Error; err != nil {
+	if err := db.Where("recipe_revision_id IN (SELECT uuid FROM pill_recipe_revisions WHERE name = ?)", "无绑定丹").First(&item).Error; err != nil {
 		t.Fatal(err)
 	}
 	if item.State != model.PillAvailable {
 		t.Fatalf("无绑定丹实例 state=%q, want available", item.State)
 	}
-	if item.OriginOperationID == 0 || item.OriginIndex != 0 {
-		t.Fatalf("无绑定丹实例来源异常: op=%d index=%d", item.OriginOperationID, item.OriginIndex)
+	if item.OriginOperationID == "" || item.OriginIndex != 0 {
+		t.Fatalf("无绑定丹实例来源异常: op=%s index=%d", item.OriginOperationID, item.OriginIndex)
 	}
 
 	// 已绑定：实例为 consumed_by_agent，消耗时间/来源保留；能力快照保留权重、顺序、名称与完整内容
@@ -129,7 +129,7 @@ func TestMigratePillInventoryPreservesConsumption(t *testing.T) {
 		t.Fatalf("能力内容被改写: got=%+v want=%+v", eff.SchemaSnapshot, pills[1].SkillSchema)
 	}
 	var consumed []model.PillItem
-	if err := db.Where("recipe_revision_id = (SELECT id FROM pill_recipe_revisions WHERE name = ?)", "双绑丹").
+	if err := db.Where("recipe_revision_id = (SELECT uuid FROM pill_recipe_revisions WHERE name = ?)", "双绑丹").
 		Order("origin_index").Find(&consumed).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +145,7 @@ func TestMigratePillInventoryPreservesConsumption(t *testing.T) {
 		}
 	}
 	var cEffs []model.AgentPillEffect
-	if err := db.Where("recipe_revision_id = (SELECT id FROM pill_recipe_revisions WHERE name = ?)", "双绑丹").
+	if err := db.Where("recipe_revision_id = (SELECT uuid FROM pill_recipe_revisions WHERE name = ?)", "双绑丹").
 		Order("sort_order").Find(&cEffs).Error; err != nil {
 		t.Fatal(err)
 	}

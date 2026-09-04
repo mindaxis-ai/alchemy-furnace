@@ -140,7 +140,7 @@ func seedRecipeAndItem(t *testing.T, db *gorm.DB) (string, string) {
 		t.Fatalf("建丹方失败: %v", err)
 	}
 	rev := model.PillRecipeRevision{
-		RecipeID:    recipe.ID,
+		RecipeID:    recipe.UUID.String(),
 		Revision:    1,
 		Name:        "测试丹方",
 		SkillSchema: minSchema(),
@@ -148,7 +148,7 @@ func seedRecipeAndItem(t *testing.T, db *gorm.DB) (string, string) {
 	if err := db.Create(&rev).Error; err != nil {
 		t.Fatalf("建丹方版本失败: %v", err)
 	}
-	item := model.PillItem{RecipeRevisionID: rev.ID, State: model.PillAvailable}
+	item := model.PillItem{RecipeRevisionID: rev.UUID.String(), State: model.PillAvailable}
 	if err := db.Create(&item).Error; err != nil {
 		t.Fatalf("建金丹实例失败: %v", err)
 	}
@@ -258,7 +258,7 @@ func TestConsumeHappyPath(t *testing.T) {
 }
 
 // TestListEffectsCarriesRevision GET /effects 必须携带 effects_revision
-//（前端 PUT 全量编排的乐观锁输入；缺它前端永远 409）
+// （前端 PUT 全量编排的乐观锁输入；缺它前端永远 409）
 func TestListEffectsCarriesRevision(t *testing.T) {
 	db := setupTestDB(t)
 	agentID, itemID := seedRecipeAndItem(t, db)
@@ -568,7 +568,7 @@ func mustMarshal(v interface{}) []byte {
 }
 
 // TestGetPillItemCarriesTags 实例详情必须携带来源版本的标签
-//（hero spotlight 的「丹性」标签行依赖它；前端 PillItemDetail.tags）
+// （hero spotlight 的「丹性」标签行依赖它；前端 PillItemDetail.tags）
 func TestGetPillItemCarriesTags(t *testing.T) {
 	db := setupTestDB(t)
 	r := setupRouter()
@@ -578,7 +578,7 @@ func TestGetPillItemCarriesTags(t *testing.T) {
 		t.Fatalf("建丹方失败: %v", err)
 	}
 	rev := model.PillRecipeRevision{
-		RecipeID:    recipe.ID,
+		RecipeID:    recipe.UUID.String(),
 		Revision:    1,
 		Name:        "浩然方",
 		SkillSchema: minSchema(),
@@ -587,7 +587,7 @@ func TestGetPillItemCarriesTags(t *testing.T) {
 	if err := db.Create(&rev).Error; err != nil {
 		t.Fatalf("建丹方版本失败: %v", err)
 	}
-	item := model.PillItem{RecipeRevisionID: rev.ID, State: model.PillAvailable}
+	item := model.PillItem{RecipeRevisionID: rev.UUID.String(), State: model.PillAvailable}
 	if err := db.Create(&item).Error; err != nil {
 		t.Fatalf("建金丹实例失败: %v", err)
 	}

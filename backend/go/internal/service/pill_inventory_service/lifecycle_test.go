@@ -47,7 +47,7 @@ func countAvailableForRevision(t *testing.T, db *gorm.DB, revUUID uuid.UUID) int
 	t.Helper()
 	var n int64
 	if err := db.Model(&model.PillItem{}).
-		Joins("JOIN pill_recipe_revisions r ON r.id = pill_items.recipe_revision_id").
+		Joins("JOIN pill_recipe_revisions r ON r.uuid = pill_items.recipe_revision_id").
 		Where("r.uuid = ? AND pill_items.state = ?", revUUID.String(), model.PillAvailable).
 		Count(&n).Error; err != nil {
 		t.Fatalf("统计版本库存失败: %v", err)

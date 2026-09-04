@@ -24,13 +24,13 @@ func AgentByUUID(tx *gorm.DB, uid uuid.UUID) (*model.DaoAgent, error) {
 
 // ConsumePillItemCAS 消耗实例：available→consumed_by_agent 并写消耗去向；
 // RowsAffected==1 才返回 true（竞争/重复/已消耗均 false）
-func ConsumePillItemCAS(tx *gorm.DB, itemID uint, now time.Time, opID uint) (bool, error) {
+func ConsumePillItemCAS(tx *gorm.DB, itemID uint, now time.Time, opUID string) (bool, error) {
 	res := tx.Model(&model.PillItem{}).
 		Where("id = ? AND state = ?", itemID, model.PillAvailable).
 		Updates(map[string]any{
 			"state":                model.PillConsumedByAgent,
 			"consumed_at":          now,
-			"consume_operation_id": opID,
+			"consume_operation_id": opUID,
 		})
 	if res.Error != nil {
 		return false, res.Error
@@ -51,11 +51,11 @@ func MaxEffectSortOrder(tx *gorm.DB, agentUID string) (int, error) {
 }
 
 // CountActiveEffectByAgentRevision 同版本活跃能力预检（§3.2 步骤 2；唯一索引仅兜底并发）
-// agentUID 为道人 UUID 文本；revisionID 为丹方版本内部 id（任务 3 翻转）
-func CountActiveEffectByAgentRevision(tx *gorm.DB, agentUID string, revisionID uint) (int64, error) {
+// agentUID/revisionUID 均为 UUID 文本(011 业务键)
+func CountActiveEffectByAgentRevision(tx *gorm.DB, agentUID string, revisionUID string) (int64, error) {
 	var n int64
 	err := tx.Model(&model.AgentPillEffect{}).
-		Where("agent_id = ? AND recipe_revision_id = ? AND removed_at IS NULL", agentUID, revisionID).
+		Where("agent_id = ? AND recipe_revision_id = ? AND removed_at IS NULL", agentUID, revisionUID).
 		Count(&n).Error
 	return n, err
 }
@@ -86,7 +86,7 @@ func InvalidateLanguagePatternTx(tx *gorm.DB, agentUID string) error {
 // 无活跃能力返回 false；原实例保持 consumed_by_agent 不返还（§产品规则 移除不返还）。
 func RemoveActiveEffectByItemUUID(tx *gorm.DB, agentUID string, itemUUID uuid.UUID, now time.Time) (bool, error) {
 	res := tx.Model(&model.AgentPillEffect{}).
-		Where("agent_id = ? AND removed_at IS NULL AND item_id IN (SELECT id FROM pill_items WHERE uuid = ?)",
+		Where("agent_id = ? AND removed_at IS NULL AND item_id IN (SELECT uuid FROM pill_items WHERE uuid = ?)",
 			agentUID, itemUUID).
 		Update("removed_at", now)
 	if res.Error != nil {
@@ -107,7 +107,7 @@ func UpdateActiveEffectByItemUUID(tx *gorm.DB, agentUID string, itemUUID uuid.UU
 		updates["sort_order"] = *sortOrder
 	}
 	query := tx.Model(&model.AgentPillEffect{}).
-		Where("agent_id = ? AND removed_at IS NULL AND item_id IN (SELECT id FROM pill_items WHERE uuid = ?)",
+		Where("agent_id = ? AND removed_at IS NULL AND item_id IN (SELECT uuid FROM pill_items WHERE uuid = ?)",
 			agentUID, itemUUID)
 	if len(updates) == 0 {
 		var n int64

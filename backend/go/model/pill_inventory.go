@@ -21,7 +21,7 @@ import (
 type PillRecipe struct {
 	ID                uint       `json:"id" gorm:"primaryKey;autoIncrement;comment:丹方唯一标识"`
 	UUID              uuid.UUID  `json:"-" gorm:"type:uuid;uniqueIndex;comment:对外标识"`
-	CurrentRevisionID *uint      `json:"-" gorm:"comment:当前版本ID(创建事务内先空后回填,提交前不得为空)"`
+	CurrentRevisionID *string    `json:"-" gorm:"type:uuid;comment:当前版本UUID文本(创建事务内先空后回填,提交前不得为空)"`
 	IsBuiltin         bool       `json:"is_builtin" gorm:"default:false;index;comment:是否系统内置丹方"`
 	ArchivedAt        *time.Time `json:"archived_at" gorm:"comment:归档时间;空=未归档"`
 	CreatedAt         time.Time  `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
@@ -49,7 +49,7 @@ func (m *PillRecipe) BeforeCreate(tx *gorm.DB) error {
 type PillRecipeRevision struct {
 	ID           uint      `json:"id" gorm:"primaryKey;autoIncrement;comment:版本唯一标识"`
 	UUID         uuid.UUID `json:"-" gorm:"type:uuid;uniqueIndex;comment:对外标识(API 指定版本用)"`
-	RecipeID     uint      `json:"-" gorm:"not null;uniqueIndex:idx_recipe_revision;comment:所属丹方"`
+	RecipeID     string    `json:"-" gorm:"type:uuid;not null;uniqueIndex:idx_recipe_revision;comment:所属丹方UUID文本(011 业务键)"`
 	Revision     int       `json:"revision" gorm:"not null;uniqueIndex:idx_recipe_revision;comment:内部递增版本号(从1开始)"`
 	Name         string    `json:"name" gorm:"size:100;not null;comment:丹方名称"`
 	Description  string    `json:"description" gorm:"type:text;comment:丹方简介(含触发语、反触发语)"`
@@ -58,6 +58,9 @@ type PillRecipeRevision struct {
 	Author       string    `json:"author" gorm:"size:100;comment:作者"`
 	VersionLabel string    `json:"version_label" gorm:"size:20;default:1.0.0;comment:展示用版本字符串"`
 	CreatedAt    time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
+
+	// 011 关联标签：关系列存父实体 UUID 文本，FK 按父表 uuid 列约束
+	Recipe PillRecipe `json:"-" gorm:"foreignKey:RecipeID;references:UUID;constraint:OnDelete:Restrict"`
 }
 
 // TableName 指定表名
@@ -91,13 +94,18 @@ const (
 type PillItem struct {
 	ID                 uint          `json:"id" gorm:"primaryKey;autoIncrement;comment:实例唯一标识"`
 	UUID               uuid.UUID     `json:"-" gorm:"type:uuid;uniqueIndex;comment:对外标识"`
-	RecipeRevisionID   uint          `json:"-" gorm:"not null;index;comment:所属丹方版本(禁止删除父记录)"`
+	RecipeRevisionID   string        `json:"-" gorm:"type:uuid;not null;index;comment:所属丹方版本UUID文本(禁止删除父记录)"`
 	State              PillItemState `json:"state" gorm:"size:24;not null;default:available;index;comment:库存状态"`
 	CreatedAt          time.Time     `json:"created_at" gorm:"autoCreateTime;comment:炼成时间"`
 	ConsumedAt         *time.Time    `json:"consumed_at" gorm:"comment:消耗时间;空=未消耗"`
-	ConsumeOperationID *uint         `json:"-" gorm:"comment:消耗成功操作ID;空=未消耗"`
-	OriginOperationID  uint          `json:"-" gorm:"not null;uniqueIndex:idx_item_origin;comment:来源成功操作ID(炼制/迁移)"`
+	ConsumeOperationID *string       `json:"-" gorm:"type:uuid;comment:消耗成功操作UUID文本;空=未消耗"`
+	OriginOperationID  string        `json:"-" gorm:"type:uuid;not null;uniqueIndex:idx_item_origin;comment:来源成功操作UUID文本(炼制/迁移)"`
 	OriginIndex        int           `json:"-" gorm:"not null;default:0;uniqueIndex:idx_item_origin;comment:同操作内产出序号(0起)"`
+
+	// 011 关联标签：关系列存父实体 UUID 文本，FK 按父表 uuid 列约束
+	RecipeRevision   PillRecipeRevision `json:"-" gorm:"foreignKey:RecipeRevisionID;references:UUID;constraint:OnDelete:Restrict"`
+	OriginOperation  PillOperation      `json:"-" gorm:"foreignKey:OriginOperationID;references:UUID;constraint:OnDelete:Restrict"`
+	ConsumeOperation *PillOperation     `json:"-" gorm:"foreignKey:ConsumeOperationID;references:UUID;constraint:OnDelete:Restrict"`
 }
 
 // TableName 指定表名
@@ -123,8 +131,8 @@ type AgentPillEffect struct {
 	ID               uint       `json:"id" gorm:"primaryKey;autoIncrement;comment:能力唯一标识"`
 	UUID             uuid.UUID  `json:"-" gorm:"type:uuid;uniqueIndex;comment:对外标识"`
 	AgentID          string     `json:"-" gorm:"type:uuid;not null;index;uniqueIndex:idx_agent_active_recipe_revision,where:removed_at IS NULL;comment:所属道人UUID文本"`
-	ItemID           uint       `json:"-" gorm:"not null;uniqueIndex;comment:来源实例"`
-	RecipeRevisionID uint       `json:"-" gorm:"not null;uniqueIndex:idx_agent_active_recipe_revision,where:removed_at IS NULL;comment:吸收的丹方版本"`
+	ItemID           string     `json:"-" gorm:"type:uuid;not null;uniqueIndex;comment:来源实例UUID文本"`
+	RecipeRevisionID string     `json:"-" gorm:"type:uuid;not null;uniqueIndex:idx_agent_active_recipe_revision,where:removed_at IS NULL;comment:吸收的丹方版本UUID文本"`
 	NameSnapshot     string     `json:"name_snapshot" gorm:"size:100;not null;comment:吸收时的名称快照"`
 	SchemaSnapshot   JSONMap    `json:"schema_snapshot" gorm:"not null;serializer:json;comment:吸收时的完整能力内容快照(深拷贝)"`
 	Weight           float64    `json:"weight" gorm:"default:1.0;comment:权重(0-10,非剂量)"`
@@ -133,7 +141,9 @@ type AgentPillEffect struct {
 	RemovedAt        *time.Time `json:"removed_at" gorm:"index;comment:移除时间;空=活跃(移除不返还金丹)"`
 
 	// 来源实例（语言模式指纹/turn policy 身份均使用实例 UUID；禁止删除父记录）
-	Item PillItem `json:"-" gorm:"foreignKey:ItemID;references:ID;constraint:OnDelete:Restrict;"`
+	// 011 关联标签：关系列存父实体 UUID 文本，FK 按父表 uuid 列约束
+	Item           PillItem           `json:"-" gorm:"foreignKey:ItemID;references:UUID;constraint:OnDelete:Restrict"`
+	RecipeRevision PillRecipeRevision `json:"-" gorm:"foreignKey:RecipeRevisionID;references:UUID;constraint:OnDelete:Restrict"`
 }
 
 // TableName 指定表名
@@ -190,7 +200,10 @@ type FusionPreview struct {
 	OperatorSnapshot     JSONMap   `json:"-" gorm:"type:text;not null;serializer:json;comment:操作者信息快照(名称/UUID)"`
 	CreatedAt            time.Time `json:"created_at" gorm:"autoCreateTime;comment:生成时间"`
 	ExpiresAt            time.Time `json:"expires_at" gorm:"index;comment:过期时间"`
-	ConfirmedOperationID *uint     `json:"-" gorm:"comment:确认成功操作ID;空=未确认(只能确认一次)"`
+	ConfirmedOperationID *string   `json:"-" gorm:"type:uuid;comment:确认成功操作UUID文本;空=未确认(只能确认一次)"`
+
+	// 011 关联标签：关系列存父实体 UUID 文本，FK 按父表 uuid 列约束
+	ConfirmedOperation *PillOperation `json:"-" gorm:"foreignKey:ConfirmedOperationID;references:UUID;constraint:OnDelete:Restrict"`
 }
 
 // TableName 指定表名
@@ -243,10 +256,14 @@ func (PillLegacyMap) TableName() string {
 // Disposition: granted=新用户实际赠送; legacy_accounted=迁移用户按旧数据核算过(不再领取)
 type PillStarterGrant struct {
 	ID          uint      `json:"-" gorm:"primaryKey;autoIncrement;comment:记录唯一标识"`
-	RecipeID    uint      `json:"-" gorm:"not null;uniqueIndex;comment:内置丹方"`
+	RecipeID    string    `json:"-" gorm:"type:uuid;not null;uniqueIndex;comment:内置丹方UUID文本"`
 	Disposition string    `json:"-" gorm:"size:24;not null;comment:granted/legacy_accounted"`
-	ItemID      *uint     `json:"-" gorm:"comment:赠送的可用实例;legacy_accounted 为空"`
+	ItemID      *string   `json:"-" gorm:"type:uuid;comment:赠送的可用实例UUID文本;legacy_accounted 为空"`
 	CreatedAt   time.Time `json:"-" gorm:"autoCreateTime;comment:记录时间"`
+
+	// 011 关联标签：关系列存父实体 UUID 文本，FK 按父表 uuid 列约束
+	Recipe PillRecipe `json:"-" gorm:"foreignKey:RecipeID;references:UUID;constraint:OnDelete:Restrict"`
+	Item   *PillItem  `json:"-" gorm:"foreignKey:ItemID;references:UUID;constraint:OnDelete:Restrict"`
 }
 
 // TableName 指定表名

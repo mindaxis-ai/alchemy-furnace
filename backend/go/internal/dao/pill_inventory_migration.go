@@ -204,7 +204,7 @@ func migrateLegacyData(tx *gorm.DB, report model.JSONMap) (*migrationStats, erro
 			return nil, fmt.Errorf("写入丹方失败: %w", err)
 		}
 		rev := model.PillRecipeRevision{
-			RecipeID:     recipe.ID,
+			RecipeID:     recipe.UUID.String(),
 			Revision:     1,
 			Name:         pill.Name,
 			Description:  pill.Description,
@@ -217,7 +217,7 @@ func migrateLegacyData(tx *gorm.DB, report model.JSONMap) (*migrationStats, erro
 		if err := tx.Create(&rev).Error; err != nil {
 			return nil, fmt.Errorf("写入丹方版本失败: %w", err)
 		}
-		if err := tx.Model(&recipe).Update("current_revision_id", rev.ID).Error; err != nil {
+		if err := tx.Model(&recipe).Update("current_revision_id", rev.UUID.String()).Error; err != nil {
 			return nil, fmt.Errorf("回填丹方当前版本失败: %w", err)
 		}
 		stats.recipes++
@@ -233,9 +233,9 @@ func migrateLegacyData(tx *gorm.DB, report model.JSONMap) (*migrationStats, erro
 		myBinds := byPill[pill.UUID.String()]
 		if len(myBinds) == 0 {
 			item := model.PillItem{
-				RecipeRevisionID:  rev.ID,
+				RecipeRevisionID:  rev.UUID.String(),
 				State:             model.PillAvailable,
-				OriginOperationID: op.ID,
+				OriginOperationID: op.UUID.String(),
 				OriginIndex:       0,
 				CreatedAt:         pill.CreatedAt,
 			}
@@ -255,12 +255,13 @@ func migrateLegacyData(tx *gorm.DB, report model.JSONMap) (*migrationStats, erro
 		})
 		for i, b := range myBinds {
 			consumedAt := b.CreatedAt
+			opUID := op.UUID.String()
 			item := model.PillItem{
-				RecipeRevisionID:   rev.ID,
+				RecipeRevisionID:   rev.UUID.String(),
 				State:              model.PillConsumedByAgent,
 				ConsumedAt:         &consumedAt,
-				ConsumeOperationID: &op.ID,
-				OriginOperationID:  op.ID,
+				ConsumeOperationID: &opUID,
+				OriginOperationID:  opUID,
 				OriginIndex:        i,
 				CreatedAt:          pill.CreatedAt,
 			}
@@ -272,8 +273,8 @@ func migrateLegacyData(tx *gorm.DB, report model.JSONMap) (*migrationStats, erro
 			// 能力快照：保留名称/完整内容/权重/顺序/吸收时间
 			eff := model.AgentPillEffect{
 				AgentID:          b.AgentID,
-				ItemID:           item.ID,
-				RecipeRevisionID: rev.ID,
+				ItemID:           item.UUID.String(),
+				RecipeRevisionID: rev.UUID.String(),
 				NameSnapshot:     pill.Name,
 				SchemaSnapshot:   deepCopyJSON(pill.SkillSchema),
 				Weight:           b.Weight,

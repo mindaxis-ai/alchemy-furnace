@@ -66,13 +66,13 @@ type saveRecipeBody struct {
 
 // updateRecipeBody 编辑丹方生成新版本（expected_revision_id 提交竞争检查）
 type updateRecipeBody struct {
-	ExpectedRevisionID string        `json:"expected_revision_id" binding:"required"`
-	Name               string        `json:"name" binding:"required"`
-	Description        string        `json:"description"`
-	SkillSchema        model.JSONMap `json:"skill_schema"`
+	ExpectedRevisionID string         `json:"expected_revision_id" binding:"required"`
+	Name               string         `json:"name" binding:"required"`
+	Description        string         `json:"description"`
+	SkillSchema        model.JSONMap  `json:"skill_schema"`
 	Tags               model.JSONList `json:"tags"`
-	Author             string        `json:"author"`
-	VersionLabel       string        `json:"version_label"`
+	Author             string         `json:"author"`
+	VersionLabel       string         `json:"version_label"`
 }
 
 // craftBody 按不可变版本炼制一枚
@@ -99,7 +99,7 @@ func (h *Handler) ListRecipes(c *gin.Context) (response.Code, any, error) {
 			CurrentRevisionID: item.CurrentRevisionUUID,
 			ArchivedAt:        item.PillRecipe.ArchivedAt,
 			CreatedAt:         item.PillRecipe.CreatedAt,
-			AvailableCount:    counts[item.PillRecipe.ID],
+			AvailableCount:    counts[item.PillRecipe.UUID.String()],
 			Revision:          item.Revision,
 		})
 	}

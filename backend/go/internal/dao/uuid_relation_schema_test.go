@@ -119,6 +119,17 @@ func TestRelationColumnsUseUUIDType(t *testing.T) {
 		{&model.SessionMember{}, "agent_id"},
 		{&model.LLMModel{}, "provider_id"},
 		{&model.AgentMemory{}, "agent_id"},
+		// 011 库存域关系列（Task 3 翻转范围）
+		{&model.PillRecipe{}, "current_revision_id"},
+		{&model.PillRecipeRevision{}, "recipe_id"},
+		{&model.PillItem{}, "recipe_revision_id"},
+		{&model.PillItem{}, "consume_operation_id"},
+		{&model.PillItem{}, "origin_operation_id"},
+		{&model.AgentPillEffect{}, "item_id"},
+		{&model.AgentPillEffect{}, "recipe_revision_id"},
+		{&model.FusionPreview{}, "confirmed_operation_id"},
+		{&model.PillStarterGrant{}, "recipe_id"},
+		{&model.PillStarterGrant{}, "item_id"},
 	}
 	for _, rc := range rels {
 		t.Run(rc.column, func(t *testing.T) {

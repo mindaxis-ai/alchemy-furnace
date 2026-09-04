@@ -37,9 +37,9 @@ func (s *Inventory) CraftOne(ctx context.Context, req service.CraftPillRequest) 
 					"丹方已归档，禁止新炼制")
 			}
 			item := &model.PillItem{
-				RecipeRevisionID:  rev.ID,
+				RecipeRevisionID:  rev.UUID.String(),
 				State:             model.PillAvailable,
-				OriginOperationID: op.ID,
+				OriginOperationID: op.UUID.String(),
 				OriginIndex:       0,
 				CreatedAt:         s.now(),
 			}
@@ -58,7 +58,7 @@ func (s *Inventory) CraftOne(ctx context.Context, req service.CraftPillRequest) 
 // ListItems 可用库存分页；recipeID 非空时按丹方过滤；
 // 每项组装来源丹方/版本对外标识与名称（UUID 在模型上是 json:"-"）
 func (s *Inventory) ListItems(ctx context.Context, page, size int, recipeID *uuid.UUID) (int64, []service.ItemListItem, errors.Error) {
-	var internalID *uint
+	var recipeUID *string
 	if recipeID != nil {
 		recipe, err := dao.PillRecipeByUUID(s.db, *recipeID)
 		if stderrors.Is(err, gorm.ErrRecordNotFound) {
@@ -67,13 +67,14 @@ func (s *Inventory) ListItems(ctx context.Context, page, size int, recipeID *uui
 		if err != nil {
 			return 0, nil, errors.ErrorServerInternalError("pill.items_query_failed")
 		}
-		internalID = &recipe.ID
+		uid := recipe.UUID.String()
+		recipeUID = &uid
 	}
-	total, items, err := dao.ListAvailablePillItems(s.db, page, size, internalID)
+	total, items, err := dao.ListAvailablePillItems(s.db, page, size, recipeUID)
 	if err != nil {
 		return 0, nil, errors.ErrorServerInternalError("pill.items_query_failed")
 	}
-	revIDs := make([]uint, 0, len(items))
+	revIDs := make([]string, 0, len(items))
 	for _, it := range items {
 		revIDs = append(revIDs, it.RecipeRevisionID)
 	}
@@ -81,7 +82,7 @@ func (s *Inventory) ListItems(ctx context.Context, page, size int, recipeID *uui
 	if err != nil {
 		return 0, nil, errors.ErrorServerInternalError("pill.items_query_failed")
 	}
-	recipeIDs := make([]uint, 0, len(items))
+	recipeIDs := make([]string, 0, len(revs))
 	for _, r := range revs {
 		recipeIDs = append(recipeIDs, r.RecipeID)
 	}

@@ -159,7 +159,7 @@ func seedRecipe(t *testing.T, db *gorm.DB, n int) (model.PillRecipe, []model.Pil
 	revs := make([]model.PillRecipeRevision, 0, n)
 	for i := 1; i <= n; i++ {
 		rev := model.PillRecipeRevision{
-			RecipeID:    recipe.ID,
+			RecipeID:    recipe.UUID.String(),
 			Revision:    i,
 			Name:        fmt.Sprintf("丹方 v%d", i),
 			Description: fmt.Sprintf("第 %d 版简介", i),
@@ -172,7 +172,7 @@ func seedRecipe(t *testing.T, db *gorm.DB, n int) (model.PillRecipe, []model.Pil
 		revs = append(revs, rev)
 	}
 	latest := revs[len(revs)-1]
-	if err := db.Model(&recipe).Update("current_revision_id", latest.ID).Error; err != nil {
+	if err := db.Model(&recipe).Update("current_revision_id", latest.UUID.String()).Error; err != nil {
 		t.Fatalf("指向当前版本失败: %v", err)
 	}
 	return recipe, revs
@@ -206,7 +206,7 @@ func TestSkillExport_LegacyPillIDResolvedViaMap(t *testing.T) {
 	}
 	// 接口只读: 丹方/版本不得被修改或删除
 	var revCount int64
-	db.Model(&model.PillRecipeRevision{}).Where("recipe_id = ?", recipe.ID).Count(&revCount)
+	db.Model(&model.PillRecipeRevision{}).Where("recipe_id = ?", recipe.UUID.String()).Count(&revCount)
 	if revCount != 1 {
 		t.Fatalf("导出后版本数 = %d, 期望 1", revCount)
 	}

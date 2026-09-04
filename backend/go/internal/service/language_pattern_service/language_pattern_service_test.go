@@ -123,10 +123,11 @@ func newMarkerAgent() *model.DaoAgent {
 	}
 }
 
+// allMarkers 静态提示词应渲染的标记。心智模型/决策启发式/示例对话自 e76f6fc 起
+// 移出永久区(仅入 P2 激活区或 few-shot,见 behavior/render_test.go),不再断言出现。
 var allMarkers = []string{
-	"IDENTITY_MARKER", "DNA_MARKER", "MENTAL_MODEL_MARKER", "HEURISTIC_MARKER",
-	"VALUE_MARKER", "ANTI_PATTERN_MARKER", "HONEST_LIMIT_MARKER",
-	"EXAMPLE_MARKER", "UNKNOWN_FIELD_MARKER",
+	"IDENTITY_MARKER", "DNA_MARKER", "VALUE_MARKER", "ANTI_PATTERN_MARKER",
+	"HONEST_LIMIT_MARKER", "UNKNOWN_FIELD_MARKER",
 }
 
 func assertPromptHasAllMarkers(t *testing.T, prompt string) {

@@ -36,7 +36,7 @@ func (s *Inventory) SaveRecipe(ctx context.Context, req service.SaveRecipeReques
 				return nil, err
 			}
 			rev := &model.PillRecipeRevision{
-				RecipeID:     recipe.ID,
+				RecipeID:     recipe.UUID.String(),
 				Revision:     1,
 				Name:         req.Draft.Name,
 				Description:  req.Draft.Description,
@@ -49,7 +49,7 @@ func (s *Inventory) SaveRecipe(ctx context.Context, req service.SaveRecipeReques
 			if err := dao.CreatePillRecipeRevision(tx, rev); err != nil {
 				return nil, err
 			}
-			if err := dao.SetPillRecipeCurrentRevision(tx, recipe.ID, rev.ID); err != nil {
+			if err := dao.SetPillRecipeCurrentRevision(tx, recipe.ID, rev.UUID.String()); err != nil {
 				return nil, err
 			}
 			res := &service.PillOperationResult{
@@ -59,9 +59,9 @@ func (s *Inventory) SaveRecipe(ctx context.Context, req service.SaveRecipeReques
 			}
 			if req.CraftOne {
 				item := &model.PillItem{
-					RecipeRevisionID:  rev.ID,
+					RecipeRevisionID:  rev.UUID.String(),
 					State:             model.PillAvailable,
-					OriginOperationID: op.ID,
+					OriginOperationID: op.UUID.String(),
 					OriginIndex:       0,
 					CreatedAt:         s.now(),
 				}
@@ -113,7 +113,7 @@ func (s *Inventory) UpdateRecipe(ctx context.Context, req service.UpdateRecipeRe
 					"丹方已被他人更新，请刷新后重试")
 			}
 			rev := &model.PillRecipeRevision{
-				RecipeID:     recipe.ID,
+				RecipeID:     recipe.UUID.String(),
 				Revision:     current.Revision + 1,
 				Name:         req.Draft.Name,
 				Description:  req.Draft.Description,
@@ -126,7 +126,7 @@ func (s *Inventory) UpdateRecipe(ctx context.Context, req service.UpdateRecipeRe
 			if err := dao.CreatePillRecipeRevision(tx, rev); err != nil {
 				return nil, err
 			}
-			if err := dao.SetPillRecipeCurrentRevision(tx, recipe.ID, rev.ID); err != nil {
+			if err := dao.SetPillRecipeCurrentRevision(tx, recipe.ID, rev.UUID.String()); err != nil {
 				return nil, err
 			}
 			return &service.PillOperationResult{
@@ -164,12 +164,12 @@ func (s *Inventory) ArchiveRecipe(ctx context.Context, req service.ArchiveRecipe
 
 // ListRecipes 丹方分页；每丹方附带当前版本名称与可用实例数量
 // （名称批量查版本表组装，UUID 在模型上是 json:"-" 不可直接对外输出）
-func (s *Inventory) ListRecipes(ctx context.Context, page, size int, keyword string, includeArchived bool) (int64, []service.RecipeListItem, map[uint]int64, errors.Error) {
+func (s *Inventory) ListRecipes(ctx context.Context, page, size int, keyword string, includeArchived bool) (int64, []service.RecipeListItem, map[string]int64, errors.Error) {
 	total, recipes, err := dao.ListPillRecipesPaged(s.db, page, size, keyword, includeArchived)
 	if err != nil {
 		return 0, nil, nil, errors.ErrorServerInternalError("recipe.list_failed")
 	}
-	revIDs := make([]uint, 0, len(recipes))
+	revIDs := make([]string, 0, len(recipes))
 	for _, r := range recipes {
 		if r.CurrentRevisionID != nil {
 			revIDs = append(revIDs, *r.CurrentRevisionID)
@@ -236,7 +236,7 @@ func (s *Inventory) GetRecipeRevision(ctx context.Context, recipeUUID, revisionU
 	if err != nil {
 		return nil, errors.ErrorServerInternalError("recipe.get_failed")
 	}
-	if rev.RecipeID != recipe.ID {
+	if rev.RecipeID != recipe.UUID.String() {
 		return nil, errors.ErrorRecordNotFound("recipe.revision_not_found")
 	}
 	return rev, nil

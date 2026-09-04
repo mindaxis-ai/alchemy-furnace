@@ -47,7 +47,7 @@ const previewTTL = 15 * time.Minute
 // 任一材料缺失 404 / 非可用 409；读取与模型调用分离——LLM 请求绝不持有事务。
 func (s *Fusion) loadFusionInputs(ctx context.Context, itemUUIDs []uuid.UUID) ([]synthesis.PillInput, []uuid.UUID, errors.Error) {
 	itemsByUUID := make(map[uuid.UUID]model.PillItem, len(itemUUIDs))
-	revsByID := make(map[uint]model.PillRecipeRevision, len(itemUUIDs))
+	revsByID := make(map[string]model.PillRecipeRevision, len(itemUUIDs))
 	terr := s.db.Transaction(func(tx *gorm.DB) error {
 		items, err := dao.ListPillItemsByUUIDs(tx, itemUUIDs)
 		if err != nil {

@@ -95,7 +95,7 @@ func (s *Inventory) ConfirmFusion(ctx context.Context, req service.ConfirmFusion
 			}
 			// 6) 批量 CAS 全部材料：available→consumed_by_fusion。
 			//    条件更新原子性：任一材料已被并发消耗 → 0 行 → 整体回滚
-			ok, err := dao.ConsumeFusionItemsCAS(tx, itemIDs, s.now(), op.ID)
+			ok, err := dao.ConsumeFusionItemsCAS(tx, itemIDs, s.now(), op.UUID.String())
 			if err != nil {
 				return nil, err
 			}
@@ -114,7 +114,7 @@ func (s *Inventory) ConfirmFusion(ctx context.Context, req service.ConfirmFusion
 				return nil, errors.ErrorServerInternalError("fusion.preview_corrupt")
 			}
 			rev := &model.PillRecipeRevision{
-				RecipeID:     recipe.ID,
+				RecipeID:     recipe.UUID.String(),
 				Revision:     1,
 				Name:         req.Name,
 				Description:  req.Description,
@@ -126,13 +126,13 @@ func (s *Inventory) ConfirmFusion(ctx context.Context, req service.ConfirmFusion
 			if err := dao.CreatePillRecipeRevision(tx, rev); err != nil {
 				return nil, err
 			}
-			if err := dao.SetPillRecipeCurrentRevision(tx, recipe.ID, rev.ID); err != nil {
+			if err := dao.SetPillRecipeCurrentRevision(tx, recipe.ID, rev.UUID.String()); err != nil {
 				return nil, err
 			}
 			item := &model.PillItem{
-				RecipeRevisionID:  rev.ID,
+				RecipeRevisionID:  rev.UUID.String(),
 				State:             model.PillAvailable,
-				OriginOperationID: op.ID,
+				OriginOperationID: op.UUID.String(),
 				OriginIndex:       0,
 				CreatedAt:         s.now(),
 			}
@@ -151,7 +151,7 @@ func (s *Inventory) ConfirmFusion(ctx context.Context, req service.ConfirmFusion
 			}
 			// 9) 单 SQL「写 lineage + 条件绑定确认操作」：
 			//    RowsAffected==0 表示并发双确认已抢先 → 409，事务整体回滚（材料归还、产物撤销）
-			bound, err := dao.ConfirmFusionPreviewCAS(tx, preview.ID, op.ID, output)
+			bound, err := dao.ConfirmFusionPreviewCAS(tx, preview.ID, op.UUID.String(), output)
 			if err != nil {
 				return nil, err
 			}

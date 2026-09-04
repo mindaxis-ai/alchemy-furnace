@@ -25,10 +25,10 @@ func PillRecipeByUUID(tx *gorm.DB, uid uuid.UUID) (*model.PillRecipe, error) {
 	return &r, nil
 }
 
-// PillRecipeByID 按内部 ID 查丹方
-func PillRecipeByID(tx *gorm.DB, id uint) (*model.PillRecipe, error) {
+// PillRecipeByID 按丹方 UUID 文本(011 关系列值)查丹方
+func PillRecipeByID(tx *gorm.DB, uid string) (*model.PillRecipe, error) {
 	var r model.PillRecipe
-	err := tx.First(&r, id).Error
+	err := tx.Where("uuid = ?", uid).First(&r).Error
 	if err != nil {
 		return nil, err
 	}
@@ -45,10 +45,10 @@ func PillRecipeRevisionByUUID(tx *gorm.DB, uid uuid.UUID) (*model.PillRecipeRevi
 	return &r, nil
 }
 
-// PillRecipeRevisionByID 按内部 ID 查不可变版本
-func PillRecipeRevisionByID(tx *gorm.DB, id uint) (*model.PillRecipeRevision, error) {
+// PillRecipeRevisionByID 按版本 UUID 文本(011 关系列值)查不可变版本
+func PillRecipeRevisionByID(tx *gorm.DB, uid string) (*model.PillRecipeRevision, error) {
 	var r model.PillRecipeRevision
-	err := tx.First(&r, id).Error
+	err := tx.Where("uuid = ?", uid).First(&r).Error
 	if err != nil {
 		return nil, err
 	}
@@ -75,10 +75,10 @@ func PillOperationByUUID(tx *gorm.DB, uid uuid.UUID) (*model.PillOperation, erro
 	return &op, nil
 }
 
-// PillOperationByID 按内部 ID 查已提交操作（预览绑定关系读操作信息用）
-func PillOperationByID(tx *gorm.DB, id uint) (*model.PillOperation, error) {
+// PillOperationByID 按操作 UUID 文本(011 关系列值)查已提交操作（预览绑定关系读操作信息用）
+func PillOperationByID(tx *gorm.DB, uid string) (*model.PillOperation, error) {
 	var op model.PillOperation
-	err := tx.First(&op, id).Error
+	err := tx.Where("uuid = ?", uid).First(&op).Error
 	if err != nil {
 		return nil, err
 	}
@@ -117,8 +117,9 @@ func CreatePillRecipeRevision(tx *gorm.DB, rev *model.PillRecipeRevision) error 
 }
 
 // SetPillRecipeCurrentRevision 回填丹方当前版本（创建事务内先空后回填）
-func SetPillRecipeCurrentRevision(tx *gorm.DB, recipeID, revID uint) error {
-	return tx.Model(&model.PillRecipe{}).Where("id = ?", recipeID).Update("current_revision_id", revID).Error
+// recipeID 为丹方自表主键；revUID 为版本 UUID 文本(011 关系列值)
+func SetPillRecipeCurrentRevision(tx *gorm.DB, recipeID uint, revUID string) error {
+	return tx.Model(&model.PillRecipe{}).Where("id = ?", recipeID).Update("current_revision_id", revUID).Error
 }
 
 // CreatePillItem 建金丹实例（来源操作 + 同操作内序号唯一）
@@ -161,11 +162,11 @@ func CreateFusionPreview(tx *gorm.DB, preview *model.FusionPreview) error {
 
 // ConfirmFusionPreviewCAS 单 SQL 完成「写 lineage 附加后的输出 + 条件绑定确认操作」：
 // 只允许未确认预览绑定成功；RowsAffected==0 表示已被其他操作确认（并发双确认防护）
-func ConfirmFusionPreviewCAS(tx *gorm.DB, previewID uint, opID uint, outputJSON model.JSONMap) (bool, error) {
+func ConfirmFusionPreviewCAS(tx *gorm.DB, previewID uint, opUID string, outputJSON model.JSONMap) (bool, error) {
 	res := tx.Model(&model.FusionPreview{}).
 		Where("id = ? AND confirmed_operation_id IS NULL", previewID).
 		Updates(map[string]any{
-			"confirmed_operation_id": opID,
+			"confirmed_operation_id": opUID,
 			"output_json":            outputJSON,
 		})
 	if res.Error != nil {
@@ -176,13 +177,13 @@ func ConfirmFusionPreviewCAS(tx *gorm.DB, previewID uint, opID uint, outputJSON 
 
 // ConsumeFusionItemsCAS 批量消耗融合材料：全部材料 available→consumed_by_fusion 并写去向；
 // 任一材料已非可用则整批 0 行（条件更新原子性，不部分消耗）
-func ConsumeFusionItemsCAS(tx *gorm.DB, itemIDs []uint, now time.Time, opID uint) (bool, error) {
+func ConsumeFusionItemsCAS(tx *gorm.DB, itemIDs []uint, now time.Time, opUID string) (bool, error) {
 	res := tx.Model(&model.PillItem{}).
 		Where("id IN ? AND state = ?", itemIDs, model.PillAvailable).
 		Updates(map[string]any{
 			"state":                model.PillConsumedByFusion,
 			"consumed_at":          now,
-			"consume_operation_id": opID,
+			"consume_operation_id": opUID,
 		})
 	if res.Error != nil {
 		return false, res.Error
@@ -214,38 +215,39 @@ func ListPillRecipesPaged(tx *gorm.DB, page, size int, keyword string, includeAr
 
 // availableCountRow 聚合行
 type availableCountRow struct {
-	RecipeID uint
+	RecipeID string
 	N        int64
 }
 
 // AvailablePillCountByRecipe 可用数量聚合：
-// 按 state='available' GROUP BY recipe_id，不新增可漂移的 quantity 字段
-func AvailablePillCountByRecipe(tx *gorm.DB) (map[uint]int64, error) {
+// 按 state='available' GROUP BY recipe_id（011 关系列为 UUID 文本），不新增可漂移的 quantity 字段
+func AvailablePillCountByRecipe(tx *gorm.DB) (map[string]int64, error) {
 	var rows []availableCountRow
 	err := tx.Raw(`
 		SELECT r.recipe_id AS recipe_id, COUNT(*) AS n
 		FROM pill_items i
-		JOIN pill_recipe_revisions r ON r.id = i.recipe_revision_id
+		JOIN pill_recipe_revisions r ON r.uuid = i.recipe_revision_id
 		WHERE i.state = ?
 		GROUP BY r.recipe_id
 	`, model.PillAvailable).Scan(&rows).Error
 	if err != nil {
 		return nil, err
 	}
-	out := make(map[uint]int64, len(rows))
+	out := make(map[string]int64, len(rows))
 	for _, row := range rows {
 		out[row.RecipeID] = row.N
 	}
 	return out, nil
 }
 
-// ListAvailablePillItems 可用库存分页；recipeID 非空时按丹方过滤（经版本表 join）
-func ListAvailablePillItems(tx *gorm.DB, page, size int, recipeID *uint) (int64, []model.PillItem, error) {
+// ListAvailablePillItems 可用库存分页；recipeUID 非空时按丹方过滤（经版本表 join，
+// 011 关系列为 UUID 文本）
+func ListAvailablePillItems(tx *gorm.DB, page, size int, recipeUID *string) (int64, []model.PillItem, error) {
 	base := tx.Table("pill_items AS i").
-		Joins("JOIN pill_recipe_revisions r ON r.id = i.recipe_revision_id").
+		Joins("JOIN pill_recipe_revisions r ON r.uuid = i.recipe_revision_id").
 		Where("i.state = ?", model.PillAvailable)
-	if recipeID != nil {
-		base = base.Where("r.recipe_id = ?", *recipeID)
+	if recipeUID != nil {
+		base = base.Where("r.recipe_id = ?", *recipeUID)
 	}
 	var total int64
 	if err := base.Count(&total).Error; err != nil {
@@ -260,50 +262,50 @@ func ListAvailablePillItems(tx *gorm.DB, page, size int, recipeID *uint) (int64,
 
 // ---------- 批量查询（任务 5 能力列表组装） ----------
 
-// PillItemsByIDs 按内部 ID 批量查实例；返回 id→实例 映射（不存在的 ID 不在 map 中）
-func PillItemsByIDs(tx *gorm.DB, ids []uint) (map[uint]model.PillItem, error) {
-	out := make(map[uint]model.PillItem, len(ids))
-	if len(ids) == 0 {
+// PillItemsByIDs 按 UUID 文本(011 关系列值)批量查实例；返回 uuid 文本→实例 映射（不存在的键不在 map 中）
+func PillItemsByIDs(tx *gorm.DB, uids []string) (map[string]model.PillItem, error) {
+	out := make(map[string]model.PillItem, len(uids))
+	if len(uids) == 0 {
 		return out, nil
 	}
 	var items []model.PillItem
-	if err := tx.Where("id IN ?", ids).Find(&items).Error; err != nil {
+	if err := tx.Where("uuid IN ?", uids).Find(&items).Error; err != nil {
 		return nil, err
 	}
 	for _, it := range items {
-		out[it.ID] = it
+		out[it.UUID.String()] = it
 	}
 	return out, nil
 }
 
-// PillRecipeRevisionsByIDs 按内部 ID 批量查不可变版本；返回 id→版本 映射
-func PillRecipeRevisionsByIDs(tx *gorm.DB, ids []uint) (map[uint]model.PillRecipeRevision, error) {
-	out := make(map[uint]model.PillRecipeRevision, len(ids))
-	if len(ids) == 0 {
+// PillRecipeRevisionsByIDs 按 UUID 文本(011 关系列值)批量查不可变版本；返回 uuid 文本→版本 映射
+func PillRecipeRevisionsByIDs(tx *gorm.DB, uids []string) (map[string]model.PillRecipeRevision, error) {
+	out := make(map[string]model.PillRecipeRevision, len(uids))
+	if len(uids) == 0 {
 		return out, nil
 	}
 	var revs []model.PillRecipeRevision
-	if err := tx.Where("id IN ?", ids).Find(&revs).Error; err != nil {
+	if err := tx.Where("uuid IN ?", uids).Find(&revs).Error; err != nil {
 		return nil, err
 	}
 	for _, r := range revs {
-		out[r.ID] = r
+		out[r.UUID.String()] = r
 	}
 	return out, nil
 }
 
-// PillRecipesByIDs 按内部 ID 批量查丹方；返回 id→丹方 映射（任务 5 库存列表组装）
-func PillRecipesByIDs(tx *gorm.DB, ids []uint) (map[uint]model.PillRecipe, error) {
-	out := make(map[uint]model.PillRecipe, len(ids))
-	if len(ids) == 0 {
+// PillRecipesByIDs 按 UUID 文本(011 关系列值)批量查丹方；返回 uuid 文本→丹方 映射（任务 5 库存列表组装）
+func PillRecipesByIDs(tx *gorm.DB, uids []string) (map[string]model.PillRecipe, error) {
+	out := make(map[string]model.PillRecipe, len(uids))
+	if len(uids) == 0 {
 		return out, nil
 	}
 	var recipes []model.PillRecipe
-	if err := tx.Where("id IN ?", ids).Find(&recipes).Error; err != nil {
+	if err := tx.Where("uuid IN ?", uids).Find(&recipes).Error; err != nil {
 		return nil, err
 	}
 	for _, r := range recipes {
-		out[r.ID] = r
+		out[r.UUID.String()] = r
 	}
 	return out, nil
 }

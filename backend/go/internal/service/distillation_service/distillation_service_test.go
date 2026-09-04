@@ -332,18 +332,42 @@ func (f *fakeInventory) ResolveLegacy(_ context.Context, kind, legacyID string) 
 	return uuid.Nil, appErrors.ErrorRecordNotFound("pill.legacy_not_found")
 }
 
-func (f *fakeInventory) SaveRecipe(context.Context, service.SaveRecipeRequest) (*service.PillOperationResult, appErrors.Error) { panic("unused") }
-func (f *fakeInventory) CraftOne(context.Context, service.CraftPillRequest) (*service.PillOperationResult, appErrors.Error) { panic("unused") }
-func (f *fakeInventory) Consume(context.Context, service.ConsumePillRequest) (*service.PillOperationResult, appErrors.Error) { panic("unused") }
-func (f *fakeInventory) ConfirmFusion(context.Context, service.ConfirmFusionRequest) (*service.PillOperationResult, appErrors.Error) { panic("unused") }
-func (f *fakeInventory) GetOperation(context.Context, uuid.UUID) (*service.PillOperationResult, appErrors.Error) { panic("unused") }
-func (f *fakeInventory) UpdateRecipe(context.Context, service.UpdateRecipeRequest) (*service.PillOperationResult, appErrors.Error) { panic("unused") }
-func (f *fakeInventory) ArchiveRecipe(context.Context, service.ArchiveRecipeRequest) appErrors.Error { panic("unused") }
-func (f *fakeInventory) DiscardItem(context.Context, service.DiscardItemRequest) appErrors.Error { panic("unused") }
-func (f *fakeInventory) ListRecipes(context.Context, int, int, string, bool) (int64, []service.RecipeListItem, map[uint]int64, appErrors.Error) { panic("unused") }
-func (f *fakeInventory) ListItems(context.Context, int, int, *uuid.UUID) (int64, []service.ItemListItem, appErrors.Error) { panic("unused") }
-func (f *fakeInventory) GetItem(context.Context, uuid.UUID) (*service.ItemDetail, appErrors.Error) { panic("unused") }
-func (f *fakeInventory) MigrationSummary(context.Context) (*service.MigrationSummary, appErrors.Error) { panic("unused") }
+func (f *fakeInventory) SaveRecipe(context.Context, service.SaveRecipeRequest) (*service.PillOperationResult, appErrors.Error) {
+	panic("unused")
+}
+func (f *fakeInventory) CraftOne(context.Context, service.CraftPillRequest) (*service.PillOperationResult, appErrors.Error) {
+	panic("unused")
+}
+func (f *fakeInventory) Consume(context.Context, service.ConsumePillRequest) (*service.PillOperationResult, appErrors.Error) {
+	panic("unused")
+}
+func (f *fakeInventory) ConfirmFusion(context.Context, service.ConfirmFusionRequest) (*service.PillOperationResult, appErrors.Error) {
+	panic("unused")
+}
+func (f *fakeInventory) GetOperation(context.Context, uuid.UUID) (*service.PillOperationResult, appErrors.Error) {
+	panic("unused")
+}
+func (f *fakeInventory) UpdateRecipe(context.Context, service.UpdateRecipeRequest) (*service.PillOperationResult, appErrors.Error) {
+	panic("unused")
+}
+func (f *fakeInventory) ArchiveRecipe(context.Context, service.ArchiveRecipeRequest) appErrors.Error {
+	panic("unused")
+}
+func (f *fakeInventory) DiscardItem(context.Context, service.DiscardItemRequest) appErrors.Error {
+	panic("unused")
+}
+func (f *fakeInventory) ListRecipes(context.Context, int, int, string, bool) (int64, []service.RecipeListItem, map[string]int64, appErrors.Error) {
+	panic("unused")
+}
+func (f *fakeInventory) ListItems(context.Context, int, int, *uuid.UUID) (int64, []service.ItemListItem, appErrors.Error) {
+	panic("unused")
+}
+func (f *fakeInventory) GetItem(context.Context, uuid.UUID) (*service.ItemDetail, appErrors.Error) {
+	panic("unused")
+}
+func (f *fakeInventory) MigrationSummary(context.Context) (*service.MigrationSummary, appErrors.Error) {
+	panic("unused")
+}
 
 // pill_id 模式投影必须把空来源序列化为 [] 而非 null:
 // Go nil slice → JSON null → Python Pydantic sources: List 校验失败 422
@@ -382,13 +406,12 @@ func TestSkillExport_PillIDModeNeverSendsNullSources(t *testing.T) {
 	}
 }
 
-
 // fakeRecipeAndRevision 构造测试用丹方与当前版本(不可变)
 func fakeRecipeAndRevision() (*model.PillRecipe, *model.PillRecipeRevision) {
 	recipe := &model.PillRecipe{UUID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440001")}
 	rev := &model.PillRecipeRevision{
 		UUID:        uuid.MustParse("550e8400-e29b-41d4-a716-446655440010"),
-		RecipeID:    recipe.ID,
+		RecipeID:    recipe.UUID.String(),
 		Revision:    1,
 		Name:        "结构化金丹",
 		Description: "一份结构化的语言风格技能包",
@@ -396,7 +419,8 @@ func fakeRecipeAndRevision() (*model.PillRecipe, *model.PillRecipeRevision) {
 		Tags:        model.JSONList{"语言"},
 		CreatedAt:   time.Date(2026, 8, 27, 10, 0, 0, 0, time.UTC),
 	}
-	recipe.CurrentRevisionID = &rev.ID
+	revUID := rev.UUID.String()
+	recipe.CurrentRevisionID = &revUID
 	return recipe, rev
 }
 
@@ -456,7 +480,7 @@ func TestSkillExport_RevisionOfOtherRecipe404(t *testing.T) {
 	recipe, rev := fakeRecipeAndRevision()
 	other := &model.PillRecipeRevision{
 		UUID:     uuid.New(),
-		RecipeID: recipe.ID + 100, // 另一个丹方的内部 ID
+		RecipeID: uuid.New().String(), // 另一个丹方的 UUID 文本
 		Revision: 2,
 		Name:     "别人家的丹",
 	}

@@ -159,7 +159,7 @@ func SeedBuiltinRecipes(db *gorm.DB) error {
 				return err
 			}
 			rev := model.PillRecipeRevision{
-				RecipeID:     recipe.ID,
+				RecipeID:     recipe.UUID.String(),
 				Revision:     1,
 				Name:         src.Name,
 				Description:  src.Description,
@@ -171,7 +171,7 @@ func SeedBuiltinRecipes(db *gorm.DB) error {
 			if err := tx.Create(&rev).Error; err != nil {
 				return err
 			}
-			return tx.Model(&recipe).Update("current_revision_id", rev.ID).Error
+			return tx.Model(&recipe).Update("current_revision_id", rev.UUID.String()).Error
 		})
 		if err != nil {
 			return fmt.Errorf("写入内置丹方「%s」失败: %w", src.Name, err)
@@ -203,7 +203,7 @@ func GrantStarterPills(db *gorm.DB) error {
 	err := db.Transaction(func(tx *gorm.DB) error {
 		for _, r := range recipes {
 			var existing int64
-			if err := tx.Model(&model.PillStarterGrant{}).Where("recipe_id = ?", r.ID).Count(&existing).Error; err != nil {
+			if err := tx.Model(&model.PillStarterGrant{}).Where("recipe_id = ?", r.UUID.String()).Count(&existing).Error; err != nil {
 				return err
 			}
 			if existing > 0 {
@@ -225,21 +225,22 @@ func GrantStarterPills(db *gorm.DB) error {
 				item := model.PillItem{
 					RecipeRevisionID:  *r.CurrentRevisionID,
 					State:             model.PillAvailable,
-					OriginOperationID: op.ID,
+					OriginOperationID: op.UUID.String(),
 					OriginIndex:       0,
 				}
 				if err := tx.Create(&item).Error; err != nil {
 					return err
 				}
+				itemUID := item.UUID.String()
 				if err := tx.Create(&model.PillStarterGrant{
-					RecipeID: r.ID, Disposition: "granted", ItemID: &item.ID,
+					RecipeID: r.UUID.String(), Disposition: "granted", ItemID: &itemUID,
 				}).Error; err != nil {
 					return err
 				}
 				granted++
 			} else {
 				if err := tx.Create(&model.PillStarterGrant{
-					RecipeID: r.ID, Disposition: "legacy_accounted",
+					RecipeID: r.UUID.String(), Disposition: "legacy_accounted",
 				}).Error; err != nil {
 					return err
 				}
