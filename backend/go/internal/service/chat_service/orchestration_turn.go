@@ -247,7 +247,21 @@ func (st *langGraphTurnState) consume(e orchestration.Event) error {
 			st.finalText = saved.Content
 		}
 	case "prompt_debug":
-		st.emit("prompt_debug", json.RawMessage(e.Payload))
+		// Python 内部形状(model_ref/task)须按公共契约 PromptDebugPayload 组装
+		// (model 平铺 + generation 兜底),与群聊同构;裸透传会让前端渲染
+		// generation.max_tokens 时 TypeError(2026-09-04 调试面板展开报错根因)。
+		var p struct {
+			AgentID  string                 `json:"agent_id"`
+			ModelRef orchestration.ModelRef `json:"model_ref"`
+			Messages []map[string]string    `json:"messages"`
+		}
+		if json.Unmarshal(e.Payload, &p) == nil {
+			name := ""
+			if st.session.Agent.UUID.String() == p.AgentID { // 单聊 Agent 预加载;零值 UUID 永不匹配真实载荷
+				name = st.session.Agent.Name
+			}
+			st.emit("prompt_debug", service.NewPromptDebugPayload(p.AgentID, name, p.ModelRef.Name, p.Messages, service.GenerationOptions{}))
+		}
 	case "run_interrupted":
 		st.interrupted = true
 	case "run_error":

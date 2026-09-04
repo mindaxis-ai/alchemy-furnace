@@ -744,6 +744,56 @@ describe('recoverable chat history and streaming', () => {
     expect(screen.getByText('model-agent-1')).toBeInTheDocument()
   })
 
+  it('expands the prompt panel without crashing when generation is absent', async () => {
+    // 回归锚点(2026-09-04):后端曾裸透传 Python 内部形状(无 generation/model 平铺),
+    // 面板渲染 generation.max_tokens 抛 TypeError;缺失 generation 必须安全渲染。
+    window.localStorage.setItem('alchemy.promptDebug', 'true')
+    doubles.streamChatMessage.mockImplementation(async (_sessionId: string, _content: string, handlers: StreamHandlers) => {
+      handlers.onPromptDebug?.({
+        agent_id: 'agent-1',
+        model: 'model-agent-1',
+        messages: [{ role: 'system', content: 'PROMPT_WITHOUT_GENERATION' }],
+      })
+      handlers.onChunk({ content: 'answer' })
+      handlers.onDone()
+    })
+    const user = userEvent.setup()
+    renderSession(singleSession.id)
+    const input = await screen.findByRole('textbox')
+
+    await user.type(input, 'inspect this turn')
+    await user.click(screen.getByRole('button', { name: 'input.send' }))
+
+    await user.click(await screen.findByText('promptDebugShow'))
+    expect(screen.getByText('PROMPT_WITHOUT_GENERATION')).toBeInTheDocument()
+    expect(screen.getByText('model-agent-1')).toBeInTheDocument()
+    expect(screen.queryByText('promptDebugBudget')).not.toBeInTheDocument()
+  })
+
+  it('hides the budget row when generation is zero (LangGraph has no budget)', async () => {
+    window.localStorage.setItem('alchemy.promptDebug', 'true')
+    doubles.streamChatMessage.mockImplementation(async (_sessionId: string, _content: string, handlers: StreamHandlers) => {
+      handlers.onPromptDebug?.({
+        agent_id: 'agent-1',
+        model: 'model-agent-1',
+        messages: [{ role: 'system', content: 'ZERO_BUDGET_PROMPT' }],
+        generation: { max_tokens: 0, max_sentences: 0 },
+      })
+      handlers.onChunk({ content: 'answer' })
+      handlers.onDone()
+    })
+    const user = userEvent.setup()
+    renderSession(singleSession.id)
+    const input = await screen.findByRole('textbox')
+
+    await user.type(input, 'inspect this turn')
+    await user.click(screen.getByRole('button', { name: 'input.send' }))
+
+    await user.click(await screen.findByText('promptDebugShow'))
+    expect(screen.getByText('ZERO_BUDGET_PROMPT')).toBeInTheDocument()
+    expect(screen.queryByText('promptDebugBudget')).not.toBeInTheDocument()
+  })
+
   it('keeps each group prompt attached to the matching daoist answer', async () => {
     window.localStorage.setItem('alchemy.promptDebug', 'true')
     doubles.agents = [activeAgent('agent-a', 'Alpha'), activeAgent('agent-b', 'Beta')]

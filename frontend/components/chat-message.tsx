@@ -240,7 +240,15 @@ export function ChatMessage({ message, streaming = false, members, onRetry }: Ch
               <div className="mt-2 max-h-96 overflow-auto rounded-xl border border-border/70 bg-muted/50 p-3 text-left text-[11px] leading-relaxed">
                 <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
                   <span>{t('promptDebugModel')}: <code className="text-foreground">{message.prompt_debug.model}</code></span>
-                  <span>{t('promptDebugBudget')}: <code className="text-foreground">{message.prompt_debug.generation.max_tokens} tokens / {message.prompt_debug.generation.max_sentences} sentences</code></span>
+                  {(() => {
+                    // LangGraph 无预算概念时后端发 0/0,此时预算行无意义不展示;
+                    // generation 缺失(异常/旧载荷)也不得崩渲染(2026-09-04 展开面板 TypeError 根因)。
+                    const gen = message.prompt_debug.generation
+                    if (!gen || (gen.max_tokens <= 0 && gen.max_sentences <= 0)) return null
+                    return (
+                      <span>{t('promptDebugBudget')}: <code className="text-foreground">{gen.max_tokens} tokens / {gen.max_sentences} sentences</code></span>
+                    )
+                  })()}
                 </div>
                 <div className="space-y-3">
                   {message.prompt_debug.messages.map((item, index) => (

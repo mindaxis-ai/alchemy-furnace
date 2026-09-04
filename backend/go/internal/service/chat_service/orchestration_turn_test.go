@@ -218,16 +218,36 @@ func TestLangGraphSingleMapsDeltasToPublicChunks(t *testing.T) {
 	}
 }
 
-// prompt_debug:仅 DebugPrompt 开启(请求体 debug_enabled=true)并原样转发内部事件。
+// prompt_debug:仅 DebugPrompt 开启(请求体 debug_enabled=true),且载荷按公共契约
+// PromptDebugPayload 组装(model 平铺 + generation 兜底),不得裸透传 Python 内部
+// 形状(model_ref/task)——前端渲染 generation.max_tokens,缺失即 TypeError(2026-09-04
+// 单聊调试面板展开报错的回归锚点)。
 func TestLangGraphSingleForwardsPromptDebugWhenEnabled(t *testing.T) {
 	stream := []turnEvent{
-		{"prompt_debug", `{"agent_id":"a1","messages":[{"role":"system","content":"人设"}]}`},
+		{"prompt_debug", `{"agent_id":"a1","model_ref":{"provider_type":"deepseek","name":"deepseek-v4-flash"},"messages":[{"role":"system","content":"人设"}]}`},
 		{"assistant_final", `{"reply_id":"r1","text":"答"}`},
 		{"run_completed", `{}`},
 	}
 	result := runLangGraphSingleCmd(t, stream, service.ConversationCommand{Content: "请回答", DebugPrompt: true}, nil)
-	if len(result.PromptDebug) != 1 || !strings.Contains(result.PromptDebug[0], "人设") {
-		t.Fatalf("prompt_debug payloads = %v, want 原文转发", result.PromptDebug)
+	if len(result.PromptDebug) != 1 {
+		t.Fatalf("prompt_debug payloads = %v, want exactly 1", result.PromptDebug)
+	}
+	raw := result.PromptDebug[0]
+	var p service.PromptDebugPayload
+	if err := json.Unmarshal([]byte(raw), &p); err != nil {
+		t.Fatalf("prompt_debug payload unparsable as public contract: %v (%s)", err, raw)
+	}
+	if p.Model != "deepseek-v4-flash" {
+		t.Fatalf("model = %q, want deepseek-v4-flash (from model_ref.name)", p.Model)
+	}
+	if p.AgentID != "a1" || len(p.Messages) != 1 || p.Messages[0]["content"] != "人设" {
+		t.Fatalf("payload identity/messages broken: %+v", p)
+	}
+	if p.Generation.MaxTokens != 0 || p.Generation.MaxSentences != 0 {
+		t.Fatalf("generation = %+v, want zero-valued presence (LangGraph 无预算概念)", p.Generation)
+	}
+	if strings.Contains(raw, `"model_ref"`) || strings.Contains(raw, `"task"`) {
+		t.Fatalf("internal shape leaked to public SSE: %s", raw)
 	}
 	if !strings.Contains(string(result.CapturedRequest), `"debug_enabled":true`) {
 		t.Fatalf("request body must carry debug_enabled=true, got %s", result.CapturedRequest)
