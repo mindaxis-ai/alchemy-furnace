@@ -1,6 +1,7 @@
 // migrate 子命令: 基于 GORM AutoMigrate 的多数据库 schema 同步
 //   - migrate up: 同步全部业务表(幂等,跨 PG/MySQL/SQLite)
 //   - migrate down: DropTable 全部业务表(本地重建用,带确认)
+//   - migrate reset: Drop → 重建 → 全量种子(旧整数外键 schema 升级 UUID 业务键用,带确认)
 package command
 
 import (
@@ -20,7 +21,7 @@ func NewMigrateCommand() *cobra.Command {
 		Use:  "migrate",
 		Args: cobra.NoArgs,
 	}
-	command.AddCommand(newMigrateUpCommand(), newMigrateDownCommand())
+	command.AddCommand(newMigrateUpCommand(), newMigrateDownCommand(), newMigrateResetCommand())
 	return command
 }
 
@@ -87,6 +88,36 @@ func newMigrateDownCommand() *cobra.Command {
 				return err
 			}
 			fmt.Println("[炼丹炉] 已 DROP 全部业务表(数据库文件保留;SQLite 用户可直接删除文件)")
+			return nil
+		},
+	}
+	command.Flags().BoolVarP(&yes, "yes", "y", false, "跳过确认(脚本用)")
+	return command
+}
+
+func newMigrateResetCommand() *cobra.Command {
+	var yes bool
+	command := &cobra.Command{
+		Use:  "reset",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// 复用 down 的交互确认与 --yes:确认先于建连,取消不触碰数据库
+			if !yes {
+				fmt.Print("[炼丹炉] 警告: reset 将 DROP 全部业务表并重建 + 重置种子,数据不可恢复!输入 yes 确认: ")
+				line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+				if strings.TrimSpace(line) != "yes" {
+					fmt.Println("[炼丹炉] 已取消")
+					return nil
+				}
+			}
+			if err := initDBForCommand(); err != nil {
+				return err
+			}
+			defer dao.CloseDatabase()
+			if err := dao.MigrateReset(); err != nil {
+				return err
+			}
+			fmt.Println("[炼丹炉] 数据库已重建:业务表对齐最新 model,种子数据已写入")
 			return nil
 		},
 	}

@@ -204,3 +204,26 @@ func assertTableCount(t *testing.T, db *gorm.DB, table string, want int64) {
 		t.Fatalf("%s: got %d want %d", table, got, want)
 	}
 }
+
+// TestSeedAllIdempotent 全量种子链幂等:重复调用不重复产出(reset 可安全重跑)。
+// LLM 种子在无 API Key 的测试环境幂等跳过,不在此断言。
+func TestSeedAllIdempotent(t *testing.T) {
+	db := openInventoryTestDB(t, append(inventoryTestModels(),
+		&model.ElixirPill{}, &model.LLMProvider{}, &model.LLMModel{})...)
+
+	if err := SeedAll(db); err != nil {
+		t.Fatalf("首次 SeedAll 失败: %v", err)
+	}
+	assertTableCount(t, db, "elixir_pills", 5)
+	assertTableCount(t, db, "pill_recipes", 5)
+	assertTableCount(t, db, "pill_starter_grants", 5)
+	assertTableCount(t, db, "pill_items", 5)
+
+	if err := SeedAll(db); err != nil {
+		t.Fatalf("重复 SeedAll 失败: %v", err)
+	}
+	assertTableCount(t, db, "elixir_pills", 5)
+	assertTableCount(t, db, "pill_recipes", 5)
+	assertTableCount(t, db, "pill_starter_grants", 5)
+	assertTableCount(t, db, "pill_items", 5)
+}

@@ -67,11 +67,54 @@ var columnTypeAlterations = []struct {
 	{"user_profile", "avatar", "text"},
 }
 
+// legacyFKProbes 旧(011 之前)schema 探测点:代表性跨表关系列。
+// 011 前关系列是整数自增 ID,011 起一律为 uuid 文本;AutoMigrate 无法把已有整数
+// 关系列安全转换为 uuid(存量数据不可映射),必须拒绝静默升级并引导显式 reset。
+var legacyFKProbes = []struct {
+	Model  any    // 探测表对应的模型(用于 HasTable/ColumnTypes)
+	Column string // 代表性关系列名
+}{
+	{&model.AgentPill{}, "agent_id"},
+	{&model.ChatMessage{}, "session_id"},
+	{&model.LLMModel{}, "provider_id"},
+}
+
+// detectLegacyIntegerFK 检查探测点关系列的数据库类型;任一为整数类型 → 返回旧 schema 错误。
+// 全新库(表不存在)或已是 uuid/text(新 schema) → nil。只读探测,不做任何写入。
+func detectLegacyIntegerFK(db *gorm.DB) error {
+	for _, probe := range legacyFKProbes {
+		if !db.Migrator().HasTable(probe.Model) {
+			continue // 全新库:无表即无旧 schema
+		}
+		cols, err := db.Migrator().ColumnTypes(probe.Model)
+		if err != nil {
+			return fmt.Errorf("读取 %s.%s 列类型失败: %w", db.NamingStrategy.TableName(fmt.Sprintf("%T", probe.Model)), probe.Column, err)
+		}
+		for _, col := range cols {
+			if col.Name() != probe.Column {
+				continue
+			}
+			dbType := strings.ToLower(strings.TrimSpace(col.DatabaseTypeName()))
+			if strings.Contains(dbType, "int") || strings.Contains(dbType, "serial") {
+				return fmt.Errorf(
+					"检测到旧版数据库 schema(关系列为整数外键,如 %s),无法自动升级为 UUID 业务键 schema;"+
+						"请运行 `migrate reset` 重建数据库(全部业务数据将被清空并重新种子),或删除数据目录后重新初始化",
+					probe.Column)
+			}
+		}
+	}
+	return nil
+}
+
 // MigrateUp 同步全部业务表到当前模型定义(幂等,跨驱动)
 // 历史 raw-SQL 迁移文件已不再依赖;若是从旧部署首次切换,可重复运行直至无差异
 func MigrateUp() error {
 	if DB == nil {
 		return fmt.Errorf("数据库未初始化")
+	}
+	// 旧 schema 守门:整数外键的老库拒绝静默升级(数据不可映射),先于任何写入
+	if err := detectLegacyIntegerFK(DB); err != nil {
+		return err
 	}
 	if err := DB.AutoMigrate(allMigratableModels...); err != nil {
 		return fmt.Errorf("AutoMigrate 失败: %w", err)
@@ -147,6 +190,25 @@ func MigrateDown() error {
 	}
 	if err := DB.Migrator().DropTable(allMigratableModels...); err != nil {
 		return fmt.Errorf("DropTable 失败: %w", err)
+	}
+	return nil
+}
+
+// MigrateReset 显式重建:MigrateDown → MigrateUp → 全量种子。
+// 用于旧(整数外键)schema 升级到 UUID 业务键 schema——存量数据不迁移,库重建后由
+// 种子链重置内置内容;Cobra 侧经 `migrate reset`(带确认)调用。任何阶段失败立即返回。
+func MigrateReset() error {
+	if DB == nil {
+		return fmt.Errorf("数据库未初始化")
+	}
+	if err := MigrateDown(); err != nil {
+		return fmt.Errorf("reset 清除旧表失败: %w", err)
+	}
+	if err := MigrateUp(); err != nil {
+		return fmt.Errorf("reset 重建表失败: %w", err)
+	}
+	if err := SeedAll(GetDB()); err != nil {
+		return fmt.Errorf("reset 写入种子失败: %w", err)
 	}
 	return nil
 }

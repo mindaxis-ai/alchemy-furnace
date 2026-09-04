@@ -207,6 +207,25 @@ func deepCopyJSON(v model.JSONMap) model.JSONMap {
 	return out
 }
 
+// SeedAll 全量种子链（reset 重建后调用）：内置金丹（旧契约）→ 默认模型 →
+// 内置丹方 → 一次性赠送。顺序约束：丹方必须先于赠送（赠送依赖丹方存在）；
+// LLM 种子在未配置 API Key 时幂等跳过；各子步骤自身幂等，整链可安全重跑。
+func SeedAll(db *gorm.DB) error {
+	if err := SeedBuiltinPills(db); err != nil {
+		return fmt.Errorf("写入内置金丹种子失败: %w", err)
+	}
+	if err := SeedDefaultLLMModels(db); err != nil {
+		return fmt.Errorf("写入默认模型种子失败: %w", err)
+	}
+	if err := SeedBuiltinRecipes(db); err != nil {
+		return fmt.Errorf("写入内置丹方种子失败: %w", err)
+	}
+	if err := GrantStarterPills(db); err != nil {
+		return fmt.Errorf("写入内置金丹赠送失败: %w", err)
+	}
+	return nil
+}
+
 // GrantStarterPills 一次性赠送：每个内置丹方赠送 1 枚可用金丹（持久化标记，重启不自动补货）。
 // 幂等：PillStarterGrant.RecipeID 唯一，重复调用靠唯一约束不重复产出。
 func GrantStarterPills(db *gorm.DB) error {
