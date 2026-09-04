@@ -225,7 +225,7 @@ const modelOptions = [
 
 // 本地记忆 fixture(来源会话为合法 UUID 供 chatSessionHref 校验)
 const memoryA: AgentMemory = {
-  uuid: MEMORY_A_ID,
+  id: MEMORY_A_ID,
   kind: 'user_fact',
   content: '用户喜欢围棋',
   keywords: ['围棋'],
@@ -1189,7 +1189,7 @@ describe('AgentDetailPage', () => {
     it('新建记忆:提交表单后调用 createAgentMemory 并更新列表', async () => {
       const created: AgentMemory = {
         ...memoryA,
-        uuid: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
         content: '用户喜欢喝茶',
         keywords: ['茶'],
         importance: 3,

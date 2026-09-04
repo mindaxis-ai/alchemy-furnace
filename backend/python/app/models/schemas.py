@@ -4,7 +4,8 @@
 定义语言模式合成与对话的请求/响应数据契约
 """
 from typing import List, Dict, Any, Optional, Literal
-from pydantic import BaseModel, Field
+from uuid import UUID
+from pydantic import BaseModel, Field, field_validator
 
 
 # ==================== 通用响应模型 ====================
@@ -46,6 +47,17 @@ class SynthesisPillInput(BaseModel):
     weight: float = Field(default=1.0, ge=0.0, le=10.0, description="剂量/权重")
     sort_order: int = Field(default=0, ge=0, description="服用顺序")
     skill_schema: Dict[str, Any] = Field(..., description="nuwa-skill 结构化内容")
+
+    @field_validator("id")
+    @classmethod
+    def _id_must_be_uuid(cls, value: str) -> str:
+        """跨服务身份契约 (011 Task 8)：Go 传入的金丹 id 必须为 UUID 字符串，
+        拒绝假 slug / 内部数字 ID 回流（指纹按 (sort_order, str(id)) 排序）"""
+        try:
+            UUID(value)
+        except (ValueError, AttributeError, TypeError) as exc:
+            raise ValueError("金丹 id 必须为 UUID 字符串") from exc
+        return value
 
 
 class CombineRequest(BaseModel):

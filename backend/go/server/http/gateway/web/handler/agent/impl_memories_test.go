@@ -194,9 +194,9 @@ func createMemoryViaAPI(t *testing.T, r *gin.Engine, agentUUID, body string) str
 	if status != http.StatusCreated {
 		t.Fatalf("预置记忆失败: %d %v", status, envelope)
 	}
-	memUUID, _ := envelope["data"].(map[string]interface{})["uuid"].(string)
+	memUUID, _ := envelope["data"].(map[string]interface{})["id"].(string)
 	if memUUID == "" {
-		t.Fatalf("创建记忆响应缺 uuid: %v", envelope)
+		t.Fatalf("创建记忆响应缺 id: %v", envelope)
 	}
 	return memUUID
 }
@@ -223,7 +223,7 @@ func TestListMemories(t *testing.T) {
 		t.Fatalf("data 应为 1 条记忆数组: %v", envelope["data"])
 	}
 	item := list[0].(map[string]interface{})
-	if item["uuid"] != m.UUID.String() || item["kind"] != "user_fact" || item["content"] != "用户喜欢围棋" {
+	if item["id"] != m.UUID.String() || item["kind"] != "user_fact" || item["content"] != "用户喜欢围棋" {
 		t.Fatalf("列表字段缺失: %v", item)
 	}
 	if _, ok := item["importance"]; !ok {
@@ -271,7 +271,7 @@ func TestCreateMemory(t *testing.T) {
 		t.Fatalf("创建记忆期望 201, 实际 %d, body: %v", status, envelope)
 	}
 	data := envelope["data"].(map[string]interface{})
-	if data["uuid"] == nil || data["content"] != "用户喜欢围棋" || data["kind"] != "user_fact" {
+	if data["id"] == nil || data["content"] != "用户喜欢围棋" || data["kind"] != "user_fact" {
 		t.Fatalf("创建响应字段缺失: %v", data)
 	}
 	if len(stub.memories) != 1 {

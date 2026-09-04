@@ -163,8 +163,8 @@ function LocalMemorySection({ agent }: { agent: AgentDetail }) {
   const handlePin = async (memory: AgentMemory, pinned: boolean) => {
     setNotice('')
     try {
-      const updated = await agentService.updateAgentMemory(agent.id, memory.uuid, { pinned })
-      setMemories(prev => prev.map(m => (m.uuid === memory.uuid ? updated : m)))
+      const updated = await agentService.updateAgentMemory(agent.id, memory.id, { pinned })
+      setMemories(prev => prev.map(m => (m.id === memory.id ? updated : m)))
       setNotice(tMem('saved'))
     } catch {
       setNotice(tMem('op_failed'))
@@ -179,8 +179,8 @@ function LocalMemorySection({ agent }: { agent: AgentDetail }) {
   const doDeleteMemory = async (memory: AgentMemory) => {
     setNotice('')
     try {
-      await agentService.deleteAgentMemory(agent.id, memory.uuid)
-      setMemories(prev => prev.filter(m => m.uuid !== memory.uuid))
+      await agentService.deleteAgentMemory(agent.id, memory.id)
+      setMemories(prev => prev.filter(m => m.id !== memory.id))
       setNotice(tMem('saved'))
     } catch {
       setNotice(tMem('op_failed'))
@@ -213,8 +213,8 @@ function LocalMemorySection({ agent }: { agent: AgentDetail }) {
     setFormError('')
     try {
       if (editingMemory) {
-        const updated = await agentService.updateAgentMemory(agent.id, editingMemory.uuid, input)
-        setMemories(prev => prev.map(m => (m.uuid === editingMemory.uuid ? updated : m)))
+        const updated = await agentService.updateAgentMemory(agent.id, editingMemory.id, input)
+        setMemories(prev => prev.map(m => (m.id === editingMemory.id ? updated : m)))
       } else {
         const created = await agentService.createAgentMemory(agent.id, input)
         setMemories(prev => [created, ...prev])
@@ -343,7 +343,7 @@ function LocalMemorySection({ agent }: { agent: AgentDetail }) {
                     : null
                   return (
                     <li
-                      key={memory.uuid}
+                      key={memory.id}
                       className="rounded-lg border border-border/70 bg-muted px-3 py-2.5"
                     >
                       <div className="mb-1 flex flex-wrap items-center gap-2">
@@ -419,7 +419,7 @@ function LocalMemorySection({ agent }: { agent: AgentDetail }) {
 
           {formOpen !== null && (
             <MemoryForm
-              key={formOpen === 'new' ? 'new' : formOpen.uuid}
+              key={formOpen === 'new' ? 'new' : formOpen.id}
               initial={formOpen === 'new' ? null : formOpen}
               saving={saving}
               error={formError}

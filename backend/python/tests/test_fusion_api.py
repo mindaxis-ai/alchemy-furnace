@@ -6,17 +6,18 @@ from app.main import app
 
 
 def _payload():
+    # id 契约 (011 Task 8)：跨服务金丹 id 必须为 UUID 字符串
     return {
         "pills": [
-            {"id": "u1", "name": "鲁迅风金丹", "skill_schema": {"identity_card": "医师"}},
-            {"id": "u2", "name": "禅师金丹", "skill_schema": {"identity_card": "蒲团"}},
+            {"id": "11111111-1111-1111-1111-111111111111", "name": "鲁迅风金丹", "skill_schema": {"identity_card": "医师"}},
+            {"id": "22222222-2222-2222-2222-222222222222", "name": "禅师金丹", "skill_schema": {"identity_card": "蒲团"}},
         ]
     }
 
 
 def test_fuse_endpoint_rejects_single_pill():
     client = TestClient(app)
-    resp = client.post("/api/v1/fusion/fuse", json={"pills": [{"id": "u1", "name": "x", "skill_schema": {}}]})
+    resp = client.post("/api/v1/fusion/fuse", json={"pills": [{"id": "11111111-1111-1111-1111-111111111111", "name": "x", "skill_schema": {}}]})
     assert resp.status_code == 422  # pydantic min_length=2
 
 

@@ -266,7 +266,7 @@ export type MemoryStatus = 'active' | 'superseded' | 'archived'
 
 /** 道人本地记忆(agent_memories) */
 export interface AgentMemory {
-  uuid: string
+  id: string
   kind: MemoryKind
   content: string
   keywords: string[]
@@ -274,10 +274,10 @@ export interface AgentMemory {
   confidence: number
   pinned: boolean
   status: MemoryStatus
-  /** 来源会话 UUID(为空串表示无来源,如手工录入) */
-  source_session_id: string
-  /** 来源消息 UUID */
-  source_message_id: string
+  /** 来源会话 UUID(无来源如手工录入时缺省) */
+  source_session_id?: string
+  /** 来源消息 UUID(无来源时缺省) */
+  source_message_id?: string
   created_at: string
   updated_at: string
 }

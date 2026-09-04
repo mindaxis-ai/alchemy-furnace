@@ -17,16 +17,18 @@ import (
 
 // MemoryResponse 记忆响应 DTO:对外输出 UUID
 type MemoryResponse struct {
-	UUID            string    `json:"uuid"`
-	Kind            string    `json:"kind"`
-	Content         string    `json:"content"`
-	Keywords        []string  `json:"keywords"`
-	Importance      int       `json:"importance"`
-	Confidence      float64   `json:"confidence"`
-	Pinned          bool      `json:"pinned"`
-	Status          string    `json:"status"`
-	SourceSessionID string    `json:"source_session_id"`
-	SourceMessageID string    `json:"source_message_id"`
+	ID       string   `json:"id"`
+	Kind     string   `json:"kind"`
+	Content  string   `json:"content"`
+	Keywords []string `json:"keywords"`
+
+	Importance int     `json:"importance"`
+	Confidence float64 `json:"confidence"`
+	Pinned     bool    `json:"pinned"`
+	Status     string  `json:"status"`
+	// 来源关系为 UUID 文本;无来源(手工录入)时缺省(011 契约:*_id 键要么是 UUID 要么不出现,禁止空串)
+	SourceSessionID *string   `json:"source_session_id,omitempty"`
+	SourceMessageID *string   `json:"source_message_id,omitempty"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
 }
@@ -40,7 +42,7 @@ func toMemoryResponse(m *model.AgentMemory) *MemoryResponse {
 		}
 	}
 	return &MemoryResponse{
-		UUID:            m.UUID.String(),
+		ID:              m.UUID.String(),
 		Kind:            m.Kind,
 		Content:         m.Content,
 		Keywords:        keywords,
@@ -48,11 +50,19 @@ func toMemoryResponse(m *model.AgentMemory) *MemoryResponse {
 		Confidence:      m.Confidence,
 		Pinned:          m.Pinned,
 		Status:          m.Status,
-		SourceSessionID: m.SourceSessionID,
-		SourceMessageID: m.SourceMessageID,
+		SourceSessionID: uuidTextPtr(m.SourceSessionID),
+		SourceMessageID: uuidTextPtr(m.SourceMessageID),
 		CreatedAt:       m.CreatedAt,
 		UpdatedAt:       m.UpdatedAt,
 	}
+}
+
+// uuidTextPtr 空串 → nil(响应缺省该 *_id 键);非空原样返回指针
+func uuidTextPtr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 // toMemoryResponseList 批量转换
