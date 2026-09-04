@@ -25,10 +25,6 @@ type Agent interface {
 	// TakeAgentDetailByUUID 按 UUID 查询道人详情(预加载已吸收能力快照+语言模式缓存)
 	TakeAgentDetailByUUID(ctx context.Context, uid uuid.UUID) (*model.DaoAgent, errors.Error)
 
-	// TakeAgentDetailByID 按内部自增 ID 查询道人详情(预加载已吸收能力快照+语言模式缓存)
-	// 供语言模式服务按 agentID 加载性格/能力快照/已有缓存
-	TakeAgentDetailByID(ctx context.Context, agentID uint) (*model.DaoAgent, errors.Error)
-
 	// FindAgents 分页查询道人列表(status 为空不过滤),返回总数与当页数据
 	FindAgents(ctx context.Context, page int, size int, status string) (int64, []*model.DaoAgent, errors.Error)
 
@@ -45,23 +41,15 @@ type Agent interface {
 	// 单聊经 chat_sessions.agent_id,群聊经 session_members.agent_id(按 session 去重)
 	CountSessionsByAgentID(ctx context.Context, agentID string) (int64, errors.Error)
 
-	// TakeAgentPill 查询单条服用记录,不存在返回 ErrorTypeRecordNotFound
-	TakeAgentPill(ctx context.Context, agentID uint, pillID uint) (*model.AgentPill, errors.Error)
-
 	// SaveAgentPill 新建服用记录
 	SaveAgentPill(ctx context.Context, agentPill *model.AgentPill) errors.Error
 
 	// UpdateAgentPill 按字段 map 部分更新服用记录
 	UpdateAgentPill(ctx context.Context, agentPill *model.AgentPill, updates map[string]any) errors.Error
 
-	// DeleteAgentPill 删除服用记录,返回受影响行数
-	DeleteAgentPill(ctx context.Context, agentID uint, pillID uint) (int64, errors.Error)
-
-	// MaxAgentPillSortOrder 道人当前最大服用顺序(无记录返回 0)
-	MaxAgentPillSortOrder(ctx context.Context, agentID uint) (int, errors.Error)
-
 	// FindPillsByAgentID 道人已服用金丹列表(按 sort_order,id 升序)
-	FindPillsByAgentID(ctx context.Context, agentID uint) ([]*model.ElixirPill, errors.Error)
+	// agentUID 为道人 UUID 文本(011 业务键,agent_pills.agent_id 列)
+	FindPillsByAgentID(ctx context.Context, agentUID string) ([]*model.ElixirPill, errors.Error)
 
 	// ReplaceAgentPills 原子替换道人的完整服丹编排
 	// 单个事务: 删除全部旧关系 → 按请求顺序写新关系(sort_order=1..n) → 失效语言模式缓存
@@ -118,9 +106,9 @@ type EffectWithSource struct {
 	RevisionUUID uuid.UUID
 }
 
-// EffectWrite 全量编排写入项（内部 ID + 权重 + 顺序；任务 5）
+// EffectWrite 全量编排写入项（能力 UUID 文本 + 权重 + 顺序；任务 5/011 业务键）
 type EffectWrite struct {
-	EffectID  uint
-	Weight    float64
-	SortOrder int
+	EffectUUID string
+	Weight     float64
+	SortOrder  int
 }

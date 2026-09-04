@@ -263,7 +263,7 @@ func (s *Agent) ListAgentPills(ctx context.Context, agentUID uuid.UUID) ([]*mode
 	if err != nil {
 		return nil, err.Relation(errors.ErrorRecordNotFound("service.agent.list_pills_take"))
 	}
-	pills, err := s.agent.FindPillsByAgentID(ctx, agent.ID)
+	pills, err := s.agent.FindPillsByAgentID(ctx, agent.UUID.String())
 	if err != nil {
 		return nil, err.Relation(errors.ErrorServerInternalError("service.agent.list_pills"))
 	}

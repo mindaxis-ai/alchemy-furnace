@@ -43,18 +43,6 @@ func (d *ModelDao) TakeModelByUUID(ctx context.Context, uid uuid.UUID) (*model.L
 	return &m, nil
 }
 
-// TakeModelByID 按内部自增 ID 查询模型(预加载 Provider)
-func (d *ModelDao) TakeModelByID(ctx context.Context, id uint) (*model.LLMModel, errors.Error) {
-	var m model.LLMModel
-	if err := GetDB().WithContext(ctx).Preload("Provider").First(&m, id).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil, errors.ErrorRecordNotFound("dao.model.take_by_id")
-		}
-		return nil, errors.ErrorServerInternalError("dao.model.take_by_id")
-	}
-	return &m, nil
-}
-
 // FindModelsByProvider 分页查询指定供应商下的模型列表(按 sort_order,id 排序);providerID 为供应商 UUID 文本
 func (d *ModelDao) FindModelsByProvider(ctx context.Context, providerID string, page, size int) (int64, []*model.LLMModel, errors.Error) {
 	db := GetDB().WithContext(ctx).Model(&model.LLMModel{}).Where("provider_id = ?", providerID)
@@ -74,12 +62,13 @@ func (d *ModelDao) FindModelsByProvider(ctx context.Context, providerID string, 
 	return total, models, nil
 }
 
-// CountModelsByNameInProvider 统计同供应商下同名模型数量(excludeID=0 时不排除);providerID 为供应商 UUID 文本
-func (d *ModelDao) CountModelsByNameInProvider(ctx context.Context, providerID string, name string, excludeID uint) (int64, errors.Error) {
+// CountModelsByNameInProvider 统计同供应商下同名模型数量(excludeUID 为空串时不排除)
+// providerID/excludeUID 均为 UUID 文本:providerID 匹配 llm_models.provider_id,排除按业务键 uuid
+func (d *ModelDao) CountModelsByNameInProvider(ctx context.Context, providerID string, name string, excludeUID string) (int64, errors.Error) {
 	var count int64
 	q := GetDB().WithContext(ctx).Model(&model.LLMModel{}).Where("provider_id = ? AND name = ?", providerID, name)
-	if excludeID > 0 {
-		q = q.Where("id <> ?", excludeID)
+	if excludeUID != "" {
+		q = q.Where("uuid != ?", excludeUID)
 	}
 	if err := q.Count(&count).Error; err != nil {
 		return 0, errors.ErrorServerInternalError("dao.model.count_by_name_in_provider")
@@ -87,9 +76,9 @@ func (d *ModelDao) CountModelsByNameInProvider(ctx context.Context, providerID s
 	return count, nil
 }
 
-// ModelNameExistsInProvider 同供应商下模型名是否已被其他记录占用
-func (d *ModelDao) ModelNameExistsInProvider(ctx context.Context, providerID string, name string, excludeID uint) (bool, errors.Error) {
-	count, err := d.CountModelsByNameInProvider(ctx, providerID, name, excludeID)
+// ModelNameExistsInProvider 同供应商下模型名是否已被其他记录占用(excludeUID 为空串时不排除)
+func (d *ModelDao) ModelNameExistsInProvider(ctx context.Context, providerID string, name string, excludeUID string) (bool, errors.Error) {
+	count, err := d.CountModelsByNameInProvider(ctx, providerID, name, excludeUID)
 	if err != nil {
 		return false, err
 	}

@@ -22,7 +22,7 @@ type fakePillDao struct {
 	updateCalls     int
 	deleteCalls     int
 	invalidateCalls int
-	invalidatedIDs  []uint
+	invalidatedIDs  []string
 }
 
 func (f *fakePillDao) TakePillByUUID(ctx context.Context, uid uuid.UUID) (*model.ElixirPill, errors.Error) {
@@ -77,12 +77,12 @@ func (f *fakePillDao) DeletePill(ctx context.Context, pill *model.ElixirPill) er
 	delete(f.pills, pill.UUID.String())
 	return nil
 }
-func (f *fakePillDao) FindAgentIDsByPillID(ctx context.Context, pillID uint) ([]uint, errors.Error) {
-	return []uint{7}, nil
+func (f *fakePillDao) FindAgentIDsByPillID(ctx context.Context, pillUID string) ([]string, errors.Error) {
+	return []string{"agent-uuid-placeholder"}, nil
 }
-func (f *fakePillDao) InvalidateLanguagePatternsByAgentIDs(ctx context.Context, agentIDs []uint) errors.Error {
+func (f *fakePillDao) InvalidateLanguagePatternsByAgentIDs(ctx context.Context, agentUIDs []string) errors.Error {
 	f.invalidateCalls++
-	f.invalidatedIDs = agentIDs
+	f.invalidatedIDs = agentUIDs
 	return nil
 }
 

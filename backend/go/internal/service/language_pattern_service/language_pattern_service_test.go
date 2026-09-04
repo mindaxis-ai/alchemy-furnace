@@ -29,7 +29,7 @@ type fakeAgentDAO struct {
 	onConflict        func()
 }
 
-func (f *fakeAgentDAO) TakeAgentDetailByID(ctx context.Context, agentID uint) (*model.DaoAgent, appErrors.Error) {
+func (f *fakeAgentDAO) TakeAgentDetailByUUID(ctx context.Context, uid uuid.UUID) (*model.DaoAgent, appErrors.Error) {
 	if f.agent == nil {
 		return nil, appErrors.ErrorRecordNotFound("fake.agent.missing")
 	}
@@ -160,7 +160,7 @@ func TestGetOrBuildPatternCacheHitNewFormat(t *testing.T) {
 	fakeSynth := &fakeSynthesis{}
 
 	svc := New(fakeAgent, fakeSynth, &fakeCreds{})
-	got, err := svc.GetOrBuildPattern(context.Background(), agent.ID)
+	got, err := svc.GetOrBuildPattern(context.Background(), agent.UUID.String())
 	if err != nil {
 		t.Fatalf("GetOrBuildPattern: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestGetOrBuildPatternOldCacheRebuilds(t *testing.T) {
 	}}
 
 	svc := New(fakeAgent, fakeSynth, &fakeCreds{})
-	got, err := svc.GetOrBuildPattern(context.Background(), agent.ID)
+	got, err := svc.GetOrBuildPattern(context.Background(), agent.UUID.String())
 	if err != nil {
 		t.Fatalf("GetOrBuildPattern: %v", err)
 	}
@@ -229,7 +229,7 @@ func TestGetOrBuildPatternFingerprintMismatchRebuilds(t *testing.T) {
 	}}
 
 	svc := New(fakeAgent, fakeSynth, &fakeCreds{})
-	_, err := svc.GetOrBuildPattern(context.Background(), agent.ID)
+	_, err := svc.GetOrBuildPattern(context.Background(), agent.UUID.String())
 	if err != nil {
 		t.Fatalf("GetOrBuildPattern: %v", err)
 	}
@@ -258,7 +258,7 @@ func TestGetOrBuildPatternProfileVersionMismatchRebuilds(t *testing.T) {
 	}}
 
 	svc := New(fakeAgent, fakeSynth, &fakeCreds{})
-	if _, err := svc.GetOrBuildPattern(context.Background(), agent.ID); err != nil {
+	if _, err := svc.GetOrBuildPattern(context.Background(), agent.UUID.String()); err != nil {
 		t.Fatalf("GetOrBuildPattern: %v", err)
 	}
 	if fakeSynth.calls != 1 {
@@ -278,7 +278,7 @@ func TestGetOrBuildPatternSuccessPersistsLossless(t *testing.T) {
 	}}
 
 	svc := New(fakeAgent, fakeSynth, &fakeCreds{})
-	got, err := svc.GetOrBuildPattern(context.Background(), agent.ID)
+	got, err := svc.GetOrBuildPattern(context.Background(), agent.UUID.String())
 	if err != nil {
 		t.Fatalf("GetOrBuildPattern: %v", err)
 	}
@@ -319,7 +319,7 @@ func TestGetOrBuildPatternDegradedNotPersisted(t *testing.T) {
 	}}
 
 	svc := New(fakeAgent, fakeSynth, &fakeCreds{})
-	got, err := svc.GetOrBuildPattern(context.Background(), agent.ID)
+	got, err := svc.GetOrBuildPattern(context.Background(), agent.UUID.String())
 	if err != nil {
 		t.Fatalf("降级路径不应返回错误: %v", err)
 	}
@@ -342,7 +342,7 @@ func TestGetOrBuildPatternCombineErrorLosslessTemp(t *testing.T) {
 	fakeSynth := &fakeSynthesis{err: std.New("python engine down")}
 
 	svc := New(fakeAgent, fakeSynth, &fakeCreds{})
-	got, err := svc.GetOrBuildPattern(context.Background(), agent.ID)
+	got, err := svc.GetOrBuildPattern(context.Background(), agent.UUID.String())
 	if err != nil {
 		t.Fatalf("合成失败不应阻断聊天(返回无损渲染): %v", err)
 	}
@@ -366,7 +366,7 @@ func TestGetOrBuildPatternNoCredentialsStillCallsCombine(t *testing.T) {
 	creds := &fakeCreds{err: std.New("no synthesis model configured")}
 
 	svc := New(fakeAgent, fakeSynth, creds)
-	if _, err := svc.GetOrBuildPattern(context.Background(), agent.ID); err != nil {
+	if _, err := svc.GetOrBuildPattern(context.Background(), agent.UUID.String()); err != nil {
 		t.Fatalf("GetOrBuildPattern: %v", err)
 	}
 	if fakeSynth.calls != 1 {
@@ -391,7 +391,7 @@ func TestGetOrBuildPatternPillInputFromEffectSnapshot(t *testing.T) {
 	}}
 
 	svc := New(fakeAgent, fakeSynth, &fakeCreds{})
-	if _, err := svc.GetOrBuildPattern(context.Background(), agent.ID); err != nil {
+	if _, err := svc.GetOrBuildPattern(context.Background(), agent.UUID.String()); err != nil {
 		t.Fatalf("GetOrBuildPattern: %v", err)
 	}
 
@@ -446,7 +446,7 @@ func TestGetOrBuildPatternRevisionConflictRetries(t *testing.T) {
 	}}
 
 	svc := New(fakeAgent, fakeSynth, &fakeCreds{})
-	got, err := svc.GetOrBuildPattern(context.Background(), agent.ID)
+	got, err := svc.GetOrBuildPattern(context.Background(), agent.UUID.String())
 	if err != nil {
 		t.Fatalf("GetOrBuildPattern: %v", err)
 	}
@@ -473,7 +473,7 @@ func TestGetOrBuildPatternRevisionConflictExhausted(t *testing.T) {
 	}}
 
 	svc := New(fakeAgent, fakeSynth, &fakeCreds{})
-	_, err := svc.GetOrBuildPattern(context.Background(), agent.ID)
+	_, err := svc.GetOrBuildPattern(context.Background(), agent.UUID.String())
 	if err == nil {
 		t.Fatal("持续冲突应返回错误")
 	}

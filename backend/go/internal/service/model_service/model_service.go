@@ -143,7 +143,7 @@ func (s *ModelService) CreateModel(ctx context.Context, providerUID uuid.UUID, n
 		return nil, err
 	}
 
-	exists, err := s.model.ModelNameExistsInProvider(ctx, p.UUID.String(), name, 0)
+	exists, err := s.model.ModelNameExistsInProvider(ctx, p.UUID.String(), name, "")
 	if err != nil {
 		return nil, err.Relation(errors.ErrorServerInternalError("service.model.create_name_check"))
 	}
@@ -188,7 +188,7 @@ func (s *ModelService) UpdateModel(ctx context.Context, uid uuid.UUID, name, dis
 		if err := validateName(trimmed); err != nil {
 			return nil, err
 		}
-		exists, cerr := s.model.ModelNameExistsInProvider(ctx, m.ProviderID, trimmed, m.ID)
+		exists, cerr := s.model.ModelNameExistsInProvider(ctx, m.ProviderID, trimmed, m.UUID.String())
 		if cerr != nil {
 			return nil, cerr.Relation(errors.ErrorServerInternalError("service.model.update_name_check"))
 		}

@@ -238,9 +238,9 @@ func (s *Chat) GetSessionAgentInfo(ctx context.Context, sessionUID uuid.UUID) (*
 	return session, nil
 }
 
-// GetOrBuildPattern 获取道人语言模式(委托 LanguagePatternProvider)
-func (s *Chat) GetOrBuildPattern(ctx context.Context, agentID uint) (*model.LanguagePattern, ierr.Error) {
-	return s.pattern.GetOrBuildPattern(ctx, agentID)
+// GetOrBuildPattern 获取道人语言模式(委托 LanguagePatternProvider);agentUID 为道人 UUID 文本
+func (s *Chat) GetOrBuildPattern(ctx context.Context, agentUID string) (*model.LanguagePattern, ierr.Error) {
+	return s.pattern.GetOrBuildPattern(ctx, agentUID)
 }
 
 // ResolveCredentials 解析模型调用凭证(委托 credential.Resolver)

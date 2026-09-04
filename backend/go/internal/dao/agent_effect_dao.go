@@ -160,7 +160,7 @@ func UpdateActiveEffectsCASCAS(tx *gorm.DB, agentUID string, expectedEffectsRevi
 	}
 	for _, w := range writes {
 		upd := tx.Model(&model.AgentPillEffect{}).
-			Where("id = ? AND agent_id = ? AND removed_at IS NULL", w.EffectID, agentUID).
+			Where("uuid = ? AND agent_id = ? AND removed_at IS NULL", w.EffectUUID, agentUID).
 			Updates(map[string]any{"weight": w.Weight, "sort_order": w.SortOrder})
 		if upd.Error != nil {
 			return false, upd.Error

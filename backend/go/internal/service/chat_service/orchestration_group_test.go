@@ -21,7 +21,7 @@ import (
 
 type fakePattern struct{}
 
-func (fakePattern) GetOrBuildPattern(ctx context.Context, agentID uint) (*model.LanguagePattern, errors.Error) {
+func (fakePattern) GetOrBuildPattern(ctx context.Context, agentUID string) (*model.LanguagePattern, errors.Error) {
 	return &model.LanguagePattern{SystemPrompt: "你是道人。"}, nil
 }
 

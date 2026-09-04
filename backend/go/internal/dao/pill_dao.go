@@ -90,7 +90,7 @@ func (d *PillDao) UpdatePill(ctx context.Context, pill *model.ElixirPill, update
 // DeletePill 删除金丹及服用记录(事务)
 func (d *PillDao) DeletePill(ctx context.Context, pill *model.ElixirPill) errors.Error {
 	if err := Transaction(func(tx *gorm.DB) error {
-		if err := tx.WithContext(ctx).Where("pill_id = ?", pill.ID).Delete(&model.AgentPill{}).Error; err != nil {
+		if err := tx.WithContext(ctx).Where("pill_id = ?", pill.UUID.String()).Delete(&model.AgentPill{}).Error; err != nil {
 			return err
 		}
 		return tx.WithContext(ctx).Delete(pill).Error
@@ -100,24 +100,26 @@ func (d *PillDao) DeletePill(ctx context.Context, pill *model.ElixirPill) errors
 	return nil
 }
 
-// FindAgentIDsByPillID 查询服用了指定金丹的道人内部 ID 列表
-func (d *PillDao) FindAgentIDsByPillID(ctx context.Context, pillID uint) ([]uint, errors.Error) {
-	var agentIDs []uint
+// FindAgentIDsByPillID 查询服用了指定金丹的道人 UUID 文本列表
+// (agent_pills.agent_id/pill_id 列即 UUID 文本,无内部 ID 换算)
+func (d *PillDao) FindAgentIDsByPillID(ctx context.Context, pillUID string) ([]string, errors.Error) {
+	var agentIDs []string
 	if err := GetDB().WithContext(ctx).Model(&model.AgentPill{}).
-		Where("pill_id = ?", pillID).
+		Where("pill_id = ?", pillUID).
 		Pluck("agent_id", &agentIDs).Error; err != nil {
 		return nil, errors.ErrorServerInternalError("dao.pill.find_agent_ids")
 	}
 	return agentIDs, nil
 }
 
-// InvalidateLanguagePatternsByAgentIDs 批量失效道人的语言模式缓存
-func (d *PillDao) InvalidateLanguagePatternsByAgentIDs(ctx context.Context, agentIDs []uint) errors.Error {
-	if len(agentIDs) == 0 {
+// InvalidateLanguagePatternsByAgentIDs 批量失效道人(按 UUID 文本)的语言模式缓存
+// (language_patterns.agent_id 列即 UUID 文本,无内部 ID 换算)
+func (d *PillDao) InvalidateLanguagePatternsByAgentIDs(ctx context.Context, agentUIDs []string) errors.Error {
+	if len(agentUIDs) == 0 {
 		return nil
 	}
 	if err := GetDB().WithContext(ctx).Model(&model.LanguagePattern{}).
-		Where("agent_id IN ?", agentIDs).
+		Where("agent_id IN ?", agentUIDs).
 		Update("is_valid", false).Error; err != nil {
 		return errors.ErrorServerInternalError("dao.pill.invalidate_patterns")
 	}

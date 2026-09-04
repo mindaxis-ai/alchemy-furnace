@@ -27,9 +27,6 @@ func (f *fakeAgentDao) TakeAgentByUUID(ctx context.Context, uid uuid.UUID) (*mod
 func (f *fakeAgentDao) TakeAgentDetailByUUID(ctx context.Context, uid uuid.UUID) (*model.DaoAgent, errors.Error) {
 	panic("unused")
 }
-func (f *fakeAgentDao) TakeAgentDetailByID(ctx context.Context, id uint) (*model.DaoAgent, errors.Error) {
-	panic("unused")
-}
 func (f *fakeAgentDao) FindAgents(ctx context.Context, page, size int, status string) (int64, []*model.DaoAgent, errors.Error) {
 	panic("unused")
 }
@@ -42,22 +39,13 @@ func (f *fakeAgentDao) UpdateAgent(ctx context.Context, a *model.DaoAgent, updat
 func (f *fakeAgentDao) DeleteAgent(ctx context.Context, a *model.DaoAgent) errors.Error {
 	panic("unused")
 }
-func (f *fakeAgentDao) TakeAgentPill(ctx context.Context, agentID, pillID uint) (*model.AgentPill, errors.Error) {
-	panic("unused")
-}
 func (f *fakeAgentDao) SaveAgentPill(ctx context.Context, ap *model.AgentPill) errors.Error {
 	panic("unused")
 }
 func (f *fakeAgentDao) UpdateAgentPill(ctx context.Context, ap *model.AgentPill, updates map[string]any) errors.Error {
 	panic("unused")
 }
-func (f *fakeAgentDao) DeleteAgentPill(ctx context.Context, agentID, pillID uint) (int64, errors.Error) {
-	panic("unused")
-}
-func (f *fakeAgentDao) MaxAgentPillSortOrder(ctx context.Context, agentID uint) (int, errors.Error) {
-	panic("unused")
-}
-func (f *fakeAgentDao) FindPillsByAgentID(ctx context.Context, agentID uint) ([]*model.ElixirPill, errors.Error) {
+func (f *fakeAgentDao) FindPillsByAgentID(ctx context.Context, agentUID string) ([]*model.ElixirPill, errors.Error) {
 	panic("unused")
 }
 func (f *fakeAgentDao) InvalidateLanguagePattern(ctx context.Context, agentUID string) errors.Error {
@@ -266,15 +254,6 @@ func (f *fakeChatDao) TakeRunByUUID(ctx context.Context, uid uuid.UUID) (*model.
 	return nil, errors.ErrorRecordNotFound("test.fake.take_run")
 }
 
-func (f *fakeChatDao) TakeSessionByID(ctx context.Context, id uint) (*model.ChatSession, errors.Error) {
-	for _, s := range f.sessions {
-		if s.ID == id {
-			cp := *s
-			return &cp, nil
-		}
-	}
-	return nil, errors.ErrorRecordNotFound("test.fake.take_session_by_id")
-}
 func (f *fakeChatDao) SaveFinalReplyOnce(ctx context.Context, runUUID uuid.UUID, replyID string, message *model.ChatMessage) (*model.ChatMessage, errors.Error) {
 	for _, m := range f.messages {
 		if m.RunID != nil && *m.RunID == runUUID.String() && m.ReplyID != nil && *m.ReplyID == replyID {

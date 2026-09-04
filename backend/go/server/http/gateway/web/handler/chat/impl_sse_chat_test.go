@@ -64,7 +64,7 @@ func (s *sseChatStub) GetSessionAgentInfo(context.Context, uuid.UUID) (*model.Ch
 	return s.session, s.sessionErr
 }
 
-func (s *sseChatStub) GetOrBuildPattern(context.Context, uint) (*model.LanguagePattern, errors.Error) {
+func (s *sseChatStub) GetOrBuildPattern(context.Context, string) (*model.LanguagePattern, errors.Error) {
 	s.patternCalls++
 	if s.patternErr != nil {
 		return nil, s.patternErr

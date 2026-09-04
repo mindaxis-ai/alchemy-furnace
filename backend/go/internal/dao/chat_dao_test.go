@@ -499,20 +499,21 @@ func TestSaveFinalReplyOnceUniqueKeyIsRunAndReply(t *testing.T) {
 	}
 }
 
-// ---- Task 14:resume 按 run.SessionID(内部 ID)定位会话 ----
+// ---- 续跑:run.SessionID 存会话 UUID 文本(011 业务键),经 TakeSessionByUUID 定位会话 ----
 
-// TestChatDaoTakeSessionByIDPreloadsAgentAndReportsMissing 供 RunConversationResume
-// 以内部 ID 定位会话(预加载道人);未知 ID 返回 take_session_by_id 记录不存在。
-func TestChatDaoTakeSessionByIDPreloadsAgentAndReportsMissing(t *testing.T) {
+// TestChatDaoTakeSessionByUUIDPreloadsAgentAndReportsMissing 供续跑入口以
+// run.SessionID(UUID 文本)定位会话(预加载道人);未知 UUID 返回
+// take_session_by_uuid 记录不存在。
+func TestChatDaoTakeSessionByUUIDPreloadsAgentAndReportsMissing(t *testing.T) {
 	dao, groupSession := newChatDAOTestSession(t)
 	ctx := context.Background()
 
-	got, err := dao.TakeSessionByID(ctx, groupSession.ID)
+	got, err := dao.TakeSessionByUUID(ctx, groupSession.UUID)
 	if err != nil {
-		t.Fatalf("TakeSessionByID error = %v", err)
+		t.Fatalf("TakeSessionByUUID error = %v", err)
 	}
-	if got.ID != groupSession.ID || got.Title != "transaction test" {
-		t.Fatalf("TakeSessionByID = %+v, want session %d(transaction test)", got, groupSession.ID)
+	if got.UUID != groupSession.UUID || got.Title != "transaction test" {
+		t.Fatalf("TakeSessionByUUID = %+v, want session %s(transaction test)", got, groupSession.UUID)
 	}
 
 	agent := &model.DaoAgent{UUID: uuid.New(), Name: "单聊道人", Status: "active", ModelName: "m"}
@@ -524,15 +525,15 @@ func TestChatDaoTakeSessionByIDPreloadsAgentAndReportsMissing(t *testing.T) {
 	if err := DB.Create(single).Error; err != nil {
 		t.Fatalf("create single session: %v", err)
 	}
-	preloaded, err := dao.TakeSessionByID(ctx, single.ID)
+	preloaded, err := dao.TakeSessionByUUID(ctx, single.UUID)
 	if err != nil {
-		t.Fatalf("TakeSessionByID(single) error = %v", err)
+		t.Fatalf("TakeSessionByUUID(single) error = %v", err)
 	}
 	if preloaded.Agent.Name != "单聊道人" {
 		t.Fatalf("preloaded Agent = %+v, want 单聊道人", preloaded.Agent)
 	}
 
-	if _, err := dao.TakeSessionByID(ctx, single.ID+999); err == nil || err.GetCode() != "dao.chat.take_session_by_id" {
-		t.Fatalf("missing error = %#v, want dao.chat.take_session_by_id", err)
+	if _, err := dao.TakeSessionByUUID(ctx, uuid.New()); err == nil || err.GetCode() != "dao.chat.take_session_by_uuid" {
+		t.Fatalf("missing error = %#v, want dao.chat.take_session_by_uuid", err)
 	}
 }

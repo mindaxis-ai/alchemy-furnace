@@ -16,17 +16,14 @@ type Model interface {
 	// TakeModelByUUID 按对外 UUID 查询模型(预加载 Provider),不存在返回 ErrorTypeRecordNotFound
 	TakeModelByUUID(ctx context.Context, uid uuid.UUID) (*model.LLMModel, errors.Error)
 
-	// TakeModelByID 按内部自增 ID 查询模型(预加载 Provider)
-	TakeModelByID(ctx context.Context, id uint) (*model.LLMModel, errors.Error)
-
 	// FindModelsByProvider 分页查询指定供应商下的模型列表(按 sort_order,id 排序);providerID 为供应商 UUID 文本
 	FindModelsByProvider(ctx context.Context, providerID string, page, size int) (int64, []*model.LLMModel, errors.Error)
 
-	// CountModelsByNameInProvider 统计同供应商下同名模型数量(excludeID=0 时不排除);providerID 为供应商 UUID 文本
-	CountModelsByNameInProvider(ctx context.Context, providerID string, name string, excludeID uint) (int64, errors.Error)
+	// CountModelsByNameInProvider 统计同供应商下同名模型数量(excludeUID 为空串时不排除);providerID/excludeUID 均为 UUID 文本
+	CountModelsByNameInProvider(ctx context.Context, providerID string, name string, excludeUID string) (int64, errors.Error)
 
-	// ModelNameExistsInProvider 同供应商下模型名是否已被其他记录占用(excludeID=0 时不排除)
-	ModelNameExistsInProvider(ctx context.Context, providerID string, name string, excludeID uint) (bool, errors.Error)
+	// ModelNameExistsInProvider 同供应商下模型名是否已被其他记录占用(excludeUID 为空串时不排除)
+	ModelNameExistsInProvider(ctx context.Context, providerID string, name string, excludeUID string) (bool, errors.Error)
 
 	// SaveModel 新建模型;is_default/is_synthesis 为 true 时事务内先清除其他记录
 	SaveModel(ctx context.Context, m *model.LLMModel) errors.Error

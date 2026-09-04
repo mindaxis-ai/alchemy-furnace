@@ -55,27 +55,6 @@ func (d *AgentDao) TakeAgentDetailByUUID(ctx context.Context, uid uuid.UUID) (*m
 	return &agent, nil
 }
 
-// TakeAgentDetailByID 按内部自增 ID 查询道人详情(预加载已吸收能力快照+语言模式缓存)
-// AgentPillEffects(removed_at IS NULL)+Item 是语言模式编译输入的事实来源(任务 3);
-// 任务 8 旧入口审计: 不再预加载遗留 AgentPills(旧表仅保留供回滚)
-func (d *AgentDao) TakeAgentDetailByID(ctx context.Context, agentID uint) (*model.DaoAgent, errors.Error) {
-	var agent model.DaoAgent
-	if err := GetDB().WithContext(ctx).
-		Preload("AgentPillEffects", func(db *gorm.DB) *gorm.DB {
-			return db.Where("removed_at IS NULL").Order("sort_order ASC, id ASC")
-		}).
-		Preload("AgentPillEffects.Item").
-		Preload("LanguagePattern").
-		Where("id = ?", agentID).
-		First(&agent).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil, errors.ErrorRecordNotFound("dao.agent.take_detail_by_id")
-		}
-		return nil, errors.ErrorServerInternalError("dao.agent.take_detail_by_id")
-	}
-	return &agent, nil
-}
-
 // FindAgents 分页查询道人列表
 func (d *AgentDao) FindAgents(ctx context.Context, page int, size int, status string) (int64, []*model.DaoAgent, errors.Error) {
 	db := GetDB().WithContext(ctx).Model(&model.DaoAgent{})
@@ -142,18 +121,6 @@ func (d *AgentDao) CountSessionsByAgentID(ctx context.Context, agentID string) (
 	return singleCount + groupCount, nil
 }
 
-// TakeAgentPill 查询单条服用记录
-func (d *AgentDao) TakeAgentPill(ctx context.Context, agentID uint, pillID uint) (*model.AgentPill, errors.Error) {
-	var ap model.AgentPill
-	if err := GetDB().WithContext(ctx).Where("agent_id = ? AND pill_id = ?", agentID, pillID).First(&ap).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil, errors.ErrorRecordNotFound("dao.agent.take_agent_pill")
-		}
-		return nil, errors.ErrorServerInternalError("dao.agent.take_agent_pill")
-	}
-	return &ap, nil
-}
-
 // SaveAgentPill 新建服用记录
 func (d *AgentDao) SaveAgentPill(ctx context.Context, agentPill *model.AgentPill) errors.Error {
 	if err := GetDB().WithContext(ctx).Create(agentPill).Error; err != nil {
@@ -170,34 +137,15 @@ func (d *AgentDao) UpdateAgentPill(ctx context.Context, agentPill *model.AgentPi
 	return nil
 }
 
-// DeleteAgentPill 删除服用记录
-func (d *AgentDao) DeleteAgentPill(ctx context.Context, agentID uint, pillID uint) (int64, errors.Error) {
-	result := GetDB().WithContext(ctx).Where("agent_id = ? AND pill_id = ?", agentID, pillID).Delete(&model.AgentPill{})
-	if result.Error != nil {
-		return 0, errors.ErrorServerInternalError("dao.agent.delete_agent_pill")
-	}
-	return result.RowsAffected, nil
-}
-
-// MaxAgentPillSortOrder 道人当前最大服用顺序
-func (d *AgentDao) MaxAgentPillSortOrder(ctx context.Context, agentID uint) (int, errors.Error) {
-	var maxOrder int
-	if err := GetDB().WithContext(ctx).Model(&model.AgentPill{}).
-		Where("agent_id = ?", agentID).
-		Select("COALESCE(MAX(sort_order), 0)").
-		Scan(&maxOrder).Error; err != nil {
-		return 0, errors.ErrorServerInternalError("dao.agent.max_sort_order")
-	}
-	return maxOrder, nil
-}
-
 // FindPillsByAgentID 道人已服用金丹列表(按服用顺序)
-func (d *AgentDao) FindPillsByAgentID(ctx context.Context, agentID uint) ([]*model.ElixirPill, errors.Error) {
+// agentUID 为道人 UUID 文本(011 业务键): agent_pills.agent_id/pill_id 均为 UUID 文本列,
+// JOIN 按金丹业务键 elixir_pills.uuid 对齐
+func (d *AgentDao) FindPillsByAgentID(ctx context.Context, agentUID string) ([]*model.ElixirPill, errors.Error) {
 	var pills []*model.ElixirPill
 	if err := GetDB().WithContext(ctx).Table("elixir_pills").
 		Select("elixir_pills.*").
-		Joins("JOIN agent_pills ON agent_pills.pill_id = elixir_pills.id").
-		Where("agent_pills.agent_id = ?", agentID).
+		Joins("JOIN agent_pills ON agent_pills.pill_id = elixir_pills.uuid").
+		Where("agent_pills.agent_id = ?", agentUID).
 		Order("agent_pills.sort_order ASC, agent_pills.id ASC").
 		Find(&pills).Error; err != nil {
 		return nil, errors.ErrorServerInternalError("dao.agent.find_pills_by_agent")

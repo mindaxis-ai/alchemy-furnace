@@ -55,7 +55,7 @@ func TestMemoryDAOCreateAndList(t *testing.T) {
 		t.Fatalf("list by kind: n=%d err=%v", len(fact), err)
 	}
 	// onlyActive=false 包含 superseded
-	if err := d.SupersedeMemory(ctx, m1.ID); err != nil {
+	if err := d.SupersedeMemory(ctx, m1.UUID.String()); err != nil {
 		t.Fatalf("supersede: %v", err)
 	}
 	activeOnly, _ := d.ListMemories(ctx, testAgentUUID, "", true)
@@ -100,17 +100,17 @@ func TestMemoryDAOSupersedeAndTouchAndDelete(t *testing.T) {
 	if err := d.SaveMemory(ctx, m); err != nil {
 		t.Fatalf("save: %v", err)
 	}
-	if err := d.TouchMemory(ctx, m.ID); err != nil {
+	if err := d.TouchMemory(ctx, m.UUID.String()); err != nil {
 		t.Fatalf("touch: %v", err)
 	}
-	after, _ := d.GetMemory(ctx, m.ID)
+	after, _ := d.GetMemory(ctx, m.UUID.String())
 	if after.LastAccessedAt == nil {
 		t.Fatal("touch 后 LastAccessedAt 应非空")
 	}
-	if err := d.SupersedeMemory(ctx, m.ID); err != nil {
+	if err := d.SupersedeMemory(ctx, m.UUID.String()); err != nil {
 		t.Fatalf("supersede: %v", err)
 	}
-	s, _ := d.GetMemory(ctx, m.ID)
+	s, _ := d.GetMemory(ctx, m.UUID.String())
 	if s.Status != "superseded" {
 		t.Fatalf("status=%q, want superseded", s.Status)
 	}

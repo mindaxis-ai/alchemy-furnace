@@ -210,7 +210,7 @@ func deepCopyList(src model.JSONList) (model.JSONList, error) {
 
 // invalidateByPill 失效服用该金丹的全部道人缓存;失败仅告警不阻塞主流程
 func (s *Pill) invalidateByPill(ctx context.Context, pill *model.ElixirPill) {
-	agentIDs, err := s.pill.FindAgentIDsByPillID(ctx, pill.ID)
+	agentIDs, err := s.pill.FindAgentIDsByPillID(ctx, pill.UUID.String())
 	if err != nil {
 		zap.L().Warn("[炼丹炉] 查询服用金丹的道人失败", zap.String("pill_uuid", pill.UUID.String()), zap.Error(err))
 		return
@@ -225,4 +225,3 @@ func (s *Pill) invalidateByPill(ctx context.Context, pill *model.ElixirPill) {
 			zap.Int("affected_agents", len(agentIDs)))
 	}
 }
-

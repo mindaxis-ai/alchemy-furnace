@@ -14,7 +14,8 @@ import (
 // 对话服务依赖它获取/重建道人的系统提示词缓存
 type LanguagePatternProvider interface {
 	// GetOrBuildPattern 获取道人语言模式: 缓存命中(is_valid 且指纹一致)直接返回,否则调用合成引擎重建并写回
-	GetOrBuildPattern(ctx context.Context, agentID uint) (*model.LanguagePattern, errors.Error)
+	// agentUID 为道人 UUID 文本(011 业务键)
+	GetOrBuildPattern(ctx context.Context, agentUID string) (*model.LanguagePattern, errors.Error)
 }
 
 // ChatReadiness 后端权威的可对话就绪状态:active 道人总数与通过正式凭证校验的道人 UUID 名单。
@@ -84,8 +85,8 @@ type Chat interface {
 	// GetSessionAgentInfo 按会话 UUID 取会话(预加载道人),供 SSE 构建对话请求(session.ID/AgentID/Agent.ModelName)
 	GetSessionAgentInfo(ctx context.Context, sessionUID uuid.UUID) (*model.ChatSession, errors.Error)
 
-	// GetOrBuildPattern 获取道人语言模式(委托 LanguagePatternProvider)
-	GetOrBuildPattern(ctx context.Context, agentID uint) (*model.LanguagePattern, errors.Error)
+	// GetOrBuildPattern 获取道人语言模式(委托 LanguagePatternProvider);agentUID 为道人 UUID 文本
+	GetOrBuildPattern(ctx context.Context, agentUID string) (*model.LanguagePattern, errors.Error)
 
 	// ResolveCredentials 解析模型调用凭证(每轮解析,模型停用/换钥即时生效)
 	ResolveCredentials(ctx context.Context, modelName string) (*credential.ModelCredentials, errors.Error)

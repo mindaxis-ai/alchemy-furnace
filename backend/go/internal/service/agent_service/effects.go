@@ -62,9 +62,9 @@ func (s *Agent) UpdateEffects(ctx context.Context, agentUID uuid.UUID, expectedE
 		for _, ef := range active {
 			if ef.Effect.UUID == it.EffectID {
 				writes = append(writes, idao.EffectWrite{
-					EffectID:  ef.Effect.ID,
-					Weight:    it.Weight,
-					SortOrder: it.SortOrder,
+					EffectUUID: ef.Effect.UUID.String(),
+					Weight:     it.Weight,
+					SortOrder:  it.SortOrder,
 				})
 				break
 			}

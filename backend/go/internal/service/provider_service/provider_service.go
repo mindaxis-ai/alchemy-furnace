@@ -84,7 +84,7 @@ func (s *ProviderService) ListProviders(ctx context.Context, page, size int, ena
 
 	views := make([]*model.ProviderView, 0, len(providers))
 	for _, p := range providers {
-		count, cerr := s.provider.CountModelsByProvider(ctx, p.ID)
+		count, cerr := s.provider.CountModelsByProvider(ctx, p.UUID.String())
 		if cerr != nil {
 			return 0, nil, cerr.Relation(errors.ErrorServerInternalError("service.provider.list_count"))
 		}
@@ -99,7 +99,7 @@ func (s *ProviderService) GetProviderByUUID(ctx context.Context, uid uuid.UUID) 
 	if err != nil {
 		return nil, err.Relation(errors.ErrorRecordNotFound("service.provider.get"))
 	}
-	count, cerr := s.provider.CountModelsByProvider(ctx, p.ID)
+	count, cerr := s.provider.CountModelsByProvider(ctx, p.UUID.String())
 	if cerr != nil {
 		return nil, cerr.Relation(errors.ErrorServerInternalError("service.provider.get_count"))
 	}
@@ -160,7 +160,7 @@ func (s *ProviderService) CreateProvider(ctx context.Context, name, displayName,
 		return nil, err
 	}
 
-	exists, err := s.provider.CountProvidersByName(ctx, name, 0)
+	exists, err := s.provider.CountProvidersByName(ctx, name, "")
 	if err != nil {
 		return nil, err.Relation(errors.ErrorServerInternalError("service.provider.create_name_check"))
 	}
@@ -211,7 +211,7 @@ func (s *ProviderService) UpdateProvider(ctx context.Context, uid uuid.UUID, nam
 		if err := validateProviderName(trimmed); err != nil {
 			return nil, err
 		}
-		exists, cerr := s.provider.CountProvidersByName(ctx, trimmed, p.ID)
+		exists, cerr := s.provider.CountProvidersByName(ctx, trimmed, p.UUID.String())
 		if cerr != nil {
 			return nil, cerr.Relation(errors.ErrorServerInternalError("service.provider.update_name_check"))
 		}
@@ -269,7 +269,7 @@ func (s *ProviderService) UpdateProvider(ctx context.Context, uid uuid.UUID, nam
 	if err != nil {
 		return nil, err.Relation(errors.ErrorServerInternalError("service.provider.update_retake"))
 	}
-	count, cerr := s.provider.CountModelsByProvider(ctx, fresh.ID)
+	count, cerr := s.provider.CountModelsByProvider(ctx, fresh.UUID.String())
 	if cerr != nil {
 		return nil, cerr.Relation(errors.ErrorServerInternalError("service.provider.update_count"))
 	}
@@ -285,7 +285,7 @@ func (s *ProviderService) DeleteProvider(ctx context.Context, uid uuid.UUID) err
 		return err.Relation(errors.ErrorRecordNotFound("service.provider.delete_take"))
 	}
 
-	count, cerr := s.provider.CountModelsByProvider(ctx, p.ID)
+	count, cerr := s.provider.CountModelsByProvider(ctx, p.UUID.String())
 	if cerr != nil {
 		return cerr.Relation(errors.ErrorServerInternalError("service.provider.delete_count"))
 	}
