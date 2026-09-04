@@ -123,7 +123,7 @@ func (d *AgentDao) DeleteAgent(ctx context.Context, agent *model.DaoAgent) error
 }
 
 // CountSessionsByAgentID 统计道人参与的去重会话数(单聊 + 群聊成员)
-func (d *AgentDao) CountSessionsByAgentID(ctx context.Context, agentID uint) (int64, errors.Error) {
+func (d *AgentDao) CountSessionsByAgentID(ctx context.Context, agentID string) (int64, errors.Error) {
 	// 单聊: chat_sessions.agent_id 直挂
 	var singleCount int64
 	if err := GetDB().WithContext(ctx).Model(&model.ChatSession{}).
@@ -208,26 +208,26 @@ func (d *AgentDao) FindPillsByAgentID(ctx context.Context, agentID uint) ([]*mod
 // ReplaceAgentPills 原子替换道人的完整服丹编排
 // 单事务内: 删除全部旧关系 → 按请求顺序写新关系(sort_order=1..n) → 失效语言模式缓存
 // 任一步失败由 GORM Transaction 回滚,旧关系与缓存状态保持不变
-func (d *AgentDao) ReplaceAgentPills(ctx context.Context, agentID uint, pills []idao.AgentPillInput) errors.Error {
+func (d *AgentDao) ReplaceAgentPills(ctx context.Context, agentUID string, pills []idao.AgentPillInput) errors.Error {
 	txErr := GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// 1) 删除旧关系
-		if err := tx.Where("agent_id = ?", agentID).Delete(&model.AgentPill{}).Error; err != nil {
+		if err := tx.Where("agent_id = ?", agentUID).Delete(&model.AgentPill{}).Error; err != nil {
 			return err
 		}
 		// 2) 校验 + 按请求顺序批量写新关系(sort_order 从 1 开始)
 		if len(pills) > 0 {
 			// 数据完整性: 重复 pill 拒绝、缺失 pill 回滚(不依赖各驱动 FK 配置差异)
-			ids := make([]uint, 0, len(pills))
-			seen := make(map[uint]struct{}, len(pills))
+			ids := make([]string, 0, len(pills))
+			seen := make(map[string]struct{}, len(pills))
 			for _, p := range pills {
 				if _, dup := seen[p.PillID]; dup {
-					return fmt.Errorf("duplicate pill id %d", p.PillID)
+					return fmt.Errorf("duplicate pill uuid %s", p.PillID)
 				}
 				seen[p.PillID] = struct{}{}
 				ids = append(ids, p.PillID)
 			}
 			var existCount int64
-			if err := tx.Model(&model.ElixirPill{}).Where("id IN ?", ids).Count(&existCount).Error; err != nil {
+			if err := tx.Model(&model.ElixirPill{}).Where("uuid IN ?", ids).Count(&existCount).Error; err != nil {
 				return err
 			}
 			if existCount != int64(len(ids)) {
@@ -237,7 +237,7 @@ func (d *AgentDao) ReplaceAgentPills(ctx context.Context, agentID uint, pills []
 			rows := make([]model.AgentPill, 0, len(pills))
 			for i, p := range pills {
 				rows = append(rows, model.AgentPill{
-					AgentID:   agentID,
+					AgentID:   agentUID,
 					PillID:    p.PillID,
 					Weight:    p.Weight,
 					SortOrder: i + 1,
@@ -249,7 +249,7 @@ func (d *AgentDao) ReplaceAgentPills(ctx context.Context, agentID uint, pills []
 		}
 		// 3) 同事务失效语言模式缓存(无记录时影响 0 行,不视为错误)
 		if err := tx.Model(&model.LanguagePattern{}).
-			Where("agent_id = ?", agentID).
+			Where("agent_id = ?", agentUID).
 			Update("is_valid", false).Error; err != nil {
 			return err
 		}
@@ -264,19 +264,19 @@ func (d *AgentDao) ReplaceAgentPills(ctx context.Context, agentID uint, pills []
 // RemoveAgentPillEffect 移除道人的已吸收能力(软删保留历史,任务 3)
 // 单事务: 软删活跃能力 → 递增 EffectsRevision → 失效语言模式缓存,任一步失败整体回滚;
 // 无活跃能力返回 ErrorTypeRecordNotFound;原实例保持 consumed_by_agent 不返还
-func (d *AgentDao) RemoveAgentPillEffect(ctx context.Context, agentID uint, itemUUID uuid.UUID, now time.Time) errors.Error {
+func (d *AgentDao) RemoveAgentPillEffect(ctx context.Context, agentUID string, itemUUID uuid.UUID, now time.Time) errors.Error {
 	txErr := GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		ok, err := RemoveActiveEffectByItemUUID(tx, agentID, itemUUID, now)
+		ok, err := RemoveActiveEffectByItemUUID(tx, agentUID, itemUUID, now)
 		if err != nil {
 			return err
 		}
 		if !ok {
 			return errors.ErrorRecordNotFound("dao.agent.remove_effect")
 		}
-		if err := IncrementEffectsRevision(tx, agentID); err != nil {
+		if err := IncrementEffectsRevision(tx, agentUID); err != nil {
 			return err
 		}
-		return InvalidateLanguagePatternTx(tx, agentID)
+		return InvalidateLanguagePatternTx(tx, agentUID)
 	})
 	if txErr == nil {
 		return nil
@@ -290,9 +290,9 @@ func (d *AgentDao) RemoveAgentPillEffect(ctx context.Context, agentID uint, item
 // UpdateAgentPillEffect 更新活跃能力权重/顺序(实例 UUID 标识,任务 3)
 // 单事务: 更新(weight/sortOrder 均为 nil 时仅校验存在) → 递增 EffectsRevision → 失效缓存;
 // 无活跃能力返回 ErrorTypeRecordNotFound
-func (d *AgentDao) UpdateAgentPillEffect(ctx context.Context, agentID uint, itemUUID uuid.UUID, weight *float64, sortOrder *int) errors.Error {
+func (d *AgentDao) UpdateAgentPillEffect(ctx context.Context, agentUID string, itemUUID uuid.UUID, weight *float64, sortOrder *int) errors.Error {
 	txErr := GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		ok, err := UpdateActiveEffectByItemUUID(tx, agentID, itemUUID, weight, sortOrder)
+		ok, err := UpdateActiveEffectByItemUUID(tx, agentUID, itemUUID, weight, sortOrder)
 		if err != nil {
 			return err
 		}
@@ -300,10 +300,10 @@ func (d *AgentDao) UpdateAgentPillEffect(ctx context.Context, agentID uint, item
 			return errors.ErrorRecordNotFound("dao.agent.update_effect")
 		}
 		if weight != nil || sortOrder != nil {
-			if err := IncrementEffectsRevision(tx, agentID); err != nil {
+			if err := IncrementEffectsRevision(tx, agentUID); err != nil {
 				return err
 			}
-			return InvalidateLanguagePatternTx(tx, agentID)
+			return InvalidateLanguagePatternTx(tx, agentUID)
 		}
 		return nil
 	})
@@ -317,9 +317,9 @@ func (d *AgentDao) UpdateAgentPillEffect(ctx context.Context, agentID uint, item
 }
 
 // InvalidateLanguagePattern 失效道人语言模式缓存
-func (d *AgentDao) InvalidateLanguagePattern(ctx context.Context, agentID uint) errors.Error {
+func (d *AgentDao) InvalidateLanguagePattern(ctx context.Context, agentUID string) errors.Error {
 	if err := GetDB().WithContext(ctx).Model(&model.LanguagePattern{}).
-		Where("agent_id = ?", agentID).
+		Where("agent_id = ?", agentUID).
 		Update("is_valid", false).Error; err != nil {
 		return errors.ErrorServerInternalError("dao.agent.invalidate_pattern")
 	}
@@ -342,7 +342,7 @@ func (d *AgentDao) SaveLanguagePatternIfRevision(ctx context.Context, pattern *m
 	txErr := GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var cur int
 		if err := tx.Model(&model.DaoAgent{}).
-			Where("id = ?", pattern.AgentID).
+			Where("uuid = ?", pattern.AgentID).
 			Select("effects_revision").
 			Scan(&cur).Error; err != nil {
 			return err
@@ -365,10 +365,10 @@ func (d *AgentDao) SaveLanguagePatternIfRevision(ctx context.Context, pattern *m
 // ListActiveEffects 道人活跃能力列表(任务 5,effect UUID 语义):
 // 单事务内读活跃能力 + 批量加载来源实例/版本,组装对外 UUID 标识;
 // 来源实例或版本缺失(理论不可达:能力由服用生成且版本不可删)视为内部错误
-func (d *AgentDao) ListActiveEffects(ctx context.Context, agentID uint) ([]idao.EffectWithSource, errors.Error) {
+func (d *AgentDao) ListActiveEffects(ctx context.Context, agentUID string) ([]idao.EffectWithSource, errors.Error) {
 	var out []idao.EffectWithSource
 	txErr := GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		effects, err := ActiveEffectsByAgent(tx, agentID)
+		effects, err := ActiveEffectsByAgent(tx, agentUID)
 		if err != nil {
 			return err
 		}
@@ -413,19 +413,19 @@ func (d *AgentDao) ListActiveEffects(ctx context.Context, agentID uint) ([]idao.
 // RemoveAgentPillEffectByUUID 移除道人的已吸收能力(按能力 UUID,任务 5):
 // 单事务: 软删活跃能力 → 递增 EffectsRevision → 失效语言模式缓存;
 // 无活跃能力/跨道人返回 ErrorTypeRecordNotFound;原实例保持 consumed_by_agent 不返还
-func (d *AgentDao) RemoveAgentPillEffectByUUID(ctx context.Context, agentID uint, effectUUID uuid.UUID, now time.Time) errors.Error {
+func (d *AgentDao) RemoveAgentPillEffectByUUID(ctx context.Context, agentUID string, effectUUID uuid.UUID, now time.Time) errors.Error {
 	txErr := GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		ok, err := RemoveActiveEffectByUUID(tx, agentID, effectUUID, now)
+		ok, err := RemoveActiveEffectByUUID(tx, agentUID, effectUUID, now)
 		if err != nil {
 			return err
 		}
 		if !ok {
 			return errors.ErrorRecordNotFound("dao.agent.remove_effect_uuid")
 		}
-		if err := IncrementEffectsRevision(tx, agentID); err != nil {
+		if err := IncrementEffectsRevision(tx, agentUID); err != nil {
 			return err
 		}
-		return InvalidateLanguagePatternTx(tx, agentID)
+		return InvalidateLanguagePatternTx(tx, agentUID)
 	})
 	if txErr == nil {
 		return nil
@@ -440,11 +440,11 @@ func (d *AgentDao) RemoveAgentPillEffectByUUID(ctx context.Context, agentID uint
 // (effects_revision 必须等于 expected,否则不写任何变更返回 false)
 // → 逐条更新 weight/sort_order → 递增 EffectsRevision → 失效语言模式缓存。
 // 集合校验(提交集==活跃集)由 service 在读取快照后执行;快照过期由乐观锁拦截
-func (d *AgentDao) UpdateActiveEffectsCAS(ctx context.Context, agentID uint, expectedEffectsRevision int, writes []idao.EffectWrite) (bool, errors.Error) {
+func (d *AgentDao) UpdateActiveEffectsCAS(ctx context.Context, agentUID string, expectedEffectsRevision int, writes []idao.EffectWrite) (bool, errors.Error) {
 	ok := false
 	txErr := GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
-		ok, err = UpdateActiveEffectsCASCAS(tx, agentID, expectedEffectsRevision, writes)
+		ok, err = UpdateActiveEffectsCASCAS(tx, agentUID, expectedEffectsRevision, writes)
 		return err
 	})
 	if txErr != nil {

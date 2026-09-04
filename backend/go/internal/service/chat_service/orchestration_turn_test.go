@@ -77,15 +77,15 @@ func (r *turnEventRecorder) contents(event string) []string {
 	return out
 }
 
-// turnMemory 记录蒸馏入队调用;检索按 agentID 返回预置片段。
+// turnMemory 记录蒸馏入队调用;检索按道人 UUID 文本返回预置片段。
 type turnMemory struct {
 	service.Memory
-	byAgent      map[uint][]service.MemorySnippet
+	byAgent      map[string][]service.MemorySnippet
 	enqueueCalls []service.DistillationSpec
 }
 
-func (m *turnMemory) Retrieve(_ context.Context, agentID uint, _ string) ([]service.MemorySnippet, ierr.Error) {
-	return m.byAgent[agentID], nil
+func (m *turnMemory) Retrieve(_ context.Context, agentUID string, _ string) ([]service.MemorySnippet, ierr.Error) {
+	return m.byAgent[agentUID], nil
 }
 
 func (m *turnMemory) EnqueueDistillation(_ context.Context, spec service.DistillationSpec) bool {
@@ -114,9 +114,10 @@ func newTurnFixture(t *testing.T) (*Chat, *fakeChatDao, *turnMemory, *model.Chat
 	t.Helper()
 	svc, chats, byName, _, _ := buildSnapshotFixture(t)
 	agent := *byName["zhang"]
-	session := &model.ChatSession{ID: 2, UUID: uuid.New(), Type: model.SessionTypeSingle, AgentID: &agent.ID, Agent: agent}
+	agentUID := agent.UUID.String()
+	session := &model.ChatSession{ID: 2, UUID: uuid.New(), Type: model.SessionTypeSingle, AgentID: &agentUID, Agent: agent}
 	chats.sessions[session.UUID.String()] = session
-	mem := &turnMemory{byAgent: map[uint][]service.MemorySnippet{}}
+	mem := &turnMemory{byAgent: map[string][]service.MemorySnippet{}}
 	svc.Memory = mem
 	return svc, chats, mem, session
 }
@@ -127,7 +128,7 @@ func runLangGraphSingle(t *testing.T, stream []turnEvent) turnRun {
 }
 
 // runLangGraphSingleCmd 驱动一轮 RunConversation 并汇总观测结果。
-func runLangGraphSingleCmd(t *testing.T, stream []turnEvent, cmd service.ConversationCommand, prepare func(*Chat, *fakeChatDao)) turnRun {
+func runLangGraphSingleCmd(t *testing.T, stream []turnEvent, cmd service.ConversationCommand, prepare func(*Chat, *fakeChatDao, *model.ChatSession)) turnRun {
 	t.Helper()
 	var captured []byte
 	server := newTurnStreamServer(t, &captured, stream)
@@ -136,7 +137,7 @@ func runLangGraphSingleCmd(t *testing.T, stream []turnEvent, cmd service.Convers
 	svc, chats, mem, session := newTurnFixture(t)
 	svc.engineBaseURL = engineendpoint.Static(server.URL)
 	if prepare != nil {
-		prepare(svc, chats)
+		prepare(svc, chats, session)
 	}
 	cmd.SessionUID = session.UUID
 	rec := newTurnEventRecorder()
@@ -320,8 +321,8 @@ func TestLangGraphSingleRetryReusesPersistedUserMessage(t *testing.T) {
 		{"run_completed", `{}`},
 	}
 	result := runLangGraphSingleCmd(t, stream, service.ConversationCommand{Content: "请回答", Retry: true},
-		func(_ *Chat, chats *fakeChatDao) {
-			existing = &model.ChatMessage{SessionID: 2, Role: "user", Content: "请回答"}
+		func(_ *Chat, chats *fakeChatDao, session *model.ChatSession) {
+			existing = &model.ChatMessage{SessionID: session.UUID.String(), Role: "user", Content: "请回答"}
 			if err := chats.SaveMessage(context.Background(), existing); err != nil {
 				t.Fatalf("seed user message: %v", err)
 			}
@@ -341,8 +342,8 @@ func TestLangGraphSingleRetryReusesPersistedUserMessage(t *testing.T) {
 func TestLangGraphSingleRetryMismatchFailsFast(t *testing.T) {
 	stream := []turnEvent{{"run_completed", `{}`}}
 	result := runLangGraphSingleCmd(t, stream, service.ConversationCommand{Content: "别的内容", Retry: true},
-		func(_ *Chat, chats *fakeChatDao) {
-			_ = chats.SaveMessage(context.Background(), &model.ChatMessage{SessionID: 2, Role: "user", Content: "请回答"})
+		func(_ *Chat, chats *fakeChatDao, session *model.ChatSession) {
+			_ = chats.SaveMessage(context.Background(), &model.ChatMessage{SessionID: session.UUID.String(), Role: "user", Content: "请回答"})
 		})
 	if n := len(result.Events); n == 0 || result.Events[n-1] != "error" {
 		t.Fatalf("events = %v, want error", result.Events)
@@ -572,7 +573,7 @@ func TestResumeRejectsStaleRun(t *testing.T) {
 	svc.RunConversation(context.Background(), service.ConversationCommand{SessionUID: session.UUID, Content: "请回答"}, rec.emit)
 	runID := chats.runs[0].UUID
 
-	if err := chats.SaveMessage(context.Background(), &model.ChatMessage{SessionID: session.ID, Role: "user", Content: "新消息作废旧回合"}); err != nil {
+	if err := chats.SaveMessage(context.Background(), &model.ChatMessage{SessionID: session.UUID.String(), Role: "user", Content: "新消息作废旧回合"}); err != nil {
 		t.Fatalf("落新用户消息: %v", err)
 	}
 

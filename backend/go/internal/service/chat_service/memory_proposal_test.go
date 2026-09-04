@@ -22,8 +22,8 @@ type proposalMemory struct {
 	calls []groupMemoryCall
 }
 
-func (m *proposalMemory) CreateMemory(_ context.Context, agentID uint, in service.MemoryInput) (*model.AgentMemory, errors.Error) {
-	m.calls = append(m.calls, groupMemoryCall{agentID: agentID, in: in})
+func (m *proposalMemory) CreateMemory(_ context.Context, agentUID string, in service.MemoryInput) (*model.AgentMemory, errors.Error) {
+	m.calls = append(m.calls, groupMemoryCall{agentID: agentUID, in: in})
 	return &model.AgentMemory{}, nil
 }
 
@@ -33,7 +33,7 @@ func TestMemoryProposalValidationRules(t *testing.T) {
 	mem := &proposalMemory{}
 	svc := &Chat{Memory: mem}
 	participants := map[string]*groupParticipant{
-		li: {id: 2, name: "李雪琴", memoryEnabled: true},
+		li: {uid: li, name: "李雪琴", memoryEnabled: true},
 	}
 	seen := map[string]bool{}
 	session := &model.ChatSession{UUID: uuid.MustParse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")}
@@ -63,8 +63,8 @@ func TestMemoryProposalValidationRules(t *testing.T) {
 	}
 
 	last := mem.calls[len(mem.calls)-1]
-	if last.agentID != 2 {
-		t.Fatalf("memory agent id = %d, want 2", last.agentID)
+	if last.agentID != li {
+		t.Fatalf("memory agent id = %q, want %q (李雪琴)", last.agentID, li)
 	}
 	if last.in.Kind != "episode" {
 		t.Fatalf("memory kind = %q, want episode", last.in.Kind)

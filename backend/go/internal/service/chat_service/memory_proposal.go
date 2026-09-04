@@ -27,7 +27,7 @@ type memoryProposalPayload struct {
 
 // groupParticipant 群轮参与者元数据(agent UUID → 群内身份;仅元数据查找,非编排决策)
 type groupParticipant struct {
-	id            uint
+	uid           string // 道人 UUID 文本
 	name          string
 	avatar        string
 	memoryEnabled bool
@@ -50,7 +50,7 @@ func (s *Chat) persistMemoryProposal(ctx context.Context, session *model.ChatSes
 		return
 	}
 	seen[p.ProposalID] = true
-	if _, err := s.Memory.CreateMemory(ctx, participant.id, service.MemoryInput{
+	if _, err := s.Memory.CreateMemory(ctx, participant.uid, service.MemoryInput{
 		Kind:            "episode",
 		Content:         content,
 		SourceSessionID: session.UUID.String(),

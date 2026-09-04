@@ -14,7 +14,7 @@ import (
 // UUID 边界在此解析,内部联结仍用自增 ID;删除/清空为物理删除
 type Memory interface {
 	// ListMemories 按道人列出记忆(kind 为空不过滤;onlyActive=true 仅 active)
-	ListMemories(ctx context.Context, agentID uint, kind string, onlyActive bool) ([]*model.AgentMemory, errors.Error)
+	ListMemories(ctx context.Context, agentID string, kind string, onlyActive bool) ([]*model.AgentMemory, errors.Error)
 
 	// GetMemory 按内部自增 ID 查询记忆
 	GetMemory(ctx context.Context, id uint) (*model.AgentMemory, errors.Error)
@@ -32,10 +32,10 @@ type Memory interface {
 	DeleteMemory(ctx context.Context, id uint) errors.Error
 
 	// DeleteMemoriesByAgent 物理清空道人全部记忆,返回受影响行数
-	DeleteMemoriesByAgent(ctx context.Context, agentID uint) (int64, errors.Error)
+	DeleteMemoriesByAgent(ctx context.Context, agentID string) (int64, errors.Error)
 
 	// FindActiveByContentHash 按内容哈希查 active 记忆(无命中返回 nil,nil)
-	FindActiveByContentHash(ctx context.Context, agentID uint, hash string) (*model.AgentMemory, errors.Error)
+	FindActiveByContentHash(ctx context.Context, agentID string, hash string) (*model.AgentMemory, errors.Error)
 
 	// SupersedeMemory 将记忆置为 superseded(冲突置替,spec §10.2)
 	SupersedeMemory(ctx context.Context, id uint) errors.Error

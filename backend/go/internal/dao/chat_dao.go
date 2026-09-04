@@ -51,9 +51,9 @@ func (d *ChatDao) TakeSessionByID(ctx context.Context, id uint) (*model.ChatSess
 }
 
 // FindSessions 分页查询会话列表(agentID>0 时按道人过滤),按更新时间倒序
-func (d *ChatDao) FindSessions(ctx context.Context, agentID uint, page int, size int) (int64, []*model.ChatSession, errors.Error) {
+func (d *ChatDao) FindSessions(ctx context.Context, agentID string, page int, size int) (int64, []*model.ChatSession, errors.Error) {
 	db := GetDB().WithContext(ctx).Model(&model.ChatSession{})
-	if agentID > 0 {
+	if agentID != "" {
 		db = db.Where("agent_id = ?", agentID)
 	}
 
@@ -90,7 +90,7 @@ func (d *ChatDao) SaveGroupSession(ctx context.Context, session *model.ChatSessi
 			return err
 		}
 		for _, member := range members {
-			member.SessionID = session.ID
+			member.SessionID = session.UUID.String()
 		}
 		if len(members) == 0 {
 			return nil
@@ -120,7 +120,7 @@ func (d *ChatDao) DeleteSession(ctx context.Context, session *model.ChatSession)
 }
 
 // FindMessages 从最新消息向前分页，每页内部按时间正序呈现(page=1 为最新一页)
-func (d *ChatDao) FindMessages(ctx context.Context, sessionID uint, page int, size int) (int64, []*model.ChatMessage, errors.Error) {
+func (d *ChatDao) FindMessages(ctx context.Context, sessionID string, page int, size int) (int64, []*model.ChatMessage, errors.Error) {
 	db := GetDB().WithContext(ctx).Model(&model.ChatMessage{}).Where("session_id = ?", sessionID)
 
 	var total int64
@@ -153,7 +153,7 @@ func (d *ChatDao) FindMessages(ctx context.Context, sessionID uint, page int, si
 }
 
 // TakeLatestUserMessage 查询会话最新用户消息；ID 作为同时间戳下的稳定次序。
-func (d *ChatDao) TakeLatestUserMessage(ctx context.Context, sessionID uint) (*model.ChatMessage, errors.Error) {
+func (d *ChatDao) TakeLatestUserMessage(ctx context.Context, sessionID string) (*model.ChatMessage, errors.Error) {
 	var message model.ChatMessage
 	if err := GetDB().WithContext(ctx).
 		Where("session_id = ? AND role = ?", sessionID, "user").
@@ -177,7 +177,7 @@ func (d *ChatDao) SaveMessage(ctx context.Context, message *model.ChatMessage) e
 		}
 		failureCode = "dao.chat.save_message_touch"
 		return tx.Model(&model.ChatSession{}).
-			Where("id = ?", message.SessionID).
+			Where("uuid = ?", message.SessionID).
 			Update("updated_at", time.Now()).Error
 	}); err != nil {
 		return errors.ErrorServerInternalError(failureCode)
@@ -197,7 +197,7 @@ func (d *ChatDao) SaveMembers(ctx context.Context, members []*model.SessionMembe
 }
 
 // FindMembers 按发言顺序查询群成员(预加载道人)
-func (d *ChatDao) FindMembers(ctx context.Context, sessionID uint) ([]*model.SessionMember, errors.Error) {
+func (d *ChatDao) FindMembers(ctx context.Context, sessionID string) ([]*model.SessionMember, errors.Error) {
 	var members []*model.SessionMember
 	if err := GetDB().WithContext(ctx).
 		Preload("Agent").
@@ -210,8 +210,8 @@ func (d *ChatDao) FindMembers(ctx context.Context, sessionID uint) ([]*model.Ses
 }
 
 // FindMembersBySessionIDs 批量查询多会话成员,预加载道人,按会话分组(消除列表 N+1)
-func (d *ChatDao) FindMembersBySessionIDs(ctx context.Context, sessionIDs []uint) (map[uint][]*model.SessionMember, errors.Error) {
-	grouped := map[uint][]*model.SessionMember{}
+func (d *ChatDao) FindMembersBySessionIDs(ctx context.Context, sessionIDs []string) (map[string][]*model.SessionMember, errors.Error) {
+	grouped := map[string][]*model.SessionMember{}
 	if len(sessionIDs) == 0 {
 		return grouped, nil
 	}
@@ -230,9 +230,9 @@ func (d *ChatDao) FindMembersBySessionIDs(ctx context.Context, sessionIDs []uint
 }
 
 // DeleteMember 移出群成员
-func (d *ChatDao) DeleteMember(ctx context.Context, sessionID uint, agentID uint) errors.Error {
+func (d *ChatDao) DeleteMember(ctx context.Context, sessionUUID string, agentUUID string) errors.Error {
 	res := GetDB().WithContext(ctx).
-		Where("session_id = ? AND agent_id = ?", sessionID, agentID).
+		Where("session_id = ? AND agent_id = ?", sessionUUID, agentUUID).
 		Delete(&model.SessionMember{})
 	if res.Error != nil {
 		return errors.ErrorServerInternalError("dao.chat.delete_member")
@@ -320,14 +320,15 @@ func (d *ChatDao) SaveFinalReplyOnce(ctx context.Context, runUUID uuid.UUID, rep
 		return nil, errors.ErrorServerInternalError(code)
 	}
 
-	message.RunID = &run.UUID
+	runUID := run.UUID.String()
+	message.RunID = &runUID
 	message.ReplyID = &replyID
 	if err := GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(message).Error; err != nil {
 			return err
 		}
 		return tx.Model(&model.ChatSession{}).
-			Where("id = ?", message.SessionID).
+			Where("uuid = ?", message.SessionID).
 			Update("updated_at", time.Now()).Error
 	}); err != nil {
 		// 并发下另一请求已落同一 (run_id, reply_id) → 返回已有行

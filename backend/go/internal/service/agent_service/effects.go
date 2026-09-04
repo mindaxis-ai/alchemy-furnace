@@ -23,7 +23,7 @@ func (s *Agent) ListEffects(ctx context.Context, agentUID uuid.UUID) ([]*service
 	if err != nil {
 		return nil, 0, err.Relation(errors.ErrorRecordNotFound("service.agent.list_effects_take"))
 	}
-	effects, err := s.agent.ListActiveEffects(ctx, agent.ID)
+	effects, err := s.agent.ListActiveEffects(ctx, agent.UUID.String())
 	if err != nil {
 		return nil, 0, err.Relation(errors.ErrorServerInternalError("service.agent.list_effects"))
 	}
@@ -48,7 +48,7 @@ func (s *Agent) UpdateEffects(ctx context.Context, agentUID uuid.UUID, expectedE
 	if err != nil {
 		return nil, err.Relation(errors.ErrorRecordNotFound("service.agent.update_effects_take"))
 	}
-	active, err := s.agent.ListActiveEffects(ctx, agent.ID)
+	active, err := s.agent.ListActiveEffects(ctx, agent.UUID.String())
 	if err != nil {
 		return nil, err.Relation(errors.ErrorServerInternalError("service.agent.update_effects_list"))
 	}
@@ -71,7 +71,7 @@ func (s *Agent) UpdateEffects(ctx context.Context, agentUID uuid.UUID, expectedE
 		}
 	}
 
-	ok, err := s.agent.UpdateActiveEffectsCAS(ctx, agent.ID, expectedEffectsRevision, writes)
+	ok, err := s.agent.UpdateActiveEffectsCAS(ctx, agent.UUID.String(), expectedEffectsRevision, writes)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +120,7 @@ func (s *Agent) RemoveEffect(ctx context.Context, agentUID uuid.UUID, effectUUID
 	if err != nil {
 		return err.Relation(errors.ErrorRecordNotFound("service.agent.remove_effect_take"))
 	}
-	if err := s.agent.RemoveAgentPillEffectByUUID(ctx, agent.ID, effectUUID, time.Now()); err != nil {
+	if err := s.agent.RemoveAgentPillEffectByUUID(ctx, agent.UUID.String(), effectUUID, time.Now()); err != nil {
 		return err
 	}
 	zap.L().Info("[炼丹炉] 道人移除已吸收能力",

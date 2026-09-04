@@ -78,8 +78,8 @@ type Chat interface {
 	// GetMessages 从最新消息向前分页，每页内部按时间正序呈现(page=1 为最新一页)
 	GetMessages(ctx context.Context, sessionUID uuid.UUID, page int, size int) (int64, []*model.ChatMessage, errors.Error)
 
-	// TakeLatestUserMessage 查询会话最新用户消息，不受历史列表分页影响。
-	TakeLatestUserMessage(ctx context.Context, sessionID uint) (*model.ChatMessage, errors.Error)
+	// TakeLatestUserMessage 查询会话最新用户消息，不受历史列表分页影响;sessionUID 为会话 UUID 文本。
+	TakeLatestUserMessage(ctx context.Context, sessionUID string) (*model.ChatMessage, errors.Error)
 
 	// GetSessionAgentInfo 按会话 UUID 取会话(预加载道人),供 SSE 构建对话请求(session.ID/AgentID/Agent.ModelName)
 	GetSessionAgentInfo(ctx context.Context, sessionUID uuid.UUID) (*model.ChatSession, errors.Error)
@@ -90,8 +90,8 @@ type Chat interface {
 	// ResolveCredentials 解析模型调用凭证(每轮解析,模型停用/换钥即时生效)
 	ResolveCredentials(ctx context.Context, modelName string) (*credential.ModelCredentials, errors.Error)
 
-	// SaveMessage 写入消息并刷新所属会话 updated_at(sources 字段已废弃,不再写入)
-	SaveMessage(ctx context.Context, sessionID uint, role string, content string) (*model.ChatMessage, errors.Error)
+	// SaveMessage 写入消息并刷新所属会话 updated_at(sources 字段已废弃,不再写入);sessionUID 为会话 UUID 文本
+	SaveMessage(ctx context.Context, sessionUID string, role string, content string) (*model.ChatMessage, errors.Error)
 
 	// DeleteSession 删除会话(消息由 FK CASCADE 清理)
 	DeleteSession(ctx context.Context, sessionUID uuid.UUID) errors.Error
@@ -111,8 +111,8 @@ type Chat interface {
 	// RemoveMember 踢出群,落系统通知消息;不在群返回 ErrorTypeRecordNotFound
 	RemoveMember(ctx context.Context, sessionUID uuid.UUID, agentUID uuid.UUID) errors.Error
 
-	// SaveAgentMessage 写带道人归属与提及的消息(群聊编排器用)
-	SaveAgentMessage(ctx context.Context, sessionID uint, agentID uint, role string, content string, mentions model.JSONMap) (*model.ChatMessage, errors.Error)
+	// SaveAgentMessage 写带道人归属与提及的消息(群聊编排器用);sessionUID/agentUID 均为 UUID 文本
+	SaveAgentMessage(ctx context.Context, sessionUID string, agentUID string, role string, content string, mentions model.JSONMap) (*model.ChatMessage, errors.Error)
 
 	// GenerateSessionTitle 单聊自动命名入口:title 已非空(用户手改)放弃;失败返回 ""
 	GenerateSessionTitle(ctx context.Context, sessionUID uuid.UUID, userContent string, firstReply string) string
@@ -126,7 +126,7 @@ type Chat interface {
 	// 消费 Python Resume 流;不落用户消息、不新建 run、不发 accepted。
 	RunConversationResume(ctx context.Context, runUID uuid.UUID, emit func(event string, payload any))
 
-	// P3 记忆挂载:检索结果注入编排快照;蒸馏异步触发(实现为空实现=不启用)
-	RetrieveMemories(ctx context.Context, agentID uint, userMessage string) []MemorySnippet
+	// P3 记忆挂载:检索结果注入编排快照;蒸馏异步触发(实现为空实现=不启用);agentUID 为道人 UUID 文本
+	RetrieveMemories(ctx context.Context, agentUID string, userMessage string) []MemorySnippet
 	EnqueueMemoryDistillation(ctx context.Context, spec DistillationSpec) bool
 }

@@ -33,7 +33,7 @@ type ElixirPill struct {
 	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime;comment:更新时间"`
 
 	// 关联关系：一个金丹被多个道人服用
-	AgentPills []AgentPill `json:"agent_pills,omitempty" gorm:"foreignKey:PillID;references:ID;constraint:OnDelete:CASCADE;"`
+	AgentPills []AgentPill `json:"agent_pills,omitempty" gorm:"foreignKey:PillID;references:UUID;constraint:OnDelete:CASCADE;"`
 }
 
 // TableName 指定表名
@@ -60,13 +60,13 @@ type DaoAgent struct {
 	CreatedAt       time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 
 	// 关联关系：一个道人服用多个金丹
-	AgentPills []AgentPill `json:"agent_pills,omitempty" gorm:"foreignKey:AgentID;references:ID;constraint:OnDelete:CASCADE;"`
+	AgentPills []AgentPill `json:"agent_pills,omitempty" gorm:"foreignKey:AgentID;references:UUID;constraint:OnDelete:CASCADE;"`
 	// 关联关系：一个道人拥有多个已吸收能力（任务 3；语言模式编译输入的事实来源）
-	AgentPillEffects []AgentPillEffect `json:"agent_pill_effects,omitempty" gorm:"foreignKey:AgentID;references:ID;constraint:OnDelete:CASCADE;"`
+	AgentPillEffects []AgentPillEffect `json:"agent_pill_effects,omitempty" gorm:"foreignKey:AgentID;references:UUID;constraint:OnDelete:CASCADE;"`
 	// 关联关系：一个道人参与多个会话
-	Sessions []ChatSession `json:"sessions,omitempty" gorm:"foreignKey:AgentID;references:ID;constraint:OnDelete:CASCADE;"`
+	Sessions []ChatSession `json:"sessions,omitempty" gorm:"foreignKey:AgentID;references:UUID;constraint:OnDelete:CASCADE;"`
 	// 关联关系：一个道人有一个语言模式缓存
-	LanguagePattern *LanguagePattern `json:"language_pattern,omitempty" gorm:"foreignKey:AgentID;references:ID;constraint:OnDelete:CASCADE;"`
+	LanguagePattern *LanguagePattern `json:"language_pattern,omitempty" gorm:"foreignKey:AgentID;references:UUID;constraint:OnDelete:CASCADE;"`
 }
 
 // TableName 指定表名
@@ -81,15 +81,15 @@ func (DaoAgent) TableName() string {
 // agent_id 和 pill_id 联合唯一
 type AgentPill struct {
 	ID        uint      `json:"id" gorm:"primaryKey;autoIncrement;comment:服用记录唯一标识"`
-	AgentID   uint      `json:"agent_id" gorm:"not null;uniqueIndex:idx_agent_pill;index;comment:道人ID"`
-	PillID    uint      `json:"pill_id" gorm:"not null;uniqueIndex:idx_agent_pill;index;comment:金丹ID"`
+	AgentID   string    `json:"agent_id" gorm:"type:uuid;not null;uniqueIndex:idx_agent_pill;index;comment:道人UUID文本"`
+	PillID    string    `json:"pill_id" gorm:"type:uuid;not null;uniqueIndex:idx_agent_pill;index;comment:金丹UUID文本"`
 	Weight    float64   `json:"weight" gorm:"default:1.0;comment:剂量/权重(0-10)"`
 	SortOrder int       `json:"sort_order" gorm:"default:0;comment:服用顺序"`
 	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime;comment:服用时间"`
 
 	// 关联关系
-	Agent DaoAgent   `json:"agent,omitempty" gorm:"foreignKey:AgentID;references:ID;constraint:OnDelete:CASCADE;"`
-	Pill  ElixirPill `json:"pill,omitempty" gorm:"foreignKey:PillID;references:ID;constraint:OnDelete:CASCADE;"`
+	Agent DaoAgent   `json:"agent,omitempty" gorm:"foreignKey:AgentID;references:UUID;constraint:OnDelete:CASCADE;"`
+	Pill  ElixirPill `json:"pill,omitempty" gorm:"foreignKey:PillID;references:UUID;constraint:OnDelete:CASCADE;"`
 }
 
 // TableName 指定表名
@@ -104,7 +104,7 @@ func (AgentPill) TableName() string {
 // 当道人性格、服用金丹或金丹内容变化时失效/重建
 type LanguagePattern struct {
 	ID             uint     `json:"id" gorm:"primaryKey;autoIncrement;comment:缓存唯一标识"`
-	AgentID        uint     `json:"agent_id" gorm:"not null;uniqueIndex;comment:关联道人ID"`
+	AgentID        string   `json:"agent_id" gorm:"type:uuid;not null;uniqueIndex;comment:关联道人UUID文本"`
 	SystemPrompt   string   `json:"system_prompt" gorm:"type:text;not null;comment:合成后的系统提示词"`
 	EmergenceRules JSONList `json:"emergence_rules" gorm:"serializer:json;comment:涌现规则列表"`
 	InnerTensions  JSONList `json:"inner_tensions" gorm:"serializer:json;comment:检测到的内在冲突"`
@@ -119,7 +119,7 @@ type LanguagePattern struct {
 	UpdatedAt         time.Time `json:"updated_at" gorm:"autoUpdateTime;comment:更新时间"`
 
 	// 关联关系
-	Agent DaoAgent `json:"agent,omitempty" gorm:"foreignKey:AgentID;references:ID;constraint:OnDelete:CASCADE;"`
+	Agent DaoAgent `json:"agent,omitempty" gorm:"foreignKey:AgentID;references:UUID;constraint:OnDelete:CASCADE;"`
 }
 
 // TableName 指定表名
@@ -152,15 +152,15 @@ type ChatSession struct {
 	ID        uint      `json:"id" gorm:"primaryKey;autoIncrement;comment:会话唯一标识"`
 	UUID      uuid.UUID `json:"-" gorm:"type:uuid;uniqueIndex;comment:对外标识"`
 	Type      string    `json:"type" gorm:"size:10;default:single;index;comment:会话类型: single/group"`
-	AgentID   *uint     `json:"agent_id" gorm:"index;comment:单聊所属道人ID;群聊为NULL"`
+	AgentID   *string   `json:"agent_id" gorm:"type:uuid;index;comment:单聊所属道人UUID文本;群聊为NULL"`
 	Title     string    `json:"title" gorm:"size:200;comment:会话标题(空=待自动命名)"`
 	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime;comment:更新时间"`
 
 	// 关联关系
-	Agent    DaoAgent        `json:"agent,omitempty" gorm:"foreignKey:AgentID;references:ID;constraint:OnDelete:CASCADE;"`
-	Messages []ChatMessage   `json:"messages,omitempty" gorm:"foreignKey:SessionID;references:ID;constraint:OnDelete:CASCADE;"`
-	Members  []SessionMember `json:"members,omitempty" gorm:"foreignKey:SessionID;references:ID;constraint:OnDelete:CASCADE;"`
+	Agent    DaoAgent        `json:"agent,omitempty" gorm:"foreignKey:AgentID;references:UUID;constraint:OnDelete:CASCADE;"`
+	Messages []ChatMessage   `json:"messages,omitempty" gorm:"foreignKey:SessionID;references:UUID;constraint:OnDelete:CASCADE;"`
+	Members  []SessionMember `json:"members,omitempty" gorm:"foreignKey:SessionID;references:UUID;constraint:OnDelete:CASCADE;"`
 }
 
 // TableName 指定表名
@@ -173,23 +173,21 @@ func (ChatSession) TableName() string {
 // ChatMessage 对话消息模型，对应 chat_messages 表
 // 存储用户与道人的对话内容
 // role: user(用户提问) / assistant(道人回答) / system(系统提示)
-// sources 字段已废弃，保留 JSONB 列以兼容历史数据，不再写入新数据
 type ChatMessage struct {
-	ID        uint       `json:"id" gorm:"primaryKey;autoIncrement;comment:消息唯一标识"`
-	UUID      uuid.UUID  `json:"-" gorm:"type:uuid;uniqueIndex;comment:对外标识"`
-	SessionID uint       `json:"session_id" gorm:"not null;index;comment:所属会话ID"`
-	Role      string     `json:"role" gorm:"size:20;not null;comment:角色: user/assistant/system"`
-	Content   string     `json:"content" gorm:"type:text;not null;comment:消息内容"`
-	Sources   JSONMap    `json:"sources,omitempty" gorm:"serializer:json;comment:废弃: 原RAG引用来源(JSONB格式)"`
-	AgentID   *uint      `json:"agent_id" gorm:"index;comment:发言道人ID(群聊);NULL=用户或系统通知"`
-	Mentions  JSONMap    `json:"mentions,omitempty" gorm:"serializer:json;comment:@提及:{\"agents\":[agent_uuid…],\"user\":bool}"`
-	RunID     *uuid.UUID `json:"run_id,omitempty" gorm:"type:uuid;index:idx_chat_run_reply,unique;comment:编排run标识(仅编排产物;NULL=普通消息不受唯一约束)"`
-	ReplyID   *string    `json:"reply_id,omitempty" gorm:"size:64;index:idx_chat_run_reply,unique;comment:最终回复幂等键(与run_id组成复合唯一)"`
-	CreatedAt time.Time  `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
+	ID        uint      `json:"id" gorm:"primaryKey;autoIncrement;comment:消息唯一标识"`
+	UUID      uuid.UUID `json:"-" gorm:"type:uuid;uniqueIndex;comment:对外标识"`
+	SessionID string    `json:"session_id" gorm:"type:uuid;not null;index;comment:所属会话UUID文本"`
+	Role      string    `json:"role" gorm:"size:20;not null;comment:角色: user/assistant/system"`
+	Content   string    `json:"content" gorm:"type:text;not null;comment:消息内容"`
+	AgentID   *string   `json:"agent_id" gorm:"type:uuid;index;comment:发言道人UUID文本(群聊);NULL=用户或系统通知"`
+	Mentions  JSONMap   `json:"mentions,omitempty" gorm:"serializer:json;comment:@提及:{\"agents\":[agent_uuid…],\"user\":bool}"`
+	RunID     *string   `json:"run_id,omitempty" gorm:"type:uuid;index:idx_chat_run_reply,unique;comment:编排run标识文本(仅编排产物;NULL=普通消息不受唯一约束)"`
+	ReplyID   *string   `json:"reply_id,omitempty" gorm:"size:64;index:idx_chat_run_reply,unique;comment:最终回复幂等键(与run_id组成复合唯一)"`
+	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 
 	// 关联关系
-	Session ChatSession `json:"session,omitempty" gorm:"foreignKey:SessionID;references:ID;constraint:OnDelete:CASCADE;"`
-	Agent   *DaoAgent   `json:"agent,omitempty" gorm:"foreignKey:AgentID;references:ID;constraint:OnDelete:SET NULL;"`
+	Session ChatSession `json:"session,omitempty" gorm:"foreignKey:SessionID;references:UUID;constraint:OnDelete:CASCADE;"`
+	Agent   *DaoAgent   `json:"agent,omitempty" gorm:"foreignKey:AgentID;references:UUID;constraint:OnDelete:SET NULL;"`
 }
 
 // TableName 指定表名
@@ -205,15 +203,16 @@ func (ChatMessage) TableName() string {
 type ChatRun struct {
 	ID            uint      `json:"id" gorm:"primaryKey;autoIncrement;comment:运行记录唯一标识"`
 	UUID          uuid.UUID `json:"-" gorm:"type:uuid;uniqueIndex;comment:对外 run 标识"`
-	SessionID     uint      `json:"session_id" gorm:"not null;index;comment:所属会话ID"`
-	UserMessageID uint      `json:"user_message_id" gorm:"not null;default:0;comment:触发本轮的用户消息ID(0=尚未落库)`
+	SessionID     string    `json:"session_id" gorm:"type:uuid;not null;index;comment:所属会话UUID文本"`
+	UserMessageID *string   `json:"user_message_id" gorm:"type:uuid;index;comment:触发本轮的用户消息UUID文本(NULL=尚未落库)"`
 	Status        string    `json:"status" gorm:"size:20;not null;default:pending;index;comment:状态: pending/running/completed/failed/interrupted/cancelled"`
 	Engine        string    `json:"engine" gorm:"size:20;not null;default:langgraph;comment:编排引擎标识"`
 	CreatedAt     time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 	UpdatedAt     time.Time `json:"updated_at" gorm:"autoUpdateTime;comment:更新时间"`
 
 	// 关联关系
-	Session ChatSession `json:"session,omitempty" gorm:"foreignKey:SessionID;references:ID;constraint:OnDelete:CASCADE;"`
+	Session     ChatSession `json:"session,omitempty" gorm:"foreignKey:SessionID;references:UUID;constraint:OnDelete:CASCADE;"`
+	UserMessage ChatMessage `json:"-" gorm:"foreignKey:UserMessageID;references:UUID;constraint:OnDelete:SET NULL;"`
 }
 
 // TableName 指定表名
@@ -227,13 +226,13 @@ func (ChatRun) TableName() string {
 // 仅 group 会话使用;(session_id, agent_id) 联合唯一;被踢后重新邀请=删旧行插新行
 type SessionMember struct {
 	ID        uint      `json:"id" gorm:"primaryKey;autoIncrement;comment:成员记录唯一标识"`
-	SessionID uint      `json:"session_id" gorm:"not null;uniqueIndex:idx_session_agent;index;comment:所属会话ID"`
-	AgentID   uint      `json:"agent_id" gorm:"not null;uniqueIndex:idx_session_agent;comment:道人ID"`
+	SessionID string    `json:"session_id" gorm:"type:uuid;not null;uniqueIndex:idx_session_agent;index;comment:所属会话UUID文本"`
+	AgentID   string    `json:"agent_id" gorm:"type:uuid;not null;uniqueIndex:idx_session_agent;comment:道人UUID文本"`
 	SortOrder int       `json:"sort_order" gorm:"default:0;comment:发言顺序(拉人顺序)"`
 	JoinedAt  time.Time `json:"joined_at" gorm:"autoCreateTime;comment:入群时间"`
 
 	// 关联关系
-	Agent DaoAgent `json:"agent,omitempty" gorm:"foreignKey:AgentID;references:ID;constraint:OnDelete:CASCADE;"`
+	Agent DaoAgent `json:"agent,omitempty" gorm:"foreignKey:AgentID;references:UUID;constraint:OnDelete:CASCADE;"`
 }
 
 // TableName 指定表名
@@ -261,7 +260,7 @@ type LLMProvider struct {
 	UpdatedAt       time.Time `json:"updated_at" gorm:"autoUpdateTime;comment:更新时间"`
 
 	// 关联关系：一个供应商下有多个模型
-	Models []LLMModel `json:"models,omitempty" gorm:"foreignKey:ProviderID;references:ID"`
+	Models []LLMModel `json:"models,omitempty" gorm:"foreignKey:ProviderID;references:UUID"`
 }
 
 // TableName 指定表名
@@ -277,7 +276,7 @@ func (LLMProvider) TableName() string {
 type LLMModel struct {
 	ID          uint      `json:"id" gorm:"primaryKey;autoIncrement;comment:模型配置唯一标识"`
 	UUID        uuid.UUID `json:"-" gorm:"type:uuid;uniqueIndex;comment:对外标识"`
-	ProviderID  uint      `json:"provider_id" gorm:"not null;index:idx_llm_models_provider_id;uniqueIndex:idx_llm_models_provider_name;comment:所属供应商ID"`
+	ProviderID  string    `json:"provider_id" gorm:"type:uuid;not null;index:idx_llm_models_provider_id;uniqueIndex:idx_llm_models_provider_name;comment:所属供应商UUID文本"`
 	Name        string    `json:"name" gorm:"size:100;not null;uniqueIndex:idx_llm_models_provider_name;comment:模型名（API 调用用，如 gpt-4o）"`
 	DisplayName string    `json:"display_name" gorm:"size:100;not null;comment:显示名"`
 	Temperature float64   `json:"temperature" gorm:"default:0.7;comment:默认温度(0-2)"`
@@ -291,7 +290,7 @@ type LLMModel struct {
 	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime;comment:更新时间"`
 
 	// 关联关系
-	Provider LLMProvider `json:"provider,omitempty" gorm:"foreignKey:ProviderID;references:ID"`
+	Provider LLMProvider `json:"provider,omitempty" gorm:"foreignKey:ProviderID;references:UUID"`
 }
 
 // TableName 指定表名
@@ -586,6 +585,13 @@ func (m *ChatMessage) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
+func (m *ChatRun) BeforeCreate(tx *gorm.DB) error {
+	if m.UUID == uuid.Nil {
+		m.UUID = uuid.New()
+	}
+	return nil
+}
+
 func (m *LLMProvider) BeforeCreate(tx *gorm.DB) error {
 	if m.UUID == uuid.Nil {
 		m.UUID = uuid.New()
@@ -637,7 +643,7 @@ func (m *UserProfile) BeforeCreate(tx *gorm.DB) error {
 type AgentMemory struct {
 	ID              uint       `json:"id" gorm:"primaryKey;autoIncrement;comment:记忆唯一标识"`
 	UUID            uuid.UUID  `json:"-" gorm:"type:uuid;uniqueIndex;comment:对外标识"`
-	AgentID         uint       `json:"-" gorm:"index;not null;comment:所属道人"`
+	AgentID         string     `json:"-" gorm:"type:uuid;index;not null;comment:所属道人UUID文本"`
 	Kind            string     `json:"kind" gorm:"size:32;index;not null;comment:类型: user_fact/user_preference/relationship/open_loop/episode"`
 	Content         string     `json:"content" gorm:"type:text;not null;comment:记忆内容(≤500字)"`
 	Keywords        JSONList   `json:"keywords" gorm:"serializer:json;comment:关键词数组(≤12)"`

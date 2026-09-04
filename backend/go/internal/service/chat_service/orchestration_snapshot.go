@@ -65,7 +65,7 @@ func (s *Chat) BuildOrchestrationRequest(ctx context.Context, session *model.Cha
 	// 参与者:群聊按 FindMembers 返回序(建群序);单聊=会话归属道人(TakeSessionByUUID 预加载)。
 	var participants []model.DaoAgent
 	if session.Type == model.SessionTypeGroup {
-		members, mErr := s.chat.FindMembers(ctx, session.ID)
+		members, mErr := s.chat.FindMembers(ctx, session.UUID.String())
 		if mErr != nil {
 			return req, fmt.Errorf("编排快照查询成员失败: %w", mErr)
 		}
@@ -92,7 +92,7 @@ func (s *Chat) BuildOrchestrationRequest(ctx context.Context, session *model.Cha
 		})
 		req.Credentials[agentID] = orchestration.Credential{APIKey: creds.APIKey, BaseURL: creds.BaseURL}
 		if got.MemoryEnabled {
-			for i, snip := range s.RetrieveMemories(ctx, got.ID, userMessage.Content) {
+			for i, snip := range s.RetrieveMemories(ctx, got.UUID.String(), userMessage.Content) {
 				req.Memories = append(req.Memories, orchestration.Memory{
 					MemoryID: fmt.Sprintf("%s#%d", agentID, i+1),
 					AgentID:  agentID,
@@ -103,7 +103,7 @@ func (s *Chat) BuildOrchestrationRequest(ctx context.Context, session *model.Cha
 	}
 
 	// 历史:最近 20 条;剔除 system 通知与本轮用户消息(重试场景下本轮已在库)。
-	_, msgs, hErr := s.chat.FindMessages(ctx, session.ID, 1, 20)
+	_, msgs, hErr := s.chat.FindMessages(ctx, session.UUID.String(), 1, 20)
 	if hErr != nil {
 		return req, fmt.Errorf("编排快照查询历史失败: %w", hErr)
 	}

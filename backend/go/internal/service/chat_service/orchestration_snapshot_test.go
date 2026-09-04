@@ -21,11 +21,11 @@ import (
 // snapshotMemory 仅实现 Retrieve;快照构建只读检索,其余接口方法不应被触达。
 type snapshotMemory struct {
 	service.Memory
-	byAgent map[uint][]service.MemorySnippet
+	byAgent map[string][]service.MemorySnippet // 键=道人 UUID 文本
 }
 
-func (m snapshotMemory) Retrieve(_ context.Context, agentID uint, _ string) ([]service.MemorySnippet, ierr.Error) {
-	return m.byAgent[agentID], nil
+func (m snapshotMemory) Retrieve(_ context.Context, agentUID string, _ string) ([]service.MemorySnippet, ierr.Error) {
+	return m.byAgent[agentUID], nil
 }
 
 // snapshotResolver deepseek 凭据(带 provider 元数据);键 "" 代理默认模型解析。
@@ -46,7 +46,7 @@ func buildSnapshotFixture(t *testing.T) (*Chat, *fakeChatDao, map[string]*model.
 	names := []string{"zhang", "li", "jia", "shen"}
 	agents := &fakeAgentDao{agents: map[string]*model.DaoAgent{}}
 	byName := map[string]*model.DaoAgent{}
-	byID := map[uint]*model.DaoAgent{}
+	byID := map[string]*model.DaoAgent{} // 键=道人 UUID 文本
 	for i, key := range names {
 		a := &model.DaoAgent{
 			ID: uint(i + 1), UUID: uuid.New(), Name: "道人·" + key,
@@ -54,31 +54,31 @@ func buildSnapshotFixture(t *testing.T) (*Chat, *fakeChatDao, map[string]*model.
 		}
 		agents.agents[a.UUID.String()] = a
 		byName[key] = a
-		byID[a.ID] = a
+		byID[a.UUID.String()] = a
 	}
 	byName["jia"].MemoryEnabled = false
 
 	chats := &fakeChatDao{
 		sessions:  map[string]*model.ChatSession{},
-		members:   map[uint][]*model.SessionMember{},
+		members:   map[string][]*model.SessionMember{},
 		agentByID: byID,
 	}
 	svc := New(chats, agents, fakePattern{}, snapshotResolver(), "")
-	svc.Memory = snapshotMemory{byAgent: map[uint][]service.MemorySnippet{
-		byName["zhang"].ID: {{Kind: "preference", Content: "zhang 记忆一"}},
-		byName["jia"].ID:   {{Kind: "preference", Content: "jia 记忆一"}},
+	svc.Memory = snapshotMemory{byAgent: map[string][]service.MemorySnippet{
+		byName["zhang"].UUID.String(): {{Kind: "preference", Content: "zhang 记忆一"}},
+		byName["jia"].UUID.String():   {{Kind: "preference", Content: "jia 记忆一"}},
 	}}
 
 	session := &model.ChatSession{ID: 1, UUID: uuid.New(), Type: model.SessionTypeGroup}
 	for i, key := range names {
-		chats.members[session.ID] = append(chats.members[session.ID], &model.SessionMember{
-			SessionID: session.ID, AgentID: byName[key].ID, SortOrder: i,
+		chats.members[session.UUID.String()] = append(chats.members[session.UUID.String()], &model.SessionMember{
+			SessionID: session.UUID.String(), AgentID: byName[key].UUID.String(), SortOrder: i,
 		})
 	}
 	chats.sessions[session.UUID.String()] = session
 
 	userMessage := &model.ChatMessage{
-		ID: 99, UUID: uuid.New(), SessionID: session.ID, Role: "user",
+		ID: 99, UUID: uuid.New(), SessionID: session.UUID.String(), Role: "user",
 		Content:  "@zhang 请报数",
 		Mentions: model.JSONMap{"agents": []string{byName["zhang"].UUID.String()}, "user": true},
 	}
@@ -86,7 +86,7 @@ func buildSnapshotFixture(t *testing.T) (*Chat, *fakeChatDao, map[string]*model.
 }
 
 func snapshotRun(session *model.ChatSession) *model.ChatRun {
-	return &model.ChatRun{UUID: uuid.New(), SessionID: session.ID, Status: model.ChatRunStatusPending}
+	return &model.ChatRun{UUID: uuid.New(), SessionID: session.UUID.String(), Status: model.ChatRunStatusPending}
 }
 
 func mustJSON(t *testing.T, v any) string {
@@ -136,8 +136,9 @@ func TestBuildOrchestrationRequestPreservesMemberOrderAndProviderType(t *testing
 func TestBuildOrchestrationRequestSingleChatUsesSessionAgent(t *testing.T) {
 	svc, _, byName, _, _ := buildSnapshotFixture(t)
 	agent := *byName["li"]
-	session := &model.ChatSession{ID: 2, UUID: uuid.New(), Type: model.SessionTypeSingle, AgentID: &agent.ID, Agent: agent}
-	userMessage := &model.ChatMessage{ID: 1, UUID: uuid.New(), SessionID: session.ID, Role: "user", Content: "你好"}
+	agentUID := agent.UUID.String()
+	session := &model.ChatSession{ID: 2, UUID: uuid.New(), Type: model.SessionTypeSingle, AgentID: &agentUID, Agent: agent}
+	userMessage := &model.ChatMessage{ID: 1, UUID: uuid.New(), SessionID: session.UUID.String(), Role: "user", Content: "你好"}
 
 	req, err := svc.BuildOrchestrationRequest(context.Background(), session, userMessage, snapshotRun(session))
 	if err != nil {
@@ -196,9 +197,10 @@ func TestBuildOrchestrationRequestFiltersMemoryByEnabled(t *testing.T) {
 // 重试场景:本轮用户消息已在库(重跑 run)。历史=更早两轮(去掉 system 通知),不含本轮。
 func TestBuildOrchestrationRequestExcludesUserTurnAndSystemFromHistory(t *testing.T) {
 	svc, chats, byName, session, userMessage := buildSnapshotFixture(t)
-	olderUser := &model.ChatMessage{ID: 10, UUID: uuid.New(), SessionID: session.ID, Role: "user", Content: "早前的问题"}
-	olderReply := &model.ChatMessage{ID: 11, UUID: uuid.New(), SessionID: session.ID, Role: "assistant", Content: "早前的回答", AgentID: &byName["zhang"].ID}
-	notification := &model.ChatMessage{ID: 12, UUID: uuid.New(), SessionID: session.ID, Role: "system", Content: "系统通知"}
+	zhangUID := byName["zhang"].UUID.String()
+	olderUser := &model.ChatMessage{ID: 10, UUID: uuid.New(), SessionID: session.UUID.String(), Role: "user", Content: "早前的问题"}
+	olderReply := &model.ChatMessage{ID: 11, UUID: uuid.New(), SessionID: session.UUID.String(), Role: "assistant", Content: "早前的回答", AgentID: &zhangUID}
+	notification := &model.ChatMessage{ID: 12, UUID: uuid.New(), SessionID: session.UUID.String(), Role: "system", Content: "系统通知"}
 	chats.messages = []*model.ChatMessage{olderUser, olderReply, notification, userMessage}
 
 	req, err := svc.BuildOrchestrationRequest(context.Background(), session, userMessage, snapshotRun(session))
@@ -228,8 +230,9 @@ func TestBuildOrchestrationRequestExcludesUserTurnAndSystemFromHistory(t *testin
 func TestBuildOrchestrationRequestWireNeverEmitsNullForEmptySnapshots(t *testing.T) {
 	svc, chats, byName, _, _ := buildSnapshotFixture(t)
 	agent := *byName["li"]
-	session := &model.ChatSession{ID: 2, UUID: uuid.New(), Type: model.SessionTypeSingle, AgentID: &agent.ID, Agent: agent}
-	userMessage := &model.ChatMessage{ID: 1, UUID: uuid.New(), SessionID: session.ID, Role: "user", Content: "你好"}
+	agentUID := agent.UUID.String()
+	session := &model.ChatSession{ID: 2, UUID: uuid.New(), Type: model.SessionTypeSingle, AgentID: &agentUID, Agent: agent}
+	userMessage := &model.ChatMessage{ID: 1, UUID: uuid.New(), SessionID: session.UUID.String(), Role: "user", Content: "你好"}
 	chats.messages = []*model.ChatMessage{userMessage}
 
 	req, err := svc.BuildOrchestrationRequest(context.Background(), session, userMessage, snapshotRun(session))

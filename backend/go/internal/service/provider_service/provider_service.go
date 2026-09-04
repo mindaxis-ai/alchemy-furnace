@@ -316,7 +316,7 @@ func (s *ProviderService) TestConnection(ctx context.Context, uid uuid.UUID, mod
 
 	modelName = strings.TrimSpace(modelName)
 	if modelName == "" {
-		m, merr := s.model.FindFirstEnabledModelByProvider(ctx, p.ID)
+		m, merr := s.model.FindFirstEnabledModelByProvider(ctx, p.UUID.String())
 		if merr != nil {
 			return nil, errors.New(errors.ErrorTypeInvalidRequest, "service.provider.test.no_model", "请先为该供应商添加已启用模型")
 		}

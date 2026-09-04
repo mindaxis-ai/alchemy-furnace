@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	appErrors "github.com/alchemy-furnace/server/internal/errors"
 	"github.com/alchemy-furnace/server/internal/behavior"
+	appErrors "github.com/alchemy-furnace/server/internal/errors"
 	"github.com/alchemy-furnace/server/internal/interface/dao"
 	"github.com/alchemy-furnace/server/internal/service/credential"
 	"github.com/alchemy-furnace/server/internal/synthesis"
@@ -148,7 +148,7 @@ func TestGetOrBuildPatternCacheHitNewFormat(t *testing.T) {
 		t.Fatalf("computeFingerprint: %v", err)
 	}
 	agent.LanguagePattern = &model.LanguagePattern{
-		AgentID:           agent.ID,
+		AgentID:           agent.UUID.String(),
 		SystemPrompt:      "缓存的提示词",
 		BehaviorProfile:   model.JSONMap{"version": 1},
 		ProfileVersion:    behavior.ProfileVersion,
@@ -176,7 +176,7 @@ func TestGetOrBuildPatternOldCacheRebuilds(t *testing.T) {
 	agent := newMarkerAgent()
 	fp, _ := computeFingerprint(agent.Personality, buildPillInputs(agent))
 	agent.LanguagePattern = &model.LanguagePattern{
-		AgentID:           agent.ID,
+		AgentID:           agent.UUID.String(),
 		SystemPrompt:      "旧格式提示词",
 		SourceFingerprint: fp,
 		IsValid:           true,
@@ -213,7 +213,7 @@ func TestGetOrBuildPatternOldCacheRebuilds(t *testing.T) {
 func TestGetOrBuildPatternFingerprintMismatchRebuilds(t *testing.T) {
 	agent := newMarkerAgent()
 	agent.LanguagePattern = &model.LanguagePattern{
-		AgentID:           agent.ID,
+		AgentID:           agent.UUID.String(),
 		SystemPrompt:      "过期缓存",
 		BehaviorProfile:   model.JSONMap{"version": 1},
 		ProfileVersion:    behavior.ProfileVersion,
@@ -242,7 +242,7 @@ func TestGetOrBuildPatternProfileVersionMismatchRebuilds(t *testing.T) {
 	agent := newMarkerAgent()
 	fp, _ := computeFingerprint(agent.Personality, buildPillInputs(agent))
 	agent.LanguagePattern = &model.LanguagePattern{
-		AgentID:           agent.ID,
+		AgentID:           agent.UUID.String(),
 		SystemPrompt:      "旧版本档案",
 		BehaviorProfile:   model.JSONMap{"version": 0},
 		ProfileVersion:    0,
@@ -430,7 +430,7 @@ func TestGetOrBuildPatternRevisionConflictRetries(t *testing.T) {
 		agent.EffectsRevision = 4
 		fp, _ := computeFingerprint(agent.Personality, buildPillInputs(agent))
 		agent.LanguagePattern = &model.LanguagePattern{
-			AgentID:           agent.ID,
+			AgentID:           agent.UUID.String(),
 			SystemPrompt:      "并发服用后的新缓存",
 			BehaviorProfile:   model.JSONMap{"version": 1},
 			ProfileVersion:    behavior.ProfileVersion,

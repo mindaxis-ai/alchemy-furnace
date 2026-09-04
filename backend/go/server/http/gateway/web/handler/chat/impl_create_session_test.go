@@ -21,9 +21,9 @@ import (
 // 若 handler 仍在提交后二次查询成员会立即暴露
 type createGroupStub struct {
 	service.Chat
-	session *model.ChatSession
-	err     errors.Error
-	gotUIDs []uuid.UUID
+	session  *model.ChatSession
+	err      errors.Error
+	gotUIDs  []uuid.UUID
 	gotTitle string
 }
 
@@ -49,7 +49,7 @@ func (s *createSingleStub) CreateSession(_ context.Context, agentUID uuid.UUID) 
 // 单聊创建: 201 响应必须携带道人真实身份(名称/头像/状态), 前端无需再按 agent_id 查名录
 func TestCreateSingleSessionResponseCarriesDaoistIdentity(t *testing.T) {
 	agentUID := uuid.New()
-	agentID := uint(1)
+	agentID := agentUID.String()
 	session := &model.ChatSession{UUID: uuid.New(), Type: model.SessionTypeSingle, AgentID: &agentID}
 	session.Agent = model.DaoAgent{UUID: agentUID, Name: "太上老君", Avatar: "https://example.com/laojun.png", Status: "active"}
 	stub := &createSingleStub{session: session}
@@ -96,8 +96,8 @@ func TestCreateGroupSessionResponseCarriesMembersWithoutSecondLookup(t *testing.
 	u1, u2 := uuid.New(), uuid.New()
 	session := &model.ChatSession{UUID: uuid.New(), Type: model.SessionTypeGroup}
 	session.Members = []model.SessionMember{
-		{AgentID: 1, SortOrder: 0, Agent: model.DaoAgent{UUID: u1, Name: "太上老君", Status: "active"}},
-		{AgentID: 2, SortOrder: 1, Agent: model.DaoAgent{UUID: u2, Name: "孙悟空", Status: "active"}},
+		{AgentID: u1.String(), SortOrder: 0, Agent: model.DaoAgent{UUID: u1, Name: "太上老君", Status: "active"}},
+		{AgentID: u2.String(), SortOrder: 1, Agent: model.DaoAgent{UUID: u2, Name: "孙悟空", Status: "active"}},
 	}
 	stub := &createGroupStub{session: session}
 
@@ -149,8 +149,8 @@ func TestCreateGroupSessionForwardsTitleVerbatimToService(t *testing.T) {
 	u1, u2 := uuid.New(), uuid.New()
 	session := &model.ChatSession{UUID: uuid.New(), Type: model.SessionTypeGroup}
 	session.Members = []model.SessionMember{
-		{AgentID: 1, SortOrder: 0, Agent: model.DaoAgent{UUID: u1, Name: "太上老君", Status: "active"}},
-		{AgentID: 2, SortOrder: 1, Agent: model.DaoAgent{UUID: u2, Name: "孙悟空", Status: "active"}},
+		{AgentID: u1.String(), SortOrder: 0, Agent: model.DaoAgent{UUID: u1, Name: "太上老君", Status: "active"}},
+		{AgentID: u2.String(), SortOrder: 1, Agent: model.DaoAgent{UUID: u2, Name: "孙悟空", Status: "active"}},
 	}
 	stub := &createGroupStub{session: session}
 

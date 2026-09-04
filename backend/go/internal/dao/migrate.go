@@ -3,8 +3,8 @@
 //   - 幂等: 重复执行只补齐新增列/索引,不会破坏已有数据
 //   - 驱动无关: 同一组模型在 postgres / mysql / sqlite 上生成等价表结构
 //   - 部分唯一索引(is_default / is_synthesis / is_fusion):
-//       模型 tag 上声明 where 子句,PG/SQLite 自动生成 partial index;
-//       MySQL 8.0.13+ 同步支持,更早版本降级为普通 unique 索引并由 service 层兜底
+//     模型 tag 上声明 where 子句,PG/SQLite 自动生成 partial index;
+//     MySQL 8.0.13+ 同步支持,更早版本降级为普通 unique 索引并由 service 层兜底
 package dao
 
 import (

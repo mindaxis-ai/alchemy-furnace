@@ -114,7 +114,7 @@ func TestPartialUniqueIndexSQLite(t *testing.T) {
 
 	// 2) 第一条 is_default=true 写入应成功
 	first := &model.LLMModel{
-		ProviderID: provider.ID, Name: "a", DisplayName: "A",
+		ProviderID: provider.UUID.String(), Name: "a", DisplayName: "A",
 		IsDefault: true, IsEnabled: true,
 	}
 	if err := db.Create(first).Error; err != nil {
@@ -123,7 +123,7 @@ func TestPartialUniqueIndexSQLite(t *testing.T) {
 
 	// 3) 第二条 is_default=true 写入应被部分唯一索引拒绝
 	second := &model.LLMModel{
-		ProviderID: provider.ID, Name: "b", DisplayName: "B",
+		ProviderID: provider.UUID.String(), Name: "b", DisplayName: "B",
 		IsDefault: true, IsEnabled: true,
 	}
 	err := db.Create(second).Error
@@ -142,10 +142,10 @@ func TestPartialUniqueIndexSQLite(t *testing.T) {
 func TestDriverAutoResolve(t *testing.T) {
 	// 走 loader.resolveDriver 行为模拟(直接复用同一函数需要 init 状态,这里内联验证规则)
 	cases := []struct {
-		name      string
-		input     configuration.DatabaseConfig
+		name       string
+		input      configuration.DatabaseConfig
 		wantDriver string
-		wantPath  string
+		wantPath   string
 	}{
 		{
 			name: "未填 + 有 host → postgres",
@@ -155,10 +155,10 @@ func TestDriverAutoResolve(t *testing.T) {
 			wantDriver: configuration.DriverPostgres,
 		},
 		{
-			name:      "未填 + 无 host → sqlite",
-			input:     configuration.DatabaseConfig{},
+			name:       "未填 + 无 host → sqlite",
+			input:      configuration.DatabaseConfig{},
 			wantDriver: configuration.DriverSQLite,
-			wantPath:  "./data/alchemy.db",
+			wantPath:   "./data/alchemy.db",
 		},
 		{
 			name: "显式 sqlite + 无 path → 默认路径",
@@ -166,7 +166,7 @@ func TestDriverAutoResolve(t *testing.T) {
 				Driver: configuration.DriverSQLite,
 			},
 			wantDriver: configuration.DriverSQLite,
-			wantPath:  "./data/alchemy.db",
+			wantPath:   "./data/alchemy.db",
 		},
 		{
 			name: "显式 mysql 透传",

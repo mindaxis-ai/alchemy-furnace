@@ -137,7 +137,7 @@ func TestBindPillConsumesInventoryItem(t *testing.T) {
 	agent, _ := seedAgentAndPills(t, db, 0)
 	itemID := craftTestItem(t, db, "服丹测试")
 	// 预置有效缓存,服用后应失效
-	if err := db.Create(&model.LanguagePattern{AgentID: agent.ID, SystemPrompt: "c", SourceFingerprint: "sha256:x", IsValid: true}).Error; err != nil {
+	if err := db.Create(&model.LanguagePattern{AgentID: agent.UUID.String(), SystemPrompt: "c", SourceFingerprint: "sha256:x", IsValid: true}).Error; err != nil {
 		t.Fatalf("建缓存失败: %v", err)
 	}
 
@@ -156,7 +156,7 @@ func TestBindPillConsumesInventoryItem(t *testing.T) {
 
 	// 能力快照生成(身份=实例 UUID)
 	var ef model.AgentPillEffect
-	if err := db.Preload("Item").Where("agent_id = ?", agent.ID).First(&ef).Error; err != nil {
+	if err := db.Preload("Item").Where("agent_id = ?", agent.UUID.String()).First(&ef).Error; err != nil {
 		t.Fatalf("查能力快照失败: %v", err)
 	}
 	if ef.Item.UUID != itemID {
@@ -173,7 +173,7 @@ func TestBindPillConsumesInventoryItem(t *testing.T) {
 		t.Fatalf("effects_revision = %d, 期望 1", reload.EffectsRevision)
 	}
 	var pattern model.LanguagePattern
-	db.Where("agent_id = ?", agent.ID).First(&pattern)
+	db.Where("agent_id = ?", agent.UUID.String()).First(&pattern)
 	if pattern.IsValid {
 		t.Fatal("服用后语言模式缓存未被失效")
 	}
@@ -217,7 +217,7 @@ func TestUnbindPillRemovesEffectOnly(t *testing.T) {
 		t.Fatalf("预置服用失败: %v", err)
 	}
 	// 预置有效缓存,移除后应失效
-	if err := db.Create(&model.LanguagePattern{AgentID: agent.ID, SystemPrompt: "c", SourceFingerprint: "sha256:x", IsValid: true}).Error; err != nil {
+	if err := db.Create(&model.LanguagePattern{AgentID: agent.UUID.String(), SystemPrompt: "c", SourceFingerprint: "sha256:x", IsValid: true}).Error; err != nil {
 		t.Fatalf("建缓存失败: %v", err)
 	}
 
@@ -226,7 +226,7 @@ func TestUnbindPillRemovesEffectOnly(t *testing.T) {
 	}
 
 	var ef model.AgentPillEffect
-	if err := db.Where("agent_id = ?", agent.ID).First(&ef).Error; err != nil {
+	if err := db.Where("agent_id = ?", agent.UUID.String()).First(&ef).Error; err != nil {
 		t.Fatalf("查能力失败: %v", err)
 	}
 	if ef.RemovedAt == nil {
@@ -245,7 +245,7 @@ func TestUnbindPillRemovesEffectOnly(t *testing.T) {
 		t.Fatalf("effects_revision = %d, 期望 2", reload.EffectsRevision)
 	}
 	var pattern model.LanguagePattern
-	db.Where("agent_id = ?", agent.ID).First(&pattern)
+	db.Where("agent_id = ?", agent.UUID.String()).First(&pattern)
 	if pattern.IsValid {
 		t.Fatal("移除能力后语言模式缓存未被失效")
 	}
@@ -263,7 +263,7 @@ func TestUpdateAgentPillUpdatesEffect(t *testing.T) {
 	if err := svc.BindPill(context.Background(), agent.UUID, itemID, 1, 1); err != nil {
 		t.Fatalf("预置服用失败: %v", err)
 	}
-	if err := db.Create(&model.LanguagePattern{AgentID: agent.ID, SystemPrompt: "c", SourceFingerprint: "sha256:x", IsValid: true}).Error; err != nil {
+	if err := db.Create(&model.LanguagePattern{AgentID: agent.UUID.String(), SystemPrompt: "c", SourceFingerprint: "sha256:x", IsValid: true}).Error; err != nil {
 		t.Fatalf("建缓存失败: %v", err)
 	}
 
@@ -272,7 +272,7 @@ func TestUpdateAgentPillUpdatesEffect(t *testing.T) {
 		t.Fatalf("UpdateAgentPill 报错: %v", err)
 	}
 	var ef model.AgentPillEffect
-	if err := db.Where("agent_id = ?", agent.ID).First(&ef).Error; err != nil {
+	if err := db.Where("agent_id = ?", agent.UUID.String()).First(&ef).Error; err != nil {
 		t.Fatalf("查能力失败: %v", err)
 	}
 	if ef.Weight != 2 || ef.SortOrder != 4 {
@@ -284,7 +284,7 @@ func TestUpdateAgentPillUpdatesEffect(t *testing.T) {
 		t.Fatalf("effects_revision = %d, 期望 2", reload.EffectsRevision)
 	}
 	var pattern model.LanguagePattern
-	db.Where("agent_id = ?", agent.ID).First(&pattern)
+	db.Where("agent_id = ?", agent.UUID.String()).First(&pattern)
 	if pattern.IsValid {
 		t.Fatal("调整权重后语言模式缓存未被失效")
 	}
@@ -300,29 +300,29 @@ func seedEnabledModel(t *testing.T, db *gorm.DB, modelName string) {
 	if err := db.Create(prov).Error; err != nil {
 		t.Fatalf("建供应商失败: %v", err)
 	}
-	mdl := &model.LLMModel{ProviderID: prov.ID, Name: modelName, DisplayName: modelName, IsEnabled: true}
+	mdl := &model.LLMModel{ProviderID: prov.UUID.String(), Name: modelName, DisplayName: modelName, IsEnabled: true}
 	if err := db.Create(mdl).Error; err != nil {
 		t.Fatalf("建模型失败: %v", err)
 	}
 }
 
-// seedSingleSession 造一个直挂道人的单聊会话
-func seedSingleSession(t *testing.T, db *gorm.DB, agentID uint) {
+// seedSingleSession 造一个直挂道人的单聊会话(关系键=道人UUID文本)
+func seedSingleSession(t *testing.T, db *gorm.DB, agentUID string) {
 	t.Helper()
-	sess := &model.ChatSession{UUID: uuid.New(), Type: model.SessionTypeSingle, AgentID: &agentID}
+	sess := &model.ChatSession{UUID: uuid.New(), Type: model.SessionTypeSingle, AgentID: &agentUID}
 	if err := db.Create(sess).Error; err != nil {
 		t.Fatalf("建单聊会话失败: %v", err)
 	}
 }
 
-// seedGroupMembership 造一个群聊会话并把道人拉进成员表
-func seedGroupMembership(t *testing.T, db *gorm.DB, agentID uint) {
+// seedGroupMembership 造一个群聊会话并把道人拉进成员表(关系键=UUID文本)
+func seedGroupMembership(t *testing.T, db *gorm.DB, agentUID string) {
 	t.Helper()
 	sess := &model.ChatSession{UUID: uuid.New(), Type: model.SessionTypeGroup}
 	if err := db.Create(sess).Error; err != nil {
 		t.Fatalf("建群聊会话失败: %v", err)
 	}
-	if err := db.Create(&model.SessionMember{SessionID: sess.ID, AgentID: agentID, SortOrder: 0}).Error; err != nil {
+	if err := db.Create(&model.SessionMember{SessionID: sess.UUID.String(), AgentID: agentUID, SortOrder: 0}).Error; err != nil {
 		t.Fatalf("拉群成员失败: %v", err)
 	}
 }
@@ -330,7 +330,7 @@ func seedGroupMembership(t *testing.T, db *gorm.DB, agentID uint) {
 func TestDeleteAgentWithSingleChatHistoryReturnsConflict(t *testing.T) {
 	svc, db := setupServiceTestDB(t)
 	agent, _ := seedAgentAndPills(t, db, 0)
-	seedSingleSession(t, db, agent.ID)
+	seedSingleSession(t, db, agent.UUID.String())
 
 	err := svc.DeleteAgent(context.Background(), agent.UUID)
 	if err == nil {
@@ -360,7 +360,7 @@ func TestDeleteAgentWithSingleChatHistoryReturnsConflict(t *testing.T) {
 func TestDeleteAgentWithGroupChatHistoryReturnsConflict(t *testing.T) {
 	svc, db := setupServiceTestDB(t)
 	agent, _ := seedAgentAndPills(t, db, 0)
-	seedGroupMembership(t, db, agent.ID)
+	seedGroupMembership(t, db, agent.UUID.String())
 
 	err := svc.DeleteAgent(context.Background(), agent.UUID)
 	assertErrType(t, err, errors.ErrorTypeConflict, "有群聊历史删除")

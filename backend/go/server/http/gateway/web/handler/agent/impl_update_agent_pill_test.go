@@ -92,7 +92,7 @@ func seedConsumedPair(t *testing.T, db *gorm.DB) (string, string) {
 		t.Fatalf("创建测试金丹实例失败: %v", err)
 	}
 	if err := db.Create(&model.AgentPillEffect{
-		AgentID:          agent.ID,
+		AgentID:          agent.UUID.String(),
 		ItemID:           item.ID,
 		RecipeRevisionID: rev.ID,
 		NameSnapshot:     "测试丹方",

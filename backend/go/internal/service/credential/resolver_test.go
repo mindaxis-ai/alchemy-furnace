@@ -39,7 +39,7 @@ func TestResolveCredentialsPopulatesProviderMetadata(t *testing.T) {
 	}
 	mdl := &model.LLMModel{
 		Name: "deepseek-chat", DisplayName: "DeepSeek Chat",
-		ProviderID: provider.ID, IsEnabled: true,
+		ProviderID: provider.UUID.String(), IsEnabled: true,
 	}
 	if err := dao.DB.Create(mdl).Error; err != nil {
 		t.Fatalf("create model: %v", err)

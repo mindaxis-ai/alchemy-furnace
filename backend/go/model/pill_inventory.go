@@ -3,6 +3,7 @@
 //   - PillRecipe 丹方：可复用、可导出的能力配方，有明确版本，永久保留
 //   - PillItem 金丹实例：按某一版本丹方炼出的实体库存，每枚独立 ID，服用/融合后退出可用库存
 //   - AgentPillEffect 已吸收能力：道人服用时获得的能力快照，不依赖原金丹还在库存
+//
 // 旧 ElixirPill / AgentPill 暂时保留用于迁移（见 dao/pill_inventory_migration.go）
 package model
 
@@ -88,15 +89,15 @@ const (
 // 每枚有独立 ID；消耗后退出可用库存但保留记录用于去向展示与追溯
 // OriginOperationID 必填：来源（炼制/迁移）成功操作；OriginIndex 为同操作内产出序号
 type PillItem struct {
-	ID                 uint           `json:"id" gorm:"primaryKey;autoIncrement;comment:实例唯一标识"`
-	UUID               uuid.UUID      `json:"-" gorm:"type:uuid;uniqueIndex;comment:对外标识"`
-	RecipeRevisionID   uint           `json:"-" gorm:"not null;index;comment:所属丹方版本(禁止删除父记录)"`
-	State              PillItemState  `json:"state" gorm:"size:24;not null;default:available;index;comment:库存状态"`
-	CreatedAt          time.Time      `json:"created_at" gorm:"autoCreateTime;comment:炼成时间"`
-	ConsumedAt         *time.Time     `json:"consumed_at" gorm:"comment:消耗时间;空=未消耗"`
-	ConsumeOperationID *uint          `json:"-" gorm:"comment:消耗成功操作ID;空=未消耗"`
-	OriginOperationID  uint           `json:"-" gorm:"not null;uniqueIndex:idx_item_origin;comment:来源成功操作ID(炼制/迁移)"`
-	OriginIndex        int            `json:"-" gorm:"not null;default:0;uniqueIndex:idx_item_origin;comment:同操作内产出序号(0起)"`
+	ID                 uint          `json:"id" gorm:"primaryKey;autoIncrement;comment:实例唯一标识"`
+	UUID               uuid.UUID     `json:"-" gorm:"type:uuid;uniqueIndex;comment:对外标识"`
+	RecipeRevisionID   uint          `json:"-" gorm:"not null;index;comment:所属丹方版本(禁止删除父记录)"`
+	State              PillItemState `json:"state" gorm:"size:24;not null;default:available;index;comment:库存状态"`
+	CreatedAt          time.Time     `json:"created_at" gorm:"autoCreateTime;comment:炼成时间"`
+	ConsumedAt         *time.Time    `json:"consumed_at" gorm:"comment:消耗时间;空=未消耗"`
+	ConsumeOperationID *uint         `json:"-" gorm:"comment:消耗成功操作ID;空=未消耗"`
+	OriginOperationID  uint          `json:"-" gorm:"not null;uniqueIndex:idx_item_origin;comment:来源成功操作ID(炼制/迁移)"`
+	OriginIndex        int           `json:"-" gorm:"not null;default:0;uniqueIndex:idx_item_origin;comment:同操作内产出序号(0起)"`
 }
 
 // TableName 指定表名
@@ -121,7 +122,7 @@ func (m *PillItem) BeforeCreate(tx *gorm.DB) error {
 type AgentPillEffect struct {
 	ID               uint       `json:"id" gorm:"primaryKey;autoIncrement;comment:能力唯一标识"`
 	UUID             uuid.UUID  `json:"-" gorm:"type:uuid;uniqueIndex;comment:对外标识"`
-	AgentID          uint       `json:"-" gorm:"not null;index;uniqueIndex:idx_agent_active_recipe_revision,where:removed_at IS NULL;comment:所属道人"`
+	AgentID          string     `json:"-" gorm:"type:uuid;not null;index;uniqueIndex:idx_agent_active_recipe_revision,where:removed_at IS NULL;comment:所属道人UUID文本"`
 	ItemID           uint       `json:"-" gorm:"not null;uniqueIndex;comment:来源实例"`
 	RecipeRevisionID uint       `json:"-" gorm:"not null;uniqueIndex:idx_agent_active_recipe_revision,where:removed_at IS NULL;comment:吸收的丹方版本"`
 	NameSnapshot     string     `json:"name_snapshot" gorm:"size:100;not null;comment:吸收时的名称快照"`

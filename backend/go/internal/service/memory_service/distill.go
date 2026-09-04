@@ -112,8 +112,8 @@ func (s *MemoryService) distillTarget(ctx context.Context, spec service.Distilla
 	return nil
 }
 
-// persistCandidate 校验 + 哈希去重 + 冲突置替(§10.2)
-func (s *MemoryService) persistCandidate(ctx context.Context, agentID uint, c distillCandidate) error {
+// persistCandidate 校验 + 哈希去重 + 冲突置替(§10.2);agentUID 为道人 UUID 文本
+func (s *MemoryService) persistCandidate(ctx context.Context, agentUID string, c distillCandidate) error {
 	in := service.MemoryInput{
 		Kind:       c.Kind,
 		Content:    c.Content,
@@ -124,7 +124,7 @@ func (s *MemoryService) persistCandidate(ctx context.Context, agentID uint, c di
 	if err := validateInput(in); err != nil {
 		return err
 	}
-	_, err := s.CreateMemory(ctx, agentID, in)
+	_, err := s.CreateMemory(ctx, agentUID, in)
 	return err
 }
 

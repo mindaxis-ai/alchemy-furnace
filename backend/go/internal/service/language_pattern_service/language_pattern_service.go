@@ -94,14 +94,14 @@ func (s *LanguagePatternService) buildOnce(ctx context.Context, agentID uint) (*
 		// 旧逻辑「失败时降级用旧缓存」删除: 旧缓存缺 behavior_profile 已被缓存判定排除
 		zap.L().Warn("[炼丹炉] 语言模式合成失败，返回无损确定性渲染(不落库)",
 			zap.Uint("agent_id", agentID), zap.Error(combineErr))
-		return s.losslessTempPattern(agentID, agent.Name, agent.Personality, fingerprint, "combine_error", pills), nil
+		return s.losslessTempPattern(agent.UUID.String(), agent.Name, agent.Personality, fingerprint, "combine_error", pills), nil
 	}
 
 	// 降级结果(涌现层不可用)不落库: is_valid=false 临时对象,下次请求重试合成
 	if resp.Degraded {
 		zap.L().Warn("[炼丹炉] 语言模式合成降级,本次不落库",
 			zap.Uint("agent_id", agentID), zap.String("reason", resp.DegradedReason))
-		return s.losslessTempPattern(agentID, agent.Name, agent.Personality, fingerprint, resp.DegradedReason, pills), nil
+		return s.losslessTempPattern(agent.UUID.String(), agent.Name, agent.Personality, fingerprint, resp.DegradedReason, pills), nil
 	}
 
 	// 合成成功: 确定性编译 + 合并涌现层 + 渲染 + 写回缓存
@@ -130,7 +130,7 @@ func (s *LanguagePatternService) buildOnce(ctx context.Context, agentID uint) (*
 		pattern = agent.LanguagePattern
 	} else {
 		pattern = &model.LanguagePattern{
-			AgentID:           agentID,
+			AgentID:           agent.UUID.String(),
 			SystemPrompt:      behavior.RenderSystemPrompt(profile, agent.Name),
 			EmergenceRules:    emergenceRules,
 			InnerTensions:     innerTensions,
@@ -170,7 +170,7 @@ func buildPillInputs(agent *model.DaoAgent) []synthesis.PillInput {
 // losslessTempPattern 合成失败/降级时返回的无损确定性渲染(不落库):
 // 在内存中完成编译+渲染,全部金丹字段保留(§12 无损降级);
 // is_valid=false 保证下次请求重新合成,避免无涌现层结果被长期缓存。
-func (s *LanguagePatternService) losslessTempPattern(agentID uint, agentName, personality, fingerprint, reason string, pills []synthesis.PillInput) *model.LanguagePattern {
+func (s *LanguagePatternService) losslessTempPattern(agentUID string, agentName, personality, fingerprint, reason string, pills []synthesis.PillInput) *model.LanguagePattern {
 	profile := behavior.CompileProfile(personality, pills)
 	profile.WithEmergence(nil, nil, true, reason)
 	bp, err := behavior.ProfileToJSONMap(profile)
@@ -178,7 +178,7 @@ func (s *LanguagePatternService) losslessTempPattern(agentID uint, agentName, pe
 		bp = nil
 	}
 	return &model.LanguagePattern{
-		AgentID:           agentID,
+		AgentID:           agentUID,
 		SystemPrompt:      behavior.RenderSystemPrompt(profile, agentName),
 		EmergenceRules:    model.JSONList{},
 		InnerTensions:     model.JSONList{},

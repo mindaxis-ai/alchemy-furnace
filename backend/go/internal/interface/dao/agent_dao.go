@@ -11,10 +11,9 @@ import (
 	"github.com/google/uuid"
 )
 
-// AgentPillInput 服丹编排输入项(已解析的内部金丹 ID + 权重)
-// DAO 只接受内部自增 ID,不解析 UUID、不做产品文案校验
+// AgentPillInput 服丹编排输入项(金丹业务 UUID 文本 + 权重)
 type AgentPillInput struct {
-	PillID uint
+	PillID string
 	Weight float64
 }
 
@@ -44,7 +43,7 @@ type Agent interface {
 
 	// CountSessionsByAgentID 统计道人参与的去重会话数
 	// 单聊经 chat_sessions.agent_id,群聊经 session_members.agent_id(按 session 去重)
-	CountSessionsByAgentID(ctx context.Context, agentID uint) (int64, errors.Error)
+	CountSessionsByAgentID(ctx context.Context, agentID string) (int64, errors.Error)
 
 	// TakeAgentPill 查询单条服用记录,不存在返回 ErrorTypeRecordNotFound
 	TakeAgentPill(ctx context.Context, agentID uint, pillID uint) (*model.AgentPill, errors.Error)
@@ -68,21 +67,23 @@ type Agent interface {
 	// 单个事务: 删除全部旧关系 → 按请求顺序写新关系(sort_order=1..n) → 失效语言模式缓存
 	// 任一步失败整体回滚,旧关系与缓存失效保持不变
 	// 任务 3 起已无生产调用方(旧入口 410 封禁);仅保留历史表维护能力
-	ReplaceAgentPills(ctx context.Context, agentID uint, pills []AgentPillInput) errors.Error
+	ReplaceAgentPills(ctx context.Context, agentUID string, pills []AgentPillInput) errors.Error
 
 	// RemoveAgentPillEffect 移除道人的已吸收能力(软删保留历史,任务 3)
 	// 单事务: 软删活跃能力(removed_at=now) → 递增 EffectsRevision → 失效语言模式缓存
 	// 无活跃能力返回 ErrorTypeRecordNotFound;原金丹实例保持 consumed_by_agent 不返还库存
 	// itemUUID 为金丹实例 UUID(与语言模式指纹/turn policy 身份一致)
-	RemoveAgentPillEffect(ctx context.Context, agentID uint, itemUUID uuid.UUID, now time.Time) errors.Error
+	// agentUID 为道人 UUID 文本(011 业务键)
+	RemoveAgentPillEffect(ctx context.Context, agentUID string, itemUUID uuid.UUID, now time.Time) errors.Error
 
 	// UpdateAgentPillEffect 更新活跃能力权重/顺序(实例 UUID 标识,任务 3)
 	// 单事务: 更新(weight/sortOrder 均为 nil 时仅校验存在) → 递增 EffectsRevision → 失效缓存
 	// 无活跃能力返回 ErrorTypeRecordNotFound
-	UpdateAgentPillEffect(ctx context.Context, agentID uint, itemUUID uuid.UUID, weight *float64, sortOrder *int) errors.Error
+	UpdateAgentPillEffect(ctx context.Context, agentUID string, itemUUID uuid.UUID, weight *float64, sortOrder *int) errors.Error
 
 	// InvalidateLanguagePattern 将道人语言模式缓存标记为失效
-	InvalidateLanguagePattern(ctx context.Context, agentID uint) errors.Error
+	// agentUID 为道人 UUID 文本(011 业务键)
+	InvalidateLanguagePattern(ctx context.Context, agentUID string) errors.Error
 
 	// SaveLanguagePattern 写入/更新语言模式缓存(GORM Save: ID==0 创建,否则全字段更新)
 	SaveLanguagePattern(ctx context.Context, pattern *model.LanguagePattern) errors.Error
@@ -93,18 +94,21 @@ type Agent interface {
 	SaveLanguagePatternIfRevision(ctx context.Context, pattern *model.LanguagePattern, expectedEffectsRevision int) errors.Error
 
 	// ListActiveEffects 道人活跃能力列表（按 sort_order 升序，含来源实例/版本对外标识；任务 5）
-	ListActiveEffects(ctx context.Context, agentID uint) ([]EffectWithSource, errors.Error)
+	// agentUID 为道人 UUID 文本(011 业务键)
+	ListActiveEffects(ctx context.Context, agentUID string) ([]EffectWithSource, errors.Error)
 
 	// RemoveAgentPillEffectByUUID 移除道人的已吸收能力（按能力 UUID；任务 5）
 	// 单事务: 软删活跃能力(removed_at=now) → 递增 EffectsRevision → 失效语言模式缓存
 	// 无活跃能力返回 ErrorTypeRecordNotFound;原金丹实例保持 consumed_by_agent 不返还
-	RemoveAgentPillEffectByUUID(ctx context.Context, agentID uint, effectUUID uuid.UUID, now time.Time) errors.Error
+	// agentUID 为道人 UUID 文本(011 业务键)
+	RemoveAgentPillEffectByUUID(ctx context.Context, agentUID string, effectUUID uuid.UUID, now time.Time) errors.Error
 
 	// UpdateActiveEffectsCAS 全量编排提交（任务 5）: 单事务乐观锁
 	// （effects_revision 必须等于 expectedEffectsRevision,否则不写任何变更返回 false）
 	// → 逐条更新 weight/sort_order → 递增 EffectsRevision → 失效语言模式缓存。
 	// 集合校验（提交集==活跃集）由调用方在读取快照后执行;快照过期由乐观锁拦截
-	UpdateActiveEffectsCAS(ctx context.Context, agentID uint, expectedEffectsRevision int, writes []EffectWrite) (bool, errors.Error)
+	// agentUID 为道人 UUID 文本(011 业务键)
+	UpdateActiveEffectsCAS(ctx context.Context, agentUID string, expectedEffectsRevision int, writes []EffectWrite) (bool, errors.Error)
 }
 
 // EffectWithSource 能力快照 + 来源实例/版本对外标识（任务 5 列表输出）

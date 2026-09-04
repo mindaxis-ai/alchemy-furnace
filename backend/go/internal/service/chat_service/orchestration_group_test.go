@@ -26,25 +26,25 @@ func (fakePattern) GetOrBuildPattern(ctx context.Context, agentID uint) (*model.
 }
 
 type groupMemoryCall struct {
-	agentID uint
+	agentID string // 道人 UUID 文本
 	in      service.MemoryInput
 }
 
 // groupMemory 记忆服务测试替身:记录 CreateMemory/蒸馏入队,检索返回预置片段。
 type groupMemory struct {
 	service.Memory
-	byAgent      map[uint][]service.MemorySnippet
+	byAgent      map[string][]service.MemorySnippet // 键=道人 UUID 文本
 	memoryCalls  []groupMemoryCall
 	distillCalls []service.DistillationSpec
 }
 
-func (m *groupMemory) Retrieve(_ context.Context, agentID uint, _ string) ([]service.MemorySnippet, errors.Error) {
-	return m.byAgent[agentID], nil
+func (m *groupMemory) Retrieve(_ context.Context, agentUID string, _ string) ([]service.MemorySnippet, errors.Error) {
+	return m.byAgent[agentUID], nil
 }
 
-func (m *groupMemory) CreateMemory(_ context.Context, agentID uint, in service.MemoryInput) (*model.AgentMemory, errors.Error) {
-	m.memoryCalls = append(m.memoryCalls, groupMemoryCall{agentID: agentID, in: in})
-	return &model.AgentMemory{AgentID: agentID, Kind: in.Kind, Content: in.Content}, nil
+func (m *groupMemory) CreateMemory(_ context.Context, agentUID string, in service.MemoryInput) (*model.AgentMemory, errors.Error) {
+	m.memoryCalls = append(m.memoryCalls, groupMemoryCall{agentID: agentUID, in: in})
+	return &model.AgentMemory{AgentID: agentUID, Kind: in.Kind, Content: in.Content}, nil
 }
 
 func (m *groupMemory) EnqueueDistillation(_ context.Context, spec service.DistillationSpec) bool {
@@ -110,15 +110,15 @@ func newLangGraphGroupFixture(t *testing.T) (*Chat, *fakeChatDao, *groupMemory, 
 	}
 	names := []string{"张雪峰", "李雪琴", "贾玲", "沈腾"}
 	agents := &fakeAgentDao{agents: map[string]*model.DaoAgent{}}
-	byID := map[uint]*model.DaoAgent{}
+	byID := map[string]*model.DaoAgent{}
 	for i, uid := range uids {
 		agent := &model.DaoAgent{ID: uint(i + 1), UUID: uid, Name: names[i], Status: "active", ModelName: "test-model", MemoryEnabled: i != 2}
 		agents.agents[uid.String()] = agent
-		byID[agent.ID] = agent
+		byID[agent.UUID.String()] = agent
 	}
 	chats := &fakeChatDao{
 		sessions:  map[string]*model.ChatSession{},
-		members:   map[uint][]*model.SessionMember{},
+		members:   map[string][]*model.SessionMember{},
 		agentByID: byID,
 	}
 	svc := New(chats, agents, fakePattern{}, availableCredentialResolver("test-model"), "unused")
@@ -126,7 +126,7 @@ func newLangGraphGroupFixture(t *testing.T) (*Chat, *fakeChatDao, *groupMemory, 
 	if err != nil {
 		t.Fatalf("建群: %v", err)
 	}
-	mem := &groupMemory{byAgent: map[uint][]service.MemorySnippet{}}
+	mem := &groupMemory{byAgent: map[string][]service.MemorySnippet{}}
 	svc.Memory = mem
 	return svc, chats, mem, session
 }
@@ -365,8 +365,8 @@ func TestLangGraphGroupMemoryProposalPersistsValidated(t *testing.T) {
 		t.Fatalf("memory calls = %d, want 1 (重复+未知拒绝)", len(mem.memoryCalls))
 	}
 	call := mem.memoryCalls[0]
-	if call.agentID != 2 {
-		t.Fatalf("memory agent id = %d, want 2 (李雪琴)", call.agentID)
+	if call.agentID != li {
+		t.Fatalf("memory agent id = %q, want %q (李雪琴)", call.agentID, li)
 	}
 	if call.in.Kind != "episode" {
 		t.Fatalf("memory kind = %q, want episode", call.in.Kind)

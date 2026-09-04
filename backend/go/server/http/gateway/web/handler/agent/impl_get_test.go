@@ -46,7 +46,7 @@ func TestAgentDetailResponseOmitsLegacyPills(t *testing.T) {
 		t.Fatalf("查询金丹失败: %v", err)
 	}
 	if err := db.Create(&model.AgentPill{
-		AgentID: agent.ID, PillID: pill.ID, Weight: 1.5, SortOrder: 0,
+		AgentID: agent.UUID.String(), PillID: pill.UUID.String(), Weight: 1.5, SortOrder: 0,
 	}).Error; err != nil {
 		t.Fatalf("创建遗留绑定失败: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestAgentDetailResponseKeepsLanguagePattern(t *testing.T) {
 		t.Fatalf("查询道人失败: %v", err)
 	}
 	if err := db.Create(&model.LanguagePattern{
-		AgentID: agent.ID, SystemPrompt: "cached", SourceFingerprint: "sha256:x", IsValid: true,
+		AgentID: agent.UUID.String(), SystemPrompt: "cached", SourceFingerprint: "sha256:x", IsValid: true,
 	}).Error; err != nil {
 		t.Fatalf("创建语言模式缓存失败: %v", err)
 	}

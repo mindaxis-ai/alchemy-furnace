@@ -158,7 +158,7 @@ func (s *Agent) UpdateAgent(ctx context.Context, uid uuid.UUID, name *string, av
 		}
 		// 基础性格变化时失效语言模式缓存
 		if _, ok := updates["personality"]; ok {
-			s.invalidatePattern(ctx, agent.ID)
+			s.invalidatePattern(ctx, agent.UUID.String())
 		}
 	}
 
@@ -180,7 +180,7 @@ func (s *Agent) DeleteAgent(ctx context.Context, uid uuid.UUID) errors.Error {
 	}
 
 	// 历史感知: 有会话历史只能沉睡不能删
-	sessionCount, err := s.agent.CountSessionsByAgentID(ctx, agent.ID)
+	sessionCount, err := s.agent.CountSessionsByAgentID(ctx, agent.UUID.String())
 	if err != nil {
 		return err.Relation(errors.ErrorServerInternalError("service.agent.delete_count_sessions"))
 	}
@@ -232,7 +232,7 @@ func (s *Agent) UpdateAgentPill(ctx context.Context, agentUID uuid.UUID, itemUID
 		return err.Relation(errors.ErrorRecordNotFound("service.agent.uap_take_agent"))
 	}
 
-	if err := s.agent.UpdateAgentPillEffect(ctx, agent.ID, itemUID, weight, sortOrder); err != nil {
+	if err := s.agent.UpdateAgentPillEffect(ctx, agent.UUID.String(), itemUID, weight, sortOrder); err != nil {
 		return err
 	}
 	return nil
@@ -247,7 +247,7 @@ func (s *Agent) UnbindPill(ctx context.Context, agentUID uuid.UUID, itemUID uuid
 		return err.Relation(errors.ErrorRecordNotFound("service.agent.unbind_take_agent"))
 	}
 
-	if err := s.agent.RemoveAgentPillEffect(ctx, agent.ID, itemUID, time.Now()); err != nil {
+	if err := s.agent.RemoveAgentPillEffect(ctx, agent.UUID.String(), itemUID, time.Now()); err != nil {
 		return err
 	}
 
@@ -279,9 +279,9 @@ func (s *Agent) ReplacePillComposition(ctx context.Context, agentUID uuid.UUID, 
 }
 
 // invalidatePattern 失效道人语言模式缓存;失败仅告警不阻塞主流程
-func (s *Agent) invalidatePattern(ctx context.Context, agentID uint) {
-	if err := s.agent.InvalidateLanguagePattern(ctx, agentID); err != nil {
-		zap.L().Warn("[炼丹炉] 失效语言模式缓存失败", zap.Uint("agent_id", agentID), zap.Error(err))
+func (s *Agent) invalidatePattern(ctx context.Context, agentUID string) {
+	if err := s.agent.InvalidateLanguagePattern(ctx, agentUID); err != nil {
+		zap.L().Warn("[炼丹炉] 失效语言模式缓存失败", zap.String("agent_uid", agentUID), zap.Error(err))
 	}
 }
 

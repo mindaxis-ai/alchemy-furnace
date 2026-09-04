@@ -126,14 +126,14 @@ func groupParticipantTables(members []*model.SessionMember) (map[string]*groupPa
 	participants := make(map[string]*groupParticipant, len(members))
 	modelByAgent := make(map[string]string, len(members))
 	for _, m := range members {
-		participants[m.Agent.UUID.String()] = &groupParticipant{id: m.Agent.ID, name: m.Agent.Name, avatar: m.Agent.Avatar, memoryEnabled: m.Agent.MemoryEnabled}
+		participants[m.Agent.UUID.String()] = &groupParticipant{uid: m.Agent.UUID.String(), name: m.Agent.Name, avatar: m.Agent.Avatar, memoryEnabled: m.Agent.MemoryEnabled}
 		modelByAgent[m.Agent.UUID.String()] = m.Agent.ModelName
 	}
 	return participants, modelByAgent
 }
 
 func (s *Chat) runGroupConversation(ctx context.Context, session *model.ChatSession, cmd service.ConversationCommand, emit func(event string, payload any)) {
-	members, merr := s.chat.FindMembers(ctx, session.ID)
+	members, merr := s.chat.FindMembers(ctx, session.UUID.String())
 	if merr != nil {
 		emit("error", GroupSpeakerPayload{Content: "获取群成员失败", ErrorCode: "service.chat.stream_unavailable", Terminal: true, Recovery: StreamRecoveryResend})
 		return
@@ -153,7 +153,8 @@ func (s *Chat) runGroupConversation(ctx context.Context, session *model.ChatSess
 	}
 
 	// 群聊公共契约无 accepted(发言即反馈)
-	run := &model.ChatRun{UUID: uuid.New(), SessionID: session.ID, UserMessageID: userMessage.ID, Status: model.ChatRunStatusPending}
+	userMessageUID := userMessage.UUID.String()
+	run := &model.ChatRun{UUID: uuid.New(), SessionID: session.UUID.String(), UserMessageID: &userMessageUID, Status: model.ChatRunStatusPending}
 	if cerr := s.chat.CreateRun(ctx, run); cerr != nil {
 		emit("error", turnUnavailable())
 		return
@@ -247,12 +248,12 @@ func (st *langGraphGroupState) consume(e orchestration.Event) error {
 		if p.ReplyID == "" {
 			p.ReplyID = "assistant_final"
 		}
-		agentID := pt.id
+		agentUID := pt.uid
 		saved, serr := st.svc.chat.SaveFinalReplyOnce(context.WithoutCancel(st.ctx), st.run.UUID, p.ReplyID, &model.ChatMessage{
 			UUID:      uuid.New(), // 显式生成:DAO 各实现/幂等返回均携带稳定 MessageID
-			SessionID: st.session.ID,
+			SessionID: st.session.UUID.String(),
 			Role:      "assistant",
-			AgentID:   &agentID,
+			AgentID:   &agentUID,
 			Content:   p.Text,
 		})
 		if serr != nil {
@@ -266,7 +267,7 @@ func (st *langGraphGroupState) consume(e orchestration.Event) error {
 		}
 		if saved != nil && pt.memoryEnabled {
 			st.targets = append(st.targets, service.DistillTarget{
-				AgentID: pt.id,
+				AgentID: pt.uid,
 				Messages: []service.DistillMessage{
 					{Role: "user", Content: st.userContent},
 					{Role: "assistant", Content: saved.Content},

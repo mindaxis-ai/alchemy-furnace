@@ -43,7 +43,7 @@ func setupAvatarDB(t *testing.T) *gorm.DB {
 	if err := db.Create(&provider).Error; err != nil {
 		t.Fatalf("创建测试供应商失败: %v", err)
 	}
-	m := model.LLMModel{ProviderID: provider.ID, Name: "gpt-4o", DisplayName: "GPT-4o", IsEnabled: true}
+	m := model.LLMModel{ProviderID: provider.UUID.String(), Name: "gpt-4o", DisplayName: "GPT-4o", IsEnabled: true}
 	if err := db.Create(&m).Error; err != nil {
 		t.Fatalf("创建默认模型失败: %v", err)
 	}

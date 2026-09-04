@@ -19,10 +19,11 @@ func NewModelDao() *ModelDao {
 }
 
 // CountEnabledModelByName 统计「已启用供应商下的已启用模型」中指定模型名的数量
+// llm_models.provider_id 为供应商 UUID 文本(011 业务键),JOIN 按 llm_providers.uuid 匹配
 func (d *ModelDao) CountEnabledModelByName(ctx context.Context, name string) (int64, errors.Error) {
 	var count int64
 	if err := GetDB().WithContext(ctx).Table("llm_models").
-		Joins("JOIN llm_providers ON llm_providers.id = llm_models.provider_id").
+		Joins("JOIN llm_providers ON llm_providers.uuid = llm_models.provider_id").
 		Where("llm_models.name = ? AND llm_models.is_enabled = ? AND llm_providers.is_enabled = ?", name, true, true).
 		Count(&count).Error; err != nil {
 		return 0, errors.ErrorServerInternalError("dao.model.count_enabled_by_name")
@@ -54,8 +55,8 @@ func (d *ModelDao) TakeModelByID(ctx context.Context, id uint) (*model.LLMModel,
 	return &m, nil
 }
 
-// FindModelsByProvider 分页查询指定供应商下的模型列表(按 sort_order,id 排序)
-func (d *ModelDao) FindModelsByProvider(ctx context.Context, providerID uint, page, size int) (int64, []*model.LLMModel, errors.Error) {
+// FindModelsByProvider 分页查询指定供应商下的模型列表(按 sort_order,id 排序);providerID 为供应商 UUID 文本
+func (d *ModelDao) FindModelsByProvider(ctx context.Context, providerID string, page, size int) (int64, []*model.LLMModel, errors.Error) {
 	db := GetDB().WithContext(ctx).Model(&model.LLMModel{}).Where("provider_id = ?", providerID)
 
 	var total int64
@@ -73,8 +74,8 @@ func (d *ModelDao) FindModelsByProvider(ctx context.Context, providerID uint, pa
 	return total, models, nil
 }
 
-// CountModelsByNameInProvider 统计同供应商下同名模型数量(excludeID=0 时不排除)
-func (d *ModelDao) CountModelsByNameInProvider(ctx context.Context, providerID uint, name string, excludeID uint) (int64, errors.Error) {
+// CountModelsByNameInProvider 统计同供应商下同名模型数量(excludeID=0 时不排除);providerID 为供应商 UUID 文本
+func (d *ModelDao) CountModelsByNameInProvider(ctx context.Context, providerID string, name string, excludeID uint) (int64, errors.Error) {
 	var count int64
 	q := GetDB().WithContext(ctx).Model(&model.LLMModel{}).Where("provider_id = ? AND name = ?", providerID, name)
 	if excludeID > 0 {
@@ -87,7 +88,7 @@ func (d *ModelDao) CountModelsByNameInProvider(ctx context.Context, providerID u
 }
 
 // ModelNameExistsInProvider 同供应商下模型名是否已被其他记录占用
-func (d *ModelDao) ModelNameExistsInProvider(ctx context.Context, providerID uint, name string, excludeID uint) (bool, errors.Error) {
+func (d *ModelDao) ModelNameExistsInProvider(ctx context.Context, providerID string, name string, excludeID uint) (bool, errors.Error) {
 	count, err := d.CountModelsByNameInProvider(ctx, providerID, name, excludeID)
 	if err != nil {
 		return false, err
@@ -256,7 +257,7 @@ func (d *ModelDao) FindEnabledOptions(ctx context.Context) ([]model.LLMModelOpti
 	var rows []optionRow
 	if err := GetDB().WithContext(ctx).Table("llm_models").
 		Select("llm_models.name, llm_models.display_name, llm_models.is_default, llm_providers.name AS provider_name, llm_providers.display_name AS provider_display_name").
-		Joins("JOIN llm_providers ON llm_providers.id = llm_models.provider_id").
+		Joins("JOIN llm_providers ON llm_providers.uuid = llm_models.provider_id").
 		Where("llm_models.is_enabled = ? AND llm_providers.is_enabled = ?", true, true).
 		Order("llm_providers.sort_order ASC, llm_providers.id ASC, llm_models.sort_order ASC, llm_models.id ASC").
 		Scan(&rows).Error; err != nil {
@@ -276,8 +277,8 @@ func (d *ModelDao) FindEnabledOptions(ctx context.Context) ([]model.LLMModelOpti
 	return options, nil
 }
 
-// FindFirstEnabledModelByProvider 取供应商下第一个已启用模型(连接测试回退用),无则 ErrorTypeRecordNotFound
-func (d *ModelDao) FindFirstEnabledModelByProvider(ctx context.Context, providerID uint) (*model.LLMModel, errors.Error) {
+// FindFirstEnabledModelByProvider 取供应商下第一个已启用模型(连接测试回退用),无则 ErrorTypeRecordNotFound;providerID 为供应商 UUID 文本
+func (d *ModelDao) FindFirstEnabledModelByProvider(ctx context.Context, providerID string) (*model.LLMModel, errors.Error) {
 	var m model.LLMModel
 	if err := GetDB().WithContext(ctx).
 		Where("provider_id = ? AND is_enabled = ?", providerID, true).

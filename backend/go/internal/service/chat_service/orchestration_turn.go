@@ -67,10 +67,11 @@ func (s *Chat) runSingleConversation(ctx context.Context, session *model.ChatSes
 	}
 
 	// run 生命周期:pending → running(UUID 显式生成;ChatRun 无 BeforeCreate 钩子)
+	userMessageUID := userMessage.UUID.String()
 	run := &model.ChatRun{
 		UUID:          uuid.New(),
-		SessionID:     session.ID,
-		UserMessageID: userMessage.ID,
+		SessionID:     session.UUID.String(),
+		UserMessageID: &userMessageUID,
 		Status:        model.ChatRunStatusPending,
 	}
 	if cerr := s.chat.CreateRun(ctx, run); cerr != nil {
@@ -139,14 +140,20 @@ func (s *Chat) RunConversationResume(ctx context.Context, runUID uuid.UUID, emit
 		emit("error", ConversationEventPayload{Content: "该回合已结束，无法继续", ErrorCode: "service.chat.run_not_resumable", Terminal: true})
 		return
 	}
-	session, serr := s.chat.TakeSessionByID(ctx, run.SessionID)
+	// run.SessionID 为会话 UUID 文本(011 业务键),按业务键定位会话
+	sessionUID, perr := uuid.Parse(run.SessionID)
+	if perr != nil {
+		emit("error", ConversationEventPayload{Content: "续跑回合不存在", ErrorCode: "service.chat.run_not_found", Terminal: true})
+		return
+	}
+	session, serr := s.chat.TakeSessionByUUID(ctx, sessionUID)
 	if serr != nil {
 		emit("error", ConversationEventPayload{Content: "会话不存在或已删除", ErrorCode: "service.chat.session_not_found", Terminal: true})
 		return
 	}
 	// 用户消息定位与过期校验:run 对应的用户消息仍是会话最新一条(新用户消息即作废旧 run)
-	latest, lerr := s.chat.TakeLatestUserMessage(ctx, session.ID)
-	if lerr != nil || latest == nil || latest.ID != run.UserMessageID {
+	latest, lerr := s.chat.TakeLatestUserMessage(ctx, session.UUID.String())
+	if lerr != nil || latest == nil || run.UserMessageID == nil || latest.UUID.String() != *run.UserMessageID {
 		emit("error", ConversationEventPayload{Content: "该回合已结束，无法继续", ErrorCode: "service.chat.run_not_resumable", Terminal: true})
 		return
 	}
@@ -176,7 +183,7 @@ func (s *Chat) resumeSingleConversation(ctx context.Context, session *model.Chat
 
 // resumeGroupConversation 群聊续跑:参与者/模型表按当前成员重建,流来自 Python Resume 端点。
 func (s *Chat) resumeGroupConversation(ctx context.Context, session *model.ChatSession, run *model.ChatRun, userContent string, runEmit func(string, any)) {
-	members, merr := s.chat.FindMembers(ctx, session.ID)
+	members, merr := s.chat.FindMembers(ctx, session.UUID.String())
 	if merr != nil {
 		runEmit("error", GroupSpeakerPayload{Content: "获取群成员失败", ErrorCode: "service.chat.stream_unavailable", Terminal: true, Recovery: StreamRecoveryResend})
 		return
@@ -235,7 +242,7 @@ func (st *langGraphTurnState) consume(e orchestration.Event) error {
 		}
 		replyID := p.ReplyID
 		saved, serr := st.svc.chat.SaveFinalReplyOnce(context.WithoutCancel(st.ctx), st.run.UUID, replyID, &model.ChatMessage{
-			SessionID: st.session.ID,
+			SessionID: st.session.UUID.String(),
 			Role:      "assistant",
 			Content:   p.Text,
 		})
@@ -312,7 +319,7 @@ func (s *Chat) finishLangGraphTurn(ctx context.Context, run *model.ChatRun, cmd 
 			Model:       st.session.Agent.ModelName,
 			UserMessage: cmd.Content,
 			Targets: []service.DistillTarget{{
-				AgentID: st.session.Agent.ID,
+				AgentID: st.session.Agent.UUID.String(),
 				Messages: []service.DistillMessage{
 					{Role: "user", Content: cmd.Content},
 					{Role: "assistant", Content: st.finalText},
@@ -328,7 +335,7 @@ func (s *Chat) finishLangGraphTurn(ctx context.Context, run *model.ChatRun, cmd 
 // 返回 nil payload=成功;非 nil=应作为公共 error 事件直出的稳定载荷。
 func (s *Chat) persistOrReuseUserMessage(ctx context.Context, session *model.ChatSession, cmd service.ConversationCommand, mentions model.JSONMap) (*model.ChatMessage, *ConversationEventPayload) {
 	if cmd.Retry {
-		latest, err := s.chat.TakeLatestUserMessage(ctx, session.ID)
+		latest, err := s.chat.TakeLatestUserMessage(ctx, session.UUID.String())
 		if err != nil || latest == nil {
 			return nil, &ConversationEventPayload{Content: "无法重试该消息，请重新发送", ErrorCode: "service.chat.retry_unavailable", Terminal: true}
 		}
@@ -338,17 +345,17 @@ func (s *Chat) persistOrReuseUserMessage(ctx context.Context, session *model.Cha
 		return latest, nil
 	}
 	if mentions != nil {
-		if err := s.chat.SaveMessage(ctx, &model.ChatMessage{SessionID: session.ID, Role: "user", Content: cmd.Content, Mentions: mentions}); err != nil {
+		if err := s.chat.SaveMessage(ctx, &model.ChatMessage{SessionID: session.UUID.String(), Role: "user", Content: cmd.Content, Mentions: mentions}); err != nil {
 			return nil, &ConversationEventPayload{Content: "保存消息失败", ErrorCode: "service.chat.stream_unavailable", Terminal: true, Recovery: StreamRecoveryResend}
 		}
 		// DAO SaveMessage 无返回值,取回已落库消息(run 的 user_message_id 需真实 UUID/ID)
-		saved, ferr := s.chat.TakeLatestUserMessage(ctx, session.ID)
+		saved, ferr := s.chat.TakeLatestUserMessage(ctx, session.UUID.String())
 		if ferr != nil || saved == nil {
 			return nil, &ConversationEventPayload{Content: "保存消息失败", ErrorCode: "service.chat.stream_unavailable", Terminal: true, Recovery: StreamRecoveryResend}
 		}
 		return saved, nil
 	}
-	saved, err := s.SaveMessage(ctx, session.ID, "user", cmd.Content)
+	saved, err := s.SaveMessage(ctx, session.UUID.String(), "user", cmd.Content)
 	if err != nil {
 		return nil, &ConversationEventPayload{Content: "保存消息失败", ErrorCode: "service.chat.stream_unavailable", Terminal: true, Recovery: StreamRecoveryResend}
 	}

@@ -56,7 +56,7 @@ func (f *readinessAgentDao) TakeAgentByUUID(_ context.Context, uid uuid.UUID) (*
 func newReadinessService(agentDao dao.Agent, resolver credential.Resolver) *Chat {
 	return New(&fakeChatDao{
 		sessions: map[string]*model.ChatSession{},
-		members:  map[uint][]*model.SessionMember{},
+		members:  map[string][]*model.SessionMember{},
 	}, agentDao, nil, resolver, "http://unused")
 }
 

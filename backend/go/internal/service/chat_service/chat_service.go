@@ -61,11 +61,11 @@ func NewDynamic(chat dao.Chat, agent dao.Agent, pattern service.LanguagePatternP
 }
 
 // RetrieveMemories 本地记忆检索(§10.4);未装配/出错返回 nil,由 memory_enabled 门控调用
-func (s *Chat) RetrieveMemories(ctx context.Context, agentID uint, userMessage string) []service.MemorySnippet {
+func (s *Chat) RetrieveMemories(ctx context.Context, agentUID string, userMessage string) []service.MemorySnippet {
 	if s.Memory == nil {
 		return nil
 	}
-	snips, err := s.Memory.Retrieve(ctx, agentID, userMessage)
+	snips, err := s.Memory.Retrieve(ctx, agentUID, userMessage)
 	if err != nil {
 		return nil
 	}
@@ -136,10 +136,10 @@ func (s *Chat) CreateSession(ctx context.Context, agentUID uuid.UUID) (*model.Ch
 		return nil, err
 	}
 
-	agentID := agent.ID
+	agentUIDText := agent.UUID.String()
 	session := &model.ChatSession{
 		Type:    model.SessionTypeSingle,
-		AgentID: &agentID,
+		AgentID: &agentUIDText,
 		Title:   "", // 标题一律留空,由首个问答自动命名
 	}
 	if err := s.chat.SaveSession(ctx, session); err != nil {
@@ -167,23 +167,23 @@ func (s *Chat) ListSessions(ctx context.Context, agentUID uuid.UUID, page int, s
 		size = 100
 	}
 
-	agentID := uint(0)
+	agentFilter := ""
 	if agentUID != uuid.Nil {
 		agent, err := s.agent.TakeAgentByUUID(ctx, agentUID)
 		if err != nil {
 			return 0, nil, err.Relation(ierr.ErrorRecordNotFound("service.chat.list_take_agent"))
 		}
-		agentID = agent.ID
+		agentFilter = agent.UUID.String()
 	}
-	total, sessions, err := s.chat.FindSessions(ctx, agentID, page, size)
+	total, sessions, err := s.chat.FindSessions(ctx, agentFilter, page, size)
 	if err != nil {
 		return 0, nil, err
 	}
 	// 群成员批量加载: 整页一次 IN 查询,消除逐会话 N+1
-	groupIDs := make([]uint, 0, len(sessions))
+	groupIDs := make([]string, 0, len(sessions))
 	for _, session := range sessions {
 		if session.Type == model.SessionTypeGroup {
-			groupIDs = append(groupIDs, session.ID)
+			groupIDs = append(groupIDs, session.UUID.String())
 		}
 	}
 	if len(groupIDs) > 0 {
@@ -195,7 +195,7 @@ func (s *Chat) ListSessions(ctx context.Context, agentUID uuid.UUID, page int, s
 			if session.Type != model.SessionTypeGroup {
 				continue
 			}
-			members := bySession[session.ID]
+			members := bySession[session.UUID.String()]
 			session.Members = make([]model.SessionMember, 0, len(members))
 			for _, member := range members {
 				session.Members = append(session.Members, *member)
@@ -221,12 +221,12 @@ func (s *Chat) GetMessages(ctx context.Context, sessionUID uuid.UUID, page int, 
 	if err != nil {
 		return 0, nil, err.Relation(ierr.ErrorRecordNotFound("service.chat.get_messages_take"))
 	}
-	return s.chat.FindMessages(ctx, session.ID, page, size)
+	return s.chat.FindMessages(ctx, session.UUID.String(), page, size)
 }
 
 // TakeLatestUserMessage 查询最新用户消息，供重试校验复用已持久化的用户回合。
-func (s *Chat) TakeLatestUserMessage(ctx context.Context, sessionID uint) (*model.ChatMessage, ierr.Error) {
-	return s.chat.TakeLatestUserMessage(ctx, sessionID)
+func (s *Chat) TakeLatestUserMessage(ctx context.Context, sessionUID string) (*model.ChatMessage, ierr.Error) {
+	return s.chat.TakeLatestUserMessage(ctx, sessionUID)
 }
 
 // GetSessionAgentInfo 按会话 UUID 取会话(预加载道人),供 SSE 构建对话请求
@@ -252,10 +252,10 @@ func (s *Chat) ResolveCredentials(ctx context.Context, modelName string) (*crede
 	return creds, nil
 }
 
-// SaveMessage 写入消息并刷新所属会话 updated_at(sources 字段已废弃,不再写入)
-func (s *Chat) SaveMessage(ctx context.Context, sessionID uint, role string, content string) (*model.ChatMessage, ierr.Error) {
+// SaveMessage 写入消息并刷新所属会话 updated_at(sources 字段已废弃,不再写入);sessionUID 为会话 UUID 文本
+func (s *Chat) SaveMessage(ctx context.Context, sessionUID string, role string, content string) (*model.ChatMessage, ierr.Error) {
 	msg := &model.ChatMessage{
-		SessionID: sessionID,
+		SessionID: sessionUID,
 		Role:      role,
 		Content:   content,
 	}
@@ -450,7 +450,7 @@ func (s *Chat) CreateGroupSession(ctx context.Context, agentUIDs []uuid.UUID, ti
 	members := make([]*model.SessionMember, 0, len(agents))
 	for i, a := range agents {
 		// 携带已验证道人,响应直接从成员取 UUID/昵称/状态,无需二次查询
-		members = append(members, &model.SessionMember{AgentID: a.ID, SortOrder: i, Agent: *a})
+		members = append(members, &model.SessionMember{AgentID: a.UUID.String(), SortOrder: i, Agent: *a})
 	}
 	if err := s.chat.SaveGroupSession(ctx, session, members); err != nil {
 		return nil, err.Relation(ierr.ErrorServerInternalError("service.chat.group_save"))
@@ -468,7 +468,7 @@ func (s *Chat) ListMembers(ctx context.Context, sessionUID uuid.UUID) ([]*model.
 	if err != nil {
 		return nil, err.Relation(ierr.ErrorRecordNotFound("service.chat.members_take"))
 	}
-	return s.chat.FindMembers(ctx, session.ID)
+	return s.chat.FindMembers(ctx, session.UUID.String())
 }
 
 // AddMembers 邀请入群(已在群的静默跳过),落系统通知消息
@@ -480,11 +480,11 @@ func (s *Chat) AddMembers(ctx context.Context, sessionUID uuid.UUID, agentUIDs [
 	if session.Type != model.SessionTypeGroup {
 		return ierr.New(ierr.ErrorTypeInvalidRequest, "service.chat.invite_not_group", "仅群聊会话支持邀请成员")
 	}
-	existing, ferr := s.chat.FindMembers(ctx, session.ID)
+	existing, ferr := s.chat.FindMembers(ctx, session.UUID.String())
 	if ferr != nil {
 		return ferr.Relation(ierr.ErrorServerInternalError("service.chat.invite_find"))
 	}
-	inGroup := map[uint]bool{}
+	inGroup := map[string]bool{}
 	maxSort := -1
 	for _, m := range existing {
 		inGroup[m.AgentID] = true
@@ -500,13 +500,13 @@ func (s *Chat) AddMembers(ctx context.Context, sessionUID uuid.UUID, agentUIDs [
 		if aerr != nil || a.Status != "active" {
 			return ierr.New(ierr.ErrorTypeInvalidRequest, "service.chat.invite_member_invalid", "邀请的道人不存在或已沉睡")
 		}
-		if inGroup[a.ID] {
+		if inGroup[a.UUID.String()] {
 			continue
 		}
 		maxSort++
-		newMembers = append(newMembers, &model.SessionMember{SessionID: session.ID, AgentID: a.ID, SortOrder: maxSort})
+		newMembers = append(newMembers, &model.SessionMember{SessionID: session.UUID.String(), AgentID: a.UUID.String(), SortOrder: maxSort})
 		names = append(names, a.Name)
-		inGroup[a.ID] = true
+		inGroup[a.UUID.String()] = true
 	}
 	if len(newMembers) == 0 {
 		return nil
@@ -515,7 +515,7 @@ func (s *Chat) AddMembers(ctx context.Context, sessionUID uuid.UUID, agentUIDs [
 		return err.Relation(ierr.ErrorServerInternalError("service.chat.invite_save"))
 	}
 	// 系统通知(role=system,不进 LLM 历史,前端居中灰条)
-	if _, serr := s.SaveMessage(ctx, session.ID, "system", fmt.Sprintf("你邀请了 %s 入群", strings.Join(names, "、"))); serr != nil {
+	if _, serr := s.SaveMessage(ctx, session.UUID.String(), "system", fmt.Sprintf("你邀请了 %s 入群", strings.Join(names, "、"))); serr != nil {
 		zap.L().Warn("[炼丹炉] 写入群通知失败", zap.Error(serr))
 	}
 	return nil
@@ -531,20 +531,20 @@ func (s *Chat) RemoveMember(ctx context.Context, sessionUID uuid.UUID, agentUID 
 	if aerr != nil {
 		return aerr.Relation(ierr.ErrorRecordNotFound("service.chat.kick_agent"))
 	}
-	if err := s.chat.DeleteMember(ctx, session.ID, agent.ID); err != nil {
+	if err := s.chat.DeleteMember(ctx, session.UUID.String(), agent.UUID.String()); err != nil {
 		return err // DAO 已区分 not-found / internal
 	}
-	if _, serr := s.SaveMessage(ctx, session.ID, "system", fmt.Sprintf("%s 被移出群", agent.Name)); serr != nil {
+	if _, serr := s.SaveMessage(ctx, session.UUID.String(), "system", fmt.Sprintf("%s 被移出群", agent.Name)); serr != nil {
 		zap.L().Warn("[炼丹炉] 写入群通知失败", zap.Error(serr))
 	}
 	return nil
 }
 
-// SaveAgentMessage 写带道人归属与提及的消息(群聊编排器用)
-func (s *Chat) SaveAgentMessage(ctx context.Context, sessionID uint, agentID uint, role string, content string, mentions model.JSONMap) (*model.ChatMessage, ierr.Error) {
-	aid := agentID
+// SaveAgentMessage 写带道人归属与提及的消息(群聊编排器用);sessionUID/agentUID 均为 UUID 文本
+func (s *Chat) SaveAgentMessage(ctx context.Context, sessionUID string, agentUID string, role string, content string, mentions model.JSONMap) (*model.ChatMessage, ierr.Error) {
+	aid := agentUID
 	msg := &model.ChatMessage{
-		SessionID: sessionID,
+		SessionID: sessionUID,
 		Role:      role,
 		Content:   content,
 		AgentID:   &aid,

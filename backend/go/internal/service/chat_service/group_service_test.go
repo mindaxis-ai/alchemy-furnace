@@ -60,7 +60,7 @@ func (f *fakeAgentDao) MaxAgentPillSortOrder(ctx context.Context, agentID uint) 
 func (f *fakeAgentDao) FindPillsByAgentID(ctx context.Context, agentID uint) ([]*model.ElixirPill, errors.Error) {
 	panic("unused")
 }
-func (f *fakeAgentDao) InvalidateLanguagePattern(ctx context.Context, agentID uint) errors.Error {
+func (f *fakeAgentDao) InvalidateLanguagePattern(ctx context.Context, agentUID string) errors.Error {
 	panic("unused")
 }
 func (f *fakeAgentDao) SaveLanguagePattern(ctx context.Context, p *model.LanguagePattern) errors.Error {
@@ -69,35 +69,35 @@ func (f *fakeAgentDao) SaveLanguagePattern(ctx context.Context, p *model.Languag
 func (f *fakeAgentDao) SaveLanguagePatternIfRevision(ctx context.Context, p *model.LanguagePattern, expectedEffectsRevision int) errors.Error {
 	panic("unused")
 }
-func (f *fakeAgentDao) ReplaceAgentPills(ctx context.Context, agentID uint, pills []idao.AgentPillInput) errors.Error {
+func (f *fakeAgentDao) ReplaceAgentPills(ctx context.Context, agentUID string, pills []idao.AgentPillInput) errors.Error {
 	panic("unused")
 }
-func (f *fakeAgentDao) RemoveAgentPillEffect(ctx context.Context, agentID uint, itemUUID uuid.UUID, now time.Time) errors.Error {
+func (f *fakeAgentDao) RemoveAgentPillEffect(ctx context.Context, agentUID string, itemUUID uuid.UUID, now time.Time) errors.Error {
 	panic("unused")
 }
-func (f *fakeAgentDao) UpdateAgentPillEffect(ctx context.Context, agentID uint, itemUUID uuid.UUID, weight *float64, sortOrder *int) errors.Error {
+func (f *fakeAgentDao) UpdateAgentPillEffect(ctx context.Context, agentUID string, itemUUID uuid.UUID, weight *float64, sortOrder *int) errors.Error {
 	panic("unused")
 }
-func (f *fakeAgentDao) CountSessionsByAgentID(ctx context.Context, agentID uint) (int64, errors.Error) {
+func (f *fakeAgentDao) CountSessionsByAgentID(ctx context.Context, agentUID string) (int64, errors.Error) {
 	panic("unused")
 }
-func (f *fakeAgentDao) ListActiveEffects(ctx context.Context, agentID uint) ([]idao.EffectWithSource, errors.Error) {
+func (f *fakeAgentDao) ListActiveEffects(ctx context.Context, agentUID string) ([]idao.EffectWithSource, errors.Error) {
 	panic("unused")
 }
-func (f *fakeAgentDao) RemoveAgentPillEffectByUUID(ctx context.Context, agentID uint, effectUUID uuid.UUID, now time.Time) errors.Error {
+func (f *fakeAgentDao) RemoveAgentPillEffectByUUID(ctx context.Context, agentUID string, effectUUID uuid.UUID, now time.Time) errors.Error {
 	panic("unused")
 }
-func (f *fakeAgentDao) UpdateActiveEffectsCAS(ctx context.Context, agentID uint, expectedEffectsRevision int, writes []idao.EffectWrite) (bool, errors.Error) {
+func (f *fakeAgentDao) UpdateActiveEffectsCAS(ctx context.Context, agentUID string, expectedEffectsRevision int, writes []idao.EffectWrite) (bool, errors.Error) {
 	panic("unused")
 }
 
 type fakeChatDao struct {
 	sessions       map[string]*model.ChatSession
-	members        map[uint][]*model.SessionMember
+	members        map[string][]*model.SessionMember
 	messages       []*model.ChatMessage
 	runs           []*model.ChatRun
 	nextID         uint
-	agentByID      map[uint]*model.DaoAgent // 模拟 GORM Preload("Agent")
+	agentByID      map[string]*model.DaoAgent // 模拟 GORM Preload(键=道人 UUID 文本)
 	saveErr        errors.Error
 	groupSaveCalls int
 	batchFindCalls int
@@ -110,10 +110,10 @@ func (f *fakeChatDao) TakeSessionByUUID(ctx context.Context, uid uuid.UUID) (*mo
 	}
 	return nil, errors.ErrorRecordNotFound("test.fake.take_session")
 }
-func (f *fakeChatDao) FindSessions(ctx context.Context, agentID uint, page, size int) (int64, []*model.ChatSession, errors.Error) {
+func (f *fakeChatDao) FindSessions(ctx context.Context, agentID string, page, size int) (int64, []*model.ChatSession, errors.Error) {
 	out := make([]*model.ChatSession, 0, len(f.sessions))
 	for _, session := range f.sessions {
-		if agentID != 0 && (session.AgentID == nil || *session.AgentID != agentID) {
+		if agentID != "" && (session.AgentID == nil || *session.AgentID != agentID) {
 			continue
 		}
 		copy := *session
@@ -144,7 +144,7 @@ func (f *fakeChatDao) UpdateSession(ctx context.Context, s *model.ChatSession, u
 	return nil
 }
 
-func (f *fakeChatDao) FindMessages(ctx context.Context, sessionID uint, page, size int) (int64, []*model.ChatMessage, errors.Error) {
+func (f *fakeChatDao) FindMessages(ctx context.Context, sessionID string, page, size int) (int64, []*model.ChatMessage, errors.Error) {
 	// 简易实现:按写入顺序返回,fake 不分页(测试单轮历史 < 20 条)
 	out := make([]*model.ChatMessage, 0, len(f.messages))
 	for _, m := range f.messages {
@@ -161,7 +161,7 @@ func (f *fakeChatDao) FindMessages(ctx context.Context, sessionID uint, page, si
 	}
 	return int64(len(out)), out, nil
 }
-func (f *fakeChatDao) TakeLatestUserMessage(ctx context.Context, sessionID uint) (*model.ChatMessage, errors.Error) {
+func (f *fakeChatDao) TakeLatestUserMessage(ctx context.Context, sessionID string) (*model.ChatMessage, errors.Error) {
 	for i := len(f.messages) - 1; i >= 0; i-- {
 		if f.messages[i].SessionID == sessionID && f.messages[i].Role == "user" {
 			cp := *f.messages[i]
@@ -202,26 +202,26 @@ func (f *fakeChatDao) SaveGroupSession(ctx context.Context, s *model.ChatSession
 		return err
 	}
 	for _, m := range ms {
-		m.SessionID = s.ID
-		f.members[s.ID] = append(f.members[s.ID], m)
+		m.SessionID = s.UUID.String()
+		f.members[s.UUID.String()] = append(f.members[s.UUID.String()], m)
 	}
 	return nil
 }
 
 // FindMembersBySessionIDs 批量成员查询 fake:记次数,复用 FindMembers 的 Preload 模拟
-func (f *fakeChatDao) FindMembersBySessionIDs(ctx context.Context, ids []uint) (map[uint][]*model.SessionMember, errors.Error) {
+func (f *fakeChatDao) FindMembersBySessionIDs(ctx context.Context, sessionIDs []string) (map[string][]*model.SessionMember, errors.Error) {
 	f.batchFindCalls++
-	out := map[uint][]*model.SessionMember{}
-	for _, id := range ids {
-		members, err := f.FindMembers(ctx, id)
+	out := map[string][]*model.SessionMember{}
+	for _, uid := range sessionIDs {
+		members, err := f.FindMembers(ctx, uid)
 		if err != nil {
 			return nil, err
 		}
-		out[id] = members
+		out[uid] = members
 	}
 	return out, nil
 }
-func (f *fakeChatDao) FindMembers(ctx context.Context, sessionID uint) ([]*model.SessionMember, errors.Error) {
+func (f *fakeChatDao) FindMembers(ctx context.Context, sessionID string) ([]*model.SessionMember, errors.Error) {
 	// 填充 Agent(模拟 GORM Preload)
 	src := f.members[sessionID]
 	out := make([]*model.SessionMember, 0, len(src))
@@ -235,11 +235,11 @@ func (f *fakeChatDao) FindMembers(ctx context.Context, sessionID uint) ([]*model
 	}
 	return out, nil
 }
-func (f *fakeChatDao) DeleteMember(ctx context.Context, sessionID uint, agentID uint) errors.Error {
-	src := f.members[sessionID]
+func (f *fakeChatDao) DeleteMember(ctx context.Context, sessionUUID string, agentUUID string) errors.Error {
+	src := f.members[sessionUUID]
 	for i, m := range src {
-		if m.AgentID == agentID {
-			f.members[sessionID] = append(src[:i], src[i+1:]...)
+		if m.AgentID == agentUUID {
+			f.members[sessionUUID] = append(src[:i], src[i+1:]...)
 			return nil
 		}
 	}
@@ -277,12 +277,13 @@ func (f *fakeChatDao) TakeSessionByID(ctx context.Context, id uint) (*model.Chat
 }
 func (f *fakeChatDao) SaveFinalReplyOnce(ctx context.Context, runUUID uuid.UUID, replyID string, message *model.ChatMessage) (*model.ChatMessage, errors.Error) {
 	for _, m := range f.messages {
-		if m.RunID != nil && *m.RunID == runUUID && m.ReplyID != nil && *m.ReplyID == replyID {
+		if m.RunID != nil && *m.RunID == runUUID.String() && m.ReplyID != nil && *m.ReplyID == replyID {
 			return m, nil
 		}
 	}
 	cp := *message
-	cp.RunID = &runUUID
+	runUID := runUUID.String()
+	cp.RunID = &runUID
 	rid := replyID
 	cp.ReplyID = &rid
 	f.messages = append(f.messages, &cp)
@@ -296,13 +297,13 @@ func newGroupTestSvc() (*Chat, *fakeChatDao, uuid.UUID, uuid.UUID, uuid.UUID) {
 		u2.String(): {ID: 2, UUID: u2, Name: "孙悟空", Status: "active", ModelName: "test-model"},
 		u3.String(): {ID: 3, UUID: u3, Name: "睡道人", Status: "inactive", ModelName: "test-model"},
 	}}
-	agentByID := map[uint]*model.DaoAgent{
-		1: agents.agents[u1.String()],
-		2: agents.agents[u2.String()],
+	agentByID := map[string]*model.DaoAgent{
+		u1.String(): agents.agents[u1.String()],
+		u2.String(): agents.agents[u2.String()],
 	}
 	chats := &fakeChatDao{
 		sessions:  map[string]*model.ChatSession{},
-		members:   map[uint][]*model.SessionMember{},
+		members:   map[string][]*model.SessionMember{},
 		agentByID: agentByID,
 	}
 	svc := New(chats, agents, nil, availableCredentialResolver("test-model"), "http://unused")
@@ -330,11 +331,11 @@ func TestCreateGroupSession(t *testing.T) {
 	if chats.groupSaveCalls != 1 {
 		t.Fatalf("建群应只调用一次原子保存, 实际 %d 次", chats.groupSaveCalls)
 	}
-	if len(chats.members[s.ID]) != 2 {
-		t.Fatalf("成员未去重: %d", len(chats.members[s.ID]))
+	if len(chats.members[s.UUID.String()]) != 2 {
+		t.Fatalf("成员未去重: %d", len(chats.members[s.UUID.String()]))
 	}
-	if chats.members[s.ID][0].SortOrder != 0 || chats.members[s.ID][1].SortOrder != 1 {
-		t.Fatalf("SortOrder 未按邀请顺序赋值: %+v", chats.members[s.ID])
+	if chats.members[s.UUID.String()][0].SortOrder != 0 || chats.members[s.UUID.String()][1].SortOrder != 1 {
+		t.Fatalf("SortOrder 未按邀请顺序赋值: %+v", chats.members[s.UUID.String()])
 	}
 	// 返回的会话直接携带去重后的成员(含已验证道人),响应无需二次查询
 	if len(s.Members) != 2 {
@@ -358,8 +359,8 @@ func TestListSessionsBatchesMemberLoading(t *testing.T) {
 	}}
 	chats := &fakeChatDao{
 		sessions:  map[string]*model.ChatSession{},
-		members:   map[uint][]*model.SessionMember{},
-		agentByID: map[uint]*model.DaoAgent{1: agents.agents[u1.String()], 2: agents.agents[u2.String()]},
+		members:   map[string][]*model.SessionMember{},
+		agentByID: map[string]*model.DaoAgent{u1.String(): agents.agents[u1.String()], u2.String(): agents.agents[u2.String()]},
 	}
 	// 50 个群会话: 每个两位成员,直接写 fake 存储
 	for i := 0; i < 50; i++ {
@@ -367,9 +368,9 @@ func TestListSessionsBatchesMemberLoading(t *testing.T) {
 		if err := chats.SaveSession(ctx, session); err != nil {
 			t.Fatalf("seed session %d: %v", i, err)
 		}
-		chats.members[session.ID] = []*model.SessionMember{
-			{SessionID: session.ID, AgentID: 1, SortOrder: 0},
-			{SessionID: session.ID, AgentID: 2, SortOrder: 1},
+		chats.members[session.UUID.String()] = []*model.SessionMember{
+			{SessionID: session.UUID.String(), AgentID: u1.String(), SortOrder: 0},
+			{SessionID: session.UUID.String(), AgentID: u2.String(), SortOrder: 1},
 		}
 	}
 	svc := New(chats, agents, nil, availableCredentialResolver("test-model"), "http://unused")
@@ -400,7 +401,7 @@ func TestListSessionsLoadsCurrentGroupMembers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateGroupSession() error = %v", err)
 	}
-	chats.agentByID[2].Status = "inactive"
+	chats.agentByID[u2.String()].Status = "inactive"
 
 	_, sessions, listErr := svc.ListSessions(context.Background(), uuid.Nil, 1, 100)
 	if listErr != nil {
@@ -454,7 +455,7 @@ func TestCreateGroupSessionRejectsInvalidMemberBeforePersistence(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			chats := &fakeChatDao{
 				sessions: map[string]*model.ChatSession{},
-				members:  map[uint][]*model.SessionMember{},
+				members:  map[string][]*model.SessionMember{},
 			}
 			resolver := fakeCredentialResolver{credentials: map[string]*credential.ModelCredentials{
 				"available-model":   {Model: "available-model", APIKey: "test-api-key"},
@@ -495,7 +496,7 @@ func TestAddAndRemoveMember(t *testing.T) {
 	if err := svc.AddMembers(ctx, s.UUID, []uuid.UUID{u1}); err != nil {
 		t.Fatalf("AddMembers 重复邀请: %v", err)
 	}
-	if len(chats.members[s.ID]) != 2 {
+	if len(chats.members[s.UUID.String()]) != 2 {
 		t.Fatal("重复邀请产生了重复成员")
 	}
 
@@ -503,7 +504,7 @@ func TestAddAndRemoveMember(t *testing.T) {
 	if err := svc.RemoveMember(ctx, s.UUID, u1); err != nil {
 		t.Fatalf("RemoveMember: %v", err)
 	}
-	if len(chats.members[s.ID]) != 1 {
+	if len(chats.members[s.UUID.String()]) != 1 {
 		t.Fatal("踢人失败")
 	}
 	var notice *model.ChatMessage

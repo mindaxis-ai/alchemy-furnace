@@ -20,7 +20,7 @@ func NewMemoryDao() *MemoryDao {
 }
 
 // ListMemories 按道人列出记忆(kind 为空不过滤;onlyActive=true 仅 active),新近优先
-func (d *MemoryDao) ListMemories(ctx context.Context, agentID uint, kind string, onlyActive bool) ([]*model.AgentMemory, errors.Error) {
+func (d *MemoryDao) ListMemories(ctx context.Context, agentID string, kind string, onlyActive bool) ([]*model.AgentMemory, errors.Error) {
 	db := GetDB().WithContext(ctx).Model(&model.AgentMemory{}).Where("agent_id = ?", agentID)
 	if kind != "" {
 		db = db.Where("kind = ?", kind)
@@ -84,7 +84,7 @@ func (d *MemoryDao) DeleteMemory(ctx context.Context, id uint) errors.Error {
 }
 
 // DeleteMemoriesByAgent 物理清空道人全部记忆
-func (d *MemoryDao) DeleteMemoriesByAgent(ctx context.Context, agentID uint) (int64, errors.Error) {
+func (d *MemoryDao) DeleteMemoriesByAgent(ctx context.Context, agentID string) (int64, errors.Error) {
 	result := GetDB().WithContext(ctx).Where("agent_id = ?", agentID).Delete(&model.AgentMemory{})
 	if result.Error != nil {
 		return 0, errors.ErrorServerInternalError("dao.memory.delete_by_agent")
@@ -93,7 +93,7 @@ func (d *MemoryDao) DeleteMemoriesByAgent(ctx context.Context, agentID uint) (in
 }
 
 // FindActiveByContentHash 按内容哈希查 active 记忆(无命中返回 nil,nil)
-func (d *MemoryDao) FindActiveByContentHash(ctx context.Context, agentID uint, hash string) (*model.AgentMemory, errors.Error) {
+func (d *MemoryDao) FindActiveByContentHash(ctx context.Context, agentID string, hash string) (*model.AgentMemory, errors.Error) {
 	var m model.AgentMemory
 	if err := GetDB().WithContext(ctx).
 		Where("agent_id = ? AND content_hash = ? AND status = ?", agentID, hash, "active").

@@ -40,7 +40,7 @@ func newStubMemory() *stubMemory {
 	return &stubMemory{memories: make(map[string]*model.AgentMemory)}
 }
 
-func (s *stubMemory) ListMemories(_ context.Context, _ uint, kind string, onlyActive bool) ([]*model.AgentMemory, errors.Error) {
+func (s *stubMemory) ListMemories(_ context.Context, _ string, kind string, onlyActive bool) ([]*model.AgentMemory, errors.Error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.lastKind, s.lastAct = kind, onlyActive
@@ -54,7 +54,7 @@ func (s *stubMemory) ListMemories(_ context.Context, _ uint, kind string, onlyAc
 	return out, nil
 }
 
-func (s *stubMemory) CreateMemory(_ context.Context, agentID uint, in service.MemoryInput) (*model.AgentMemory, errors.Error) {
+func (s *stubMemory) CreateMemory(_ context.Context, agentUID string, in service.MemoryInput) (*model.AgentMemory, errors.Error) {
 	// 校验镜像真实 service 的 validateInput(创建语义: kind/content 必填)
 	switch in.Kind {
 	case "user_fact", "user_preference", "relationship", "open_loop", "episode":
@@ -68,7 +68,7 @@ func (s *stubMemory) CreateMemory(_ context.Context, agentID uint, in service.Me
 	defer s.mu.Unlock()
 	m := &model.AgentMemory{
 		UUID:       uuid.New(),
-		AgentID:    agentID,
+		AgentID:    agentUID,
 		Kind:       in.Kind,
 		Content:    in.Content,
 		Importance: 3,
@@ -91,7 +91,7 @@ func (s *stubMemory) CreateMemory(_ context.Context, agentID uint, in service.Me
 	return m, nil
 }
 
-func (s *stubMemory) UpdateMemory(_ context.Context, _ uint, memoryUUID uuid.UUID, in service.MemoryInput) (*model.AgentMemory, errors.Error) {
+func (s *stubMemory) UpdateMemory(_ context.Context, _ string, memoryUUID uuid.UUID, in service.MemoryInput) (*model.AgentMemory, errors.Error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	m, ok := s.memories[memoryUUID.String()]
@@ -116,7 +116,7 @@ func (s *stubMemory) UpdateMemory(_ context.Context, _ uint, memoryUUID uuid.UUI
 	return m, nil
 }
 
-func (s *stubMemory) DeleteMemory(_ context.Context, _ uint, memoryUUID uuid.UUID) errors.Error {
+func (s *stubMemory) DeleteMemory(_ context.Context, _ string, memoryUUID uuid.UUID) errors.Error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.memories[memoryUUID.String()]; !ok {
@@ -126,7 +126,7 @@ func (s *stubMemory) DeleteMemory(_ context.Context, _ uint, memoryUUID uuid.UUI
 	return nil
 }
 
-func (s *stubMemory) ClearMemories(_ context.Context, _ uint) (int64, errors.Error) {
+func (s *stubMemory) ClearMemories(_ context.Context, _ string) (int64, errors.Error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	n := int64(len(s.memories))
@@ -134,12 +134,14 @@ func (s *stubMemory) ClearMemories(_ context.Context, _ uint) (int64, errors.Err
 	return n, nil
 }
 
-func (s *stubMemory) Retrieve(_ context.Context, _ uint, _ string) ([]service.MemorySnippet, errors.Error) {
+func (s *stubMemory) Retrieve(_ context.Context, _ string, _ string) ([]service.MemorySnippet, errors.Error) {
 	return []service.MemorySnippet{{Kind: "user_fact", Content: "用户喜欢围棋"}}, nil
 }
 
-func (s *stubMemory) EnqueueDistillation(_ context.Context, _ service.DistillationSpec) bool { return true }
-func (s *stubMemory) Close()                                                                {}
+func (s *stubMemory) EnqueueDistillation(_ context.Context, _ service.DistillationSpec) bool {
+	return true
+}
+func (s *stubMemory) Close() {}
 
 // setupMemoryRouter 装配记忆路由(记忆 service 用桩,agent service 真实)+ PUT 道人路由
 func setupMemoryRouter(stub *stubMemory) *gin.Engine {

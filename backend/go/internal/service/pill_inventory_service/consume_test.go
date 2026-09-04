@@ -45,7 +45,7 @@ func TestConsumeHappyPath(t *testing.T) {
 	agent := newTestAgent(t, db)
 	// 预先存在的有效缓存，服用后必须同事务失效
 	if err := db.Create(&model.LanguagePattern{
-		AgentID: agent.ID, SystemPrompt: "旧提示词", IsValid: true,
+		AgentID: agent.UUID.String(), SystemPrompt: "旧提示词", IsValid: true,
 		SourceFingerprint: "sha256:old", ProfileVersion: 1,
 	}).Error; err != nil {
 		t.Fatal(err)
@@ -85,7 +85,7 @@ func TestConsumeHappyPath(t *testing.T) {
 
 	// 能力快照：名称/完整 schema（含未知字段深拷贝）/权重/顺序
 	var effects []model.AgentPillEffect
-	if err := db.Where("agent_id = ?", agent.ID).Find(&effects).Error; err != nil {
+	if err := db.Where("agent_id = ?", agent.UUID.String()).Find(&effects).Error; err != nil {
 		t.Fatal(err)
 	}
 	if len(effects) != 1 {
@@ -117,7 +117,7 @@ func TestConsumeHappyPath(t *testing.T) {
 		t.Fatalf("effects_revision=%d, want 1", ag.EffectsRevision)
 	}
 	var lp model.LanguagePattern
-	if err := db.Where("agent_id = ?", agent.ID).First(&lp).Error; err != nil {
+	if err := db.Where("agent_id = ?", agent.UUID.String()).First(&lp).Error; err != nil {
 		t.Fatal(err)
 	}
 	if lp.IsValid {
@@ -155,7 +155,7 @@ func TestConsumeSecondKeySameItemFails(t *testing.T) {
 		t.Fatalf("code=%s, want pill.not_available", err.GetCode())
 	}
 	var n int64
-	db.Model(&model.AgentPillEffect{}).Where("agent_id = ?", agent.ID).Count(&n)
+	db.Model(&model.AgentPillEffect{}).Where("agent_id = ?", agent.UUID.String()).Count(&n)
 	if n != 1 {
 		t.Fatalf("effects=%d, want 1", n)
 	}
@@ -292,7 +292,7 @@ func TestConsumeDuplicateActiveEffect(t *testing.T) {
 		t.Fatalf("被拒服用后第二枚应仍可用, got %s", item.State)
 	}
 	var n int64
-	db.Model(&model.AgentPillEffect{}).Where("agent_id = ?", agent.ID).Count(&n)
+	db.Model(&model.AgentPillEffect{}).Where("agent_id = ?", agent.UUID.String()).Count(&n)
 	if n != 1 {
 		t.Fatalf("effects=%d, want 1", n)
 	}
@@ -372,7 +372,7 @@ func TestConsumeDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	var ef model.AgentPillEffect
-	db.Where("agent_id = ?", agent.ID).First(&ef)
+	db.Where("agent_id = ?", agent.UUID.String()).First(&ef)
 	if ef.Weight != 1.0 {
 		t.Fatalf("weight=%v, want 1.0", ef.Weight)
 	}

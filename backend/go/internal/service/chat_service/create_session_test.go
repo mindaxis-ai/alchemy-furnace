@@ -94,7 +94,7 @@ func TestCreateSessionRejectsInvalidAgentBeforePersistence(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			chats := &fakeChatDao{
 				sessions: map[string]*model.ChatSession{},
-				members:  map[uint][]*model.SessionMember{},
+				members:  map[string][]*model.SessionMember{},
 			}
 			svc := New(chats, agents, nil, tt.resolver, "http://unused")
 
@@ -125,7 +125,7 @@ func TestCreateSessionCreatesUUIDForAvailableFormalModel(t *testing.T) {
 	}}
 	chats := &fakeChatDao{
 		sessions: map[string]*model.ChatSession{},
-		members:  map[uint][]*model.SessionMember{},
+		members:  map[string][]*model.SessionMember{},
 	}
 	svc := New(chats, agents, nil, availableCredentialResolver("formal-model"), "http://unused")
 
@@ -137,8 +137,8 @@ func TestCreateSessionCreatesUUIDForAvailableFormalModel(t *testing.T) {
 	if session.UUID == uuid.Nil {
 		t.Fatal("CreateSession() UUID is nil")
 	}
-	if session.Type != model.SessionTypeSingle || session.AgentID == nil || *session.AgentID != 7 {
-		t.Fatalf("CreateSession() = %+v, want single session for agent 7", session)
+	if session.Type != model.SessionTypeSingle || session.AgentID == nil || *session.AgentID != agentUID.String() {
+		t.Fatalf("CreateSession() = %+v, want single session for agent %s", session, agentUID)
 	}
 	if _, ok := chats.sessions[session.UUID.String()]; !ok {
 		t.Fatalf("CreateSession() UUID %s was not persisted", session.UUID)
@@ -154,14 +154,14 @@ func TestGetMessagesKeepsInactiveAgentHistoryReadable(t *testing.T) {
 	}}
 	chats := &fakeChatDao{
 		sessions: map[string]*model.ChatSession{},
-		members:  map[uint][]*model.SessionMember{},
+		members:  map[string][]*model.SessionMember{},
 	}
 	svc := New(chats, agents, nil, availableCredentialResolver("formal-model"), "http://unused")
 	session, err := svc.CreateSession(context.Background(), agentUID)
 	if err != nil {
 		t.Fatalf("CreateSession() error = %v", err)
 	}
-	if _, err := svc.SaveMessage(context.Background(), session.ID, "assistant", "旧日答复"); err != nil {
+	if _, err := svc.SaveMessage(context.Background(), session.UUID.String(), "assistant", "旧日答复"); err != nil {
 		t.Fatalf("SaveMessage() error = %v", err)
 	}
 	agents.agents[agentUID.String()].Status = "inactive"
@@ -174,4 +174,3 @@ func TestGetMessagesKeepsInactiveAgentHistoryReadable(t *testing.T) {
 		t.Fatalf("GetMessages() = %+v, want preserved history", messages)
 	}
 }
-

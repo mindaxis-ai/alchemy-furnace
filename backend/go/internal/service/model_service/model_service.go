@@ -76,7 +76,7 @@ func (s *ModelService) ListModelsByProvider(ctx context.Context, providerUID uui
 		return nil, err.Relation(errors.ErrorRecordNotFound("service.model.list_take_provider"))
 	}
 
-	_, models, err := s.model.FindModelsByProvider(ctx, p.ID, page, size)
+	_, models, err := s.model.FindModelsByProvider(ctx, p.UUID.String(), page, size)
 	if err != nil {
 		return nil, err.Relation(errors.ErrorServerInternalError("service.model.list"))
 	}
@@ -143,7 +143,7 @@ func (s *ModelService) CreateModel(ctx context.Context, providerUID uuid.UUID, n
 		return nil, err
 	}
 
-	exists, err := s.model.ModelNameExistsInProvider(ctx, p.ID, name, 0)
+	exists, err := s.model.ModelNameExistsInProvider(ctx, p.UUID.String(), name, 0)
 	if err != nil {
 		return nil, err.Relation(errors.ErrorServerInternalError("service.model.create_name_check"))
 	}
@@ -152,7 +152,7 @@ func (s *ModelService) CreateModel(ctx context.Context, providerUID uuid.UUID, n
 	}
 
 	m := &model.LLMModel{
-		ProviderID:  p.ID,
+		ProviderID:  p.UUID.String(),
 		Name:        name,
 		DisplayName: displayName,
 		Temperature: temperature,
@@ -343,7 +343,7 @@ func (s *ModelService) ResolveCredentials(ctx context.Context, name string) (*cr
 		zap.L().Warn("[炼丹炉] 同名模型存在于多个供应商，按 sort_order,id 取第一个",
 			zap.String("model", name),
 			zap.Uint("selected_id", selected.ID),
-			zap.Uint("provider_id", selected.ProviderID))
+			zap.String("provider_id", selected.ProviderID))
 	}
 
 	return s.resolveCredentials(ctx, selected)

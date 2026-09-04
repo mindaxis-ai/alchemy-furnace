@@ -75,7 +75,7 @@ func (r *ModelResolver) ResolveCredentials(ctx context.Context, name string) (*M
 		zap.L().Warn("[炼丹炉] 同名模型存在于多个供应商，按 sort_order,id 取第一个",
 			zap.String("model", name),
 			zap.Uint("selected_id", selected.ID),
-			zap.Uint("provider_id", selected.ProviderID))
+			zap.String("provider_id", selected.ProviderID))
 	}
 
 	return r.resolveModelCredentials(ctx, selected)
@@ -129,9 +129,10 @@ func (r *ModelResolver) ResolveFusionCredentials(ctx context.Context) (*ModelCre
 }
 
 // resolveModelCredentials 由已启用模型解析完整调用凭证:加载供应商 -> 校验启用 -> 解密 api_key
+// m.ProviderID 为供应商 UUID 文本(011 业务键),按 uuid 列定位供应商行
 func (r *ModelResolver) resolveModelCredentials(ctx context.Context, m *model.LLMModel) (*ModelCredentials, error) {
 	var p model.LLMProvider
-	if err := dao.GetDB().WithContext(ctx).First(&p, m.ProviderID).Error; err != nil {
+	if err := dao.GetDB().WithContext(ctx).Where("uuid = ?", m.ProviderID).First(&p).Error; err != nil {
 		return nil, fmt.Errorf("查询模型所属供应商配置失败: %w", err)
 	}
 	if !p.IsEnabled {

@@ -36,7 +36,7 @@ type sseChatStub struct {
 
 	retrievedSnippets   []service.MemorySnippet
 	retrieveCalls       int
-	lastRetrieveAgentID uint
+	lastRetrieveAgentID string
 	lastRetrieveMessage string
 	distillSpecs        []service.DistillationSpec
 
@@ -48,9 +48,9 @@ type sseChatStub struct {
 }
 
 // P3 记忆挂载:检索委托 + 蒸馏入队(handler 经 service.Chat 接口调用)
-func (s *sseChatStub) RetrieveMemories(_ context.Context, agentID uint, userMessage string) []service.MemorySnippet {
+func (s *sseChatStub) RetrieveMemories(_ context.Context, agentUID string, userMessage string) []service.MemorySnippet {
 	s.retrieveCalls++
-	s.lastRetrieveAgentID = agentID
+	s.lastRetrieveAgentID = agentUID
 	s.lastRetrieveMessage = userMessage
 	return s.retrievedSnippets
 }
@@ -75,7 +75,7 @@ func (s *sseChatStub) GetOrBuildPattern(context.Context, uint) (*model.LanguageP
 	return &model.LanguagePattern{SystemPrompt: "test system prompt"}, nil
 }
 
-func (s *sseChatStub) SaveMessage(_ context.Context, sessionID uint, role, content string) (*model.ChatMessage, errors.Error) {
+func (s *sseChatStub) SaveMessage(_ context.Context, sessionUID string, role, content string) (*model.ChatMessage, errors.Error) {
 	if err := s.saveErrors[role]; err != nil {
 		return nil, err
 	}
@@ -83,7 +83,7 @@ func (s *sseChatStub) SaveMessage(_ context.Context, sessionID uint, role, conte
 		return nil, s.saveErr
 	}
 	s.savedRoles = append(s.savedRoles, role)
-	return &model.ChatMessage{SessionID: sessionID, Role: role, Content: content}, nil
+	return &model.ChatMessage{SessionID: sessionUID, Role: role, Content: content}, nil
 }
 
 func (s *sseChatStub) GetMessages(_ context.Context, _ uuid.UUID, page, size int) (int64, []*model.ChatMessage, errors.Error) {
@@ -95,7 +95,7 @@ func (s *sseChatStub) GetMessages(_ context.Context, _ uuid.UUID, page, size int
 	return int64(len(s.recentMessages)), s.recentMessages[start:end], nil
 }
 
-func (s *sseChatStub) TakeLatestUserMessage(context.Context, uint) (*model.ChatMessage, errors.Error) {
+func (s *sseChatStub) TakeLatestUserMessage(context.Context, string) (*model.ChatMessage, errors.Error) {
 	for i := len(s.recentMessages) - 1; i >= 0; i-- {
 		if s.recentMessages[i].Role == "user" {
 			return s.recentMessages[i], nil
@@ -172,13 +172,13 @@ func TestGroupMemberErrorWirePayloadExplicitlyMarksNonterminal(t *testing.T) {
 }
 
 func TestSessionResponseIncludesStatusesAndCurrentMembers(t *testing.T) {
-	agentID := uint(1)
+	agentID := uuid.NewString()
 	session := &model.ChatSession{
 		UUID: uuid.New(), Type: model.SessionTypeGroup, AgentID: &agentID,
 		Agent: model.DaoAgent{UUID: uuid.New(), Status: "inactive"},
 		Members: []model.SessionMember{
-			{AgentID: 2, Agent: model.DaoAgent{UUID: uuid.New(), Name: "Alpha", Status: "active"}},
-			{AgentID: 3, Agent: model.DaoAgent{UUID: uuid.New(), Name: "Beta", Status: "inactive"}},
+			{AgentID: uuid.NewString(), Agent: model.DaoAgent{UUID: uuid.New(), Name: "Alpha", Status: "active"}},
+			{AgentID: uuid.NewString(), Agent: model.DaoAgent{UUID: uuid.New(), Name: "Beta", Status: "inactive"}},
 		},
 	}
 
@@ -205,8 +205,8 @@ func TestSessionResponseIncludesStatusesAndCurrentMembers(t *testing.T) {
 
 // 单聊响应必须携带道人真实身份(名称/头像/状态),不能只有 UUID
 func TestSessionResponseIncludesSingleAgentIdentity(t *testing.T) {
-	agentID := uint(7)
 	agentUID := uuid.New()
+	agentID := agentUID.String()
 	session := &model.ChatSession{
 		UUID: uuid.New(), Type: model.SessionTypeSingle, AgentID: &agentID,
 		Agent: model.DaoAgent{UUID: agentUID, Name: "太上老君", Avatar: "https://example.com/laojun.png", Status: "inactive"},
@@ -250,7 +250,7 @@ func TestGetSessionReturnsDirectGroupMetadata(t *testing.T) {
 	stub := &sseChatStub{
 		session: &model.ChatSession{ID: 7, UUID: sessionUID, Type: model.SessionTypeGroup, Title: "Deep link"},
 		members: []*model.SessionMember{{
-			AgentID: 4,
+			AgentID: uuid.NewString(),
 			Agent:   model.DaoAgent{UUID: uuid.New(), Name: "Current member", Avatar: "/member.png", Status: "inactive"},
 		}},
 	}
@@ -284,9 +284,10 @@ func (s *sseChatStub) RunConversation(_ context.Context, cmd service.Conversatio
 func TestSSEChatLangGraphDelegatesWithoutLegacyComposition(t *testing.T) {
 	sessionUID := uuid.New()
 	agentID := uint(7)
+	agentIDText := uuid.NewString()
 	stub := &sseChatStub{
 		session: &model.ChatSession{
-			ID: 3, UUID: sessionUID, Type: model.SessionTypeSingle, AgentID: &agentID,
+			ID: 3, UUID: sessionUID, Type: model.SessionTypeSingle, AgentID: &agentIDText,
 			Agent: model.DaoAgent{ID: agentID, UUID: uuid.New(), Status: "active", ModelName: "test-model"},
 		},
 	}

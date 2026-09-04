@@ -5,6 +5,7 @@ package dao
 
 import (
 	"encoding/json"
+	"github.com/google/uuid"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -72,9 +73,9 @@ func TestMigratePillInventoryPreservesConsumption(t *testing.T) {
 	}
 	// 单绑丹 → 道人甲；双绑丹 → 道人甲 + 道人乙（两个道人绑定同一金丹）
 	binds := []model.AgentPill{
-		{AgentID: agents[0].ID, PillID: pills[1].ID, Weight: 0.8, SortOrder: 0},
-		{AgentID: agents[0].ID, PillID: pills[2].ID, Weight: 1.5, SortOrder: 1},
-		{AgentID: agents[1].ID, PillID: pills[2].ID, Weight: 0.5, SortOrder: 2},
+		{AgentID: agents[0].UUID.String(), PillID: pills[1].UUID.String(), Weight: 0.8, SortOrder: 0},
+		{AgentID: agents[0].UUID.String(), PillID: pills[2].UUID.String(), Weight: 1.5, SortOrder: 1},
+		{AgentID: agents[1].UUID.String(), PillID: pills[2].UUID.String(), Weight: 0.5, SortOrder: 2},
 	}
 	if err := db.Create(&binds).Error; err != nil {
 		t.Fatal(err)
@@ -118,7 +119,7 @@ func TestMigratePillInventoryPreservesConsumption(t *testing.T) {
 
 	// 已绑定：实例为 consumed_by_agent，消耗时间/来源保留；能力快照保留权重、顺序、名称与完整内容
 	var eff model.AgentPillEffect
-	if err := db.Where("agent_id = ?", agents[0].ID).Order("sort_order").First(&eff).Error; err != nil {
+	if err := db.Where("agent_id = ?", agents[0].UUID.String()).Order("sort_order").First(&eff).Error; err != nil {
 		t.Fatal(err)
 	}
 	if eff.NameSnapshot != "单绑丹" || eff.Weight != 0.8 || eff.SortOrder != 0 {
@@ -148,7 +149,7 @@ func TestMigratePillInventoryPreservesConsumption(t *testing.T) {
 		Order("sort_order").Find(&cEffs).Error; err != nil {
 		t.Fatal(err)
 	}
-	if len(cEffs) != 2 || cEffs[0].AgentID != agents[0].ID || cEffs[1].AgentID != agents[1].ID {
+	if len(cEffs) != 2 || cEffs[0].AgentID != agents[0].UUID.String() || cEffs[1].AgentID != agents[1].UUID.String() {
 		t.Fatalf("双绑丹能力异常: %+v", cEffs)
 	}
 
@@ -255,7 +256,7 @@ func TestMigratePillInventoryKeepsLegacyTables(t *testing.T) {
 	if err := db.Create(&pill).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Create(&model.AgentPill{AgentID: agent.ID, PillID: pill.ID}).Error; err != nil {
+	if err := db.Create(&model.AgentPill{AgentID: agent.UUID.String(), PillID: pill.UUID.String()}).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := MigratePillInventory(db); err != nil {
@@ -287,19 +288,24 @@ func TestMigratePillInventoryRejectsDuplicateBinding(t *testing.T) {
 	}
 	if err := db.Exec(`CREATE TABLE agent_pills (
 		id integer PRIMARY KEY AUTOINCREMENT,
-		agent_id integer NOT NULL,
-		pill_id integer NOT NULL,
+		agent_id varchar(36) NOT NULL,
+		pill_id varchar(36) NOT NULL,
 		weight real DEFAULT 1.0,
 		sort_order integer DEFAULT 0,
 		created_at datetime
 	)`).Error; err != nil {
 		t.Fatal(err)
 	}
+	agent := model.DaoAgent{Name: "重复道人"}
+	if err := db.Create(&agent).Error; err != nil {
+		t.Fatal(err)
+	}
 	pill := model.ElixirPill{Name: "重复丹", Description: "d", SkillSchema: model.JSONMap{"identity_card": "X"}}
 	if err := db.Create(&pill).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec(`INSERT INTO agent_pills (agent_id, pill_id, weight) VALUES (1, ?, 1.0), (1, ?, 2.0)`, pill.ID, pill.ID).Error; err != nil {
+	if err := db.Exec(`INSERT INTO agent_pills (agent_id, pill_id, weight) VALUES (?, ?, 1.0), (?, ?, 2.0)`,
+		agent.UUID.String(), pill.UUID.String(), agent.UUID.String(), pill.UUID.String()).Error; err != nil {
 		t.Fatal(err)
 	}
 
@@ -320,13 +326,21 @@ func TestMigratePillInventoryRejectsOrphanBinding(t *testing.T) {
 	if err := db.Create(&agent).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec("PRAGMA foreign_keys = OFF").Error; err != nil {
+	if err := db.Migrator().DropTable("agent_pills"); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec(`INSERT INTO agent_pills (agent_id, pill_id) VALUES (?, 9999)`, agent.ID).Error; err != nil {
+	if err := db.Exec(`CREATE TABLE agent_pills (
+		id integer PRIMARY KEY AUTOINCREMENT,
+		agent_id varchar(36) NOT NULL,
+		pill_id varchar(36) NOT NULL,
+		weight real DEFAULT 1.0,
+		sort_order integer DEFAULT 0,
+		created_at datetime
+	)`).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec("PRAGMA foreign_keys = ON").Error; err != nil {
+	if err := db.Exec(`INSERT INTO agent_pills (agent_id, pill_id) VALUES (?, ?)`,
+		agent.UUID.String(), uuid.NewString()).Error; err != nil {
 		t.Fatal(err)
 	}
 

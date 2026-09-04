@@ -71,7 +71,7 @@ func (s *Inventory) Consume(ctx context.Context, req service.ConsumePillRequest)
 					"金丹不可服用（已被服用/融合/弃置）")
 			}
 			// 4) 同版本活跃能力预检（唯一索引兜底并发）；失败时 CAS 随事务一起回滚
-			n, err := dao.CountActiveEffectByAgentRevision(tx, agent.ID, rev.ID)
+			n, err := dao.CountActiveEffectByAgentRevision(tx, agent.UUID.String(), rev.ID)
 			if err != nil {
 				return nil, err
 			}
@@ -82,14 +82,14 @@ func (s *Inventory) Consume(ctx context.Context, req service.ConsumePillRequest)
 			// 5) 能力快照：名称 + 完整 schema 深拷贝（不保存指向请求方可变对象的引用）
 			sortOrder := req.SortOrder
 			if sortOrder <= 0 {
-				maxOrder, err := dao.MaxEffectSortOrder(tx, agent.ID)
+				maxOrder, err := dao.MaxEffectSortOrder(tx, agent.UUID.String())
 				if err != nil {
 					return nil, err
 				}
 				sortOrder = maxOrder + 1
 			}
 			ef := &model.AgentPillEffect{
-				AgentID:          agent.ID,
+				AgentID:          agent.UUID.String(),
 				ItemID:           item.ID,
 				RecipeRevisionID: rev.ID,
 				NameSnapshot:     rev.Name,
@@ -106,10 +106,10 @@ func (s *Inventory) Consume(ctx context.Context, req service.ConsumePillRequest)
 				return nil, err
 			}
 			// 6) 编排版本递增 + 同事务失效缓存
-			if err := dao.IncrementEffectsRevision(tx, agent.ID); err != nil {
+			if err := dao.IncrementEffectsRevision(tx, agent.UUID.String()); err != nil {
 				return nil, err
 			}
-			if err := dao.InvalidateLanguagePatternTx(tx, agent.ID); err != nil {
+			if err := dao.InvalidateLanguagePatternTx(tx, agent.UUID.String()); err != nil {
 				return nil, err
 			}
 			return &service.PillOperationResult{

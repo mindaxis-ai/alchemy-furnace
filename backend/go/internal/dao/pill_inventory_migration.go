@@ -178,7 +178,7 @@ func migrateLegacyData(tx *gorm.DB, report model.JSONMap) (*migrationStats, erro
 		return nil, err
 	}
 
-	byPill := map[uint][]model.AgentPill{}
+	byPill := map[string][]model.AgentPill{}
 	for _, b := range binds {
 		byPill[b.PillID] = append(byPill[b.PillID], b)
 	}
@@ -230,7 +230,7 @@ func migrateLegacyData(tx *gorm.DB, report model.JSONMap) (*migrationStats, erro
 		}
 
 		// 实例：未绑定 → 1 枚可用；绑定 N 个 → N 枚历史已服用（可用库存 0）
-		myBinds := byPill[pill.ID]
+		myBinds := byPill[pill.UUID.String()]
 		if len(myBinds) == 0 {
 			item := model.PillItem{
 				RecipeRevisionID:  rev.ID,
@@ -304,22 +304,22 @@ func migrateLegacyData(tx *gorm.DB, report model.JSONMap) (*migrationStats, erro
 // preflightLegacy 数据完整性预检：孤儿绑定、重复绑定（结构预检见 migrateLegacyData 开头）
 func preflightLegacy(tx *gorm.DB, pills []model.ElixirPill, binds []model.AgentPill) error {
 	// 孤儿绑定：绑定指向不存在的旧定义，无法确定丹方
-	pillIDs := map[uint]bool{}
+	pillUUIDs := map[string]bool{}
 	for _, p := range pills {
-		pillIDs[p.ID] = true
+		pillUUIDs[p.UUID.String()] = true
 	}
 	for _, b := range binds {
-		if !pillIDs[b.PillID] {
-			return fmt.Errorf("异常数据: agent_pills.id=%d 引用不存在的旧金丹 pill_id=%d，拒绝迁移", b.ID, b.PillID)
+		if !pillUUIDs[b.PillID] {
+			return fmt.Errorf("异常数据: agent_pills.id=%d 引用不存在的旧金丹 pill_id=%s，拒绝迁移", b.ID, b.PillID)
 		}
 	}
 
 	// 重复绑定：同旧定义与道人重复行，迁移前报告并阻止切换，不静默丢弃
-	seen := map[[2]uint]bool{}
+	seen := map[[2]string]bool{}
 	for _, b := range binds {
-		key := [2]uint{b.AgentID, b.PillID}
+		key := [2]string{b.AgentID, b.PillID}
 		if seen[key] {
-			return fmt.Errorf("异常数据: agent_pills 存在重复绑定 (agent_id=%d, pill_id=%d)，行 id=%d，拒绝迁移", b.AgentID, b.PillID, b.ID)
+			return fmt.Errorf("异常数据: agent_pills 存在重复绑定 (agent_id=%s, pill_id=%s)，行 id=%d，拒绝迁移", b.AgentID, b.PillID, b.ID)
 		}
 		seen[key] = true
 	}

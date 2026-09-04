@@ -67,12 +67,12 @@ func toMemoryResponseList(list []*model.AgentMemory) []*MemoryResponse {
 // MemoryUpsertRequest 记忆创建/更新请求
 // kind/content 创建时必填(service 层校验);PATCH 部分更新时缺省=不更新
 type MemoryUpsertRequest struct {
-	Kind       string    `json:"kind" binding:"omitempty,oneof=user_fact user_preference relationship open_loop episode"`
-	Content    string    `json:"content" binding:"omitempty,max=500"`
-	Keywords   []string  `json:"keywords"`
-	Importance *int      `json:"importance" binding:"omitempty,gte=1,lte=5"`
-	Confidence *float64  `json:"confidence" binding:"omitempty,gte=0,lte=1"`
-	Pinned     *bool     `json:"pinned"`
+	Kind       string   `json:"kind" binding:"omitempty,oneof=user_fact user_preference relationship open_loop episode"`
+	Content    string   `json:"content" binding:"omitempty,max=500"`
+	Keywords   []string `json:"keywords"`
+	Importance *int     `json:"importance" binding:"omitempty,gte=1,lte=5"`
+	Confidence *float64 `json:"confidence" binding:"omitempty,gte=0,lte=1"`
+	Pinned     *bool    `json:"pinned"`
 }
 
 // toMemoryInput 请求 → service 层输入
@@ -125,7 +125,7 @@ func (cls *Agent) ListMemories(c *gin.Context) (response.Code, any, error) {
 	if v, ok := c.GetQuery("active"); ok {
 		onlyActive = v != "false"
 	}
-	list, merr := cls.memory.ListMemories(contextutil.NewContextWithGin(c), agent.ID, kind, onlyActive)
+	list, merr := cls.memory.ListMemories(contextutil.NewContextWithGin(c), agent.UUID.String(), kind, onlyActive)
 	if merr != nil {
 		return 0, nil, merr
 	}
@@ -147,7 +147,7 @@ func (cls *Agent) CreateMemory(c *gin.Context) (response.Code, any, error) {
 	if berr := request.ShouldBindJSON(c, &body); berr != nil {
 		return response.InvalidParams, nil, berr
 	}
-	m, merr := cls.memory.CreateMemory(contextutil.NewContextWithGin(c), agent.ID, body.toMemoryInput())
+	m, merr := cls.memory.CreateMemory(contextutil.NewContextWithGin(c), agent.UUID.String(), body.toMemoryInput())
 	if merr != nil {
 		return 0, nil, merr
 	}
@@ -173,7 +173,7 @@ func (cls *Agent) UpdateMemory(c *gin.Context) (response.Code, any, error) {
 	if berr := request.ShouldBindJSON(c, &body); berr != nil {
 		return response.InvalidParams, nil, berr
 	}
-	m, merr := cls.memory.UpdateMemory(contextutil.NewContextWithGin(c), agent.ID, memUID, body.toMemoryInput())
+	m, merr := cls.memory.UpdateMemory(contextutil.NewContextWithGin(c), agent.UUID.String(), memUID, body.toMemoryInput())
 	if merr != nil {
 		return 0, nil, merr
 	}
@@ -195,7 +195,7 @@ func (cls *Agent) DeleteMemory(c *gin.Context) (response.Code, any, error) {
 	if serr != nil {
 		return 0, nil, serr
 	}
-	if merr := cls.memory.DeleteMemory(contextutil.NewContextWithGin(c), agent.ID, memUID); merr != nil {
+	if merr := cls.memory.DeleteMemory(contextutil.NewContextWithGin(c), agent.UUID.String(), memUID); merr != nil {
 		return 0, nil, merr
 	}
 	return response.Ok, gin.H{"deleted": true}, nil
@@ -212,7 +212,7 @@ func (cls *Agent) ClearMemories(c *gin.Context) (response.Code, any, error) {
 	if serr != nil {
 		return 0, nil, serr
 	}
-	n, merr := cls.memory.ClearMemories(contextutil.NewContextWithGin(c), agent.ID)
+	n, merr := cls.memory.ClearMemories(contextutil.NewContextWithGin(c), agent.UUID.String())
 	if merr != nil {
 		return 0, nil, merr
 	}

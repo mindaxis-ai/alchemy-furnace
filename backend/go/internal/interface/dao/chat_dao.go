@@ -18,8 +18,8 @@ type Chat interface {
 	// 不存在返回 ErrorTypeRecordNotFound
 	TakeSessionByID(ctx context.Context, id uint) (*model.ChatSession, errors.Error)
 
-	// FindSessions 分页查询会话列表(agentID>0 时按道人过滤),按更新时间倒序
-	FindSessions(ctx context.Context, agentID uint, page int, size int) (int64, []*model.ChatSession, errors.Error)
+	// FindSessions 分页查询会话列表(agentID 非空时按道人 UUID 过滤),按更新时间倒序
+	FindSessions(ctx context.Context, agentID string, page int, size int) (int64, []*model.ChatSession, errors.Error)
 
 	// SaveSession 新建会话
 	SaveSession(ctx context.Context, session *model.ChatSession) errors.Error
@@ -35,10 +35,11 @@ type Chat interface {
 	DeleteSession(ctx context.Context, session *model.ChatSession) errors.Error
 
 	// FindMessages 从最新消息向前分页，每页内部按时间正序呈现(page=1 为最新一页)
-	FindMessages(ctx context.Context, sessionID uint, page int, size int) (int64, []*model.ChatMessage, errors.Error)
+	FindMessages(ctx context.Context, sessionID string, page int, size int) (int64, []*model.ChatMessage, errors.Error)
 
 	// TakeLatestUserMessage 查询会话最新用户消息(created_at/id 倒序)，不受历史分页影响。
-	TakeLatestUserMessage(ctx context.Context, sessionID uint) (*model.ChatMessage, errors.Error)
+	// sessionID 为会话 UUID 文本(011 业务键)。
+	TakeLatestUserMessage(ctx context.Context, sessionID string) (*model.ChatMessage, errors.Error)
 
 	// SaveMessage 写入消息并刷新所属会话 updated_at
 	SaveMessage(ctx context.Context, message *model.ChatMessage) errors.Error
@@ -47,14 +48,15 @@ type Chat interface {
 	SaveMembers(ctx context.Context, members []*model.SessionMember) errors.Error
 
 	// FindMembers 按发言顺序(SortOrder ASC)查询群成员,预加载 Agent
-	FindMembers(ctx context.Context, sessionID uint) ([]*model.SessionMember, errors.Error)
+	// sessionID 为会话 UUID 文本(011 业务键)。
+	FindMembers(ctx context.Context, sessionID string) ([]*model.SessionMember, errors.Error)
 
 	// FindMembersBySessionIDs 批量查询多会话成员(WHERE session_id IN),预加载 Agent,
 	// 按 session_id/sort_order/id 排序后按会话分组;空输入直接返回空 map 不访问数据库
-	FindMembersBySessionIDs(ctx context.Context, sessionIDs []uint) (map[uint][]*model.SessionMember, errors.Error)
+	FindMembersBySessionIDs(ctx context.Context, sessionIDs []string) (map[string][]*model.SessionMember, errors.Error)
 
 	// DeleteMember 移出群成员;不存在返回 ErrorTypeRecordNotFound
-	DeleteMember(ctx context.Context, sessionID uint, agentID uint) errors.Error
+	DeleteMember(ctx context.Context, sessionUUID string, agentUUID string) errors.Error
 
 	// CreateRun 写入编排 run 初始行(status=pending)
 	CreateRun(ctx context.Context, run *model.ChatRun) errors.Error

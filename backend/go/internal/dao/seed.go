@@ -93,7 +93,7 @@ func SeedDefaultLLMModels(db *gorm.DB) error {
 	}
 
 	defaultEntry := model.LLMModel{
-		ProviderID:  provider.ID,
+		ProviderID:  provider.UUID.String(),
 		Name:        cfg.LLM.DefaultModel,
 		DisplayName: cfg.LLM.DefaultModel,
 		Temperature: 0.7,
@@ -119,7 +119,7 @@ func SeedDefaultLLMModels(db *gorm.DB) error {
 		return fmt.Errorf("写入默认模型种子失败: %w", err)
 	}
 	synthesisEntry := model.LLMModel{
-		ProviderID:  provider.ID,
+		ProviderID:  provider.UUID.String(),
 		Name:        synthesisModel,
 		DisplayName: synthesisModel,
 		Temperature: 0.7,
@@ -185,6 +185,7 @@ func SeedBuiltinRecipes(db *gorm.DB) error {
 // GrantStarterPills 一次性赠送（持久化标记，重启不自动补货）：
 //   - 新用户（迁移报告 is_fresh_install=true）：每个内置丹方赠送 1 枚可用金丹，disposition=granted
 //   - 迁移用户：只写 legacy_accounted 标记，不赠送（旧数据已按迁移规则核算）
+//
 // 幂等：PillStarterGrant.RecipeID 唯一，重复调用不重复产出。
 func GrantStarterPills(db *gorm.DB) error {
 	var st model.PillMigrationState
