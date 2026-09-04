@@ -23,7 +23,7 @@ const TAB_KEYS = ['models', 'fire', 'profile', 'language', 'about', 'diagnostics
 type TabKey = (typeof TAB_KEYS)[number]
 
 /** 关于区 GitHub 仓库链接(web 原生 target=_blank;桌面经 open-url 桥接交系统浏览器) */
-const REPO_URL = 'https://github.com/yusanwen-code/alchemy-furnace'
+const REPO_URL = 'https://github.com/mindaxis-ai/alchemy-furnace'
 
 function isTabKey(v: string | null): v is TabKey {
   return (

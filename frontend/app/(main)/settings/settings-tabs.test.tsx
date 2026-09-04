@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { SettingsTabs } from './settings-tabs'
 
-const REPO_URL = 'https://github.com/yusanwen-code/alchemy-furnace'
+const REPO_URL = 'https://github.com/mindaxis-ai/alchemy-furnace'
 
 // 桌面模式点击 GitHub 链接 → 拦截默认行为,经 /desktop/open-url 交系统浏览器;
 // web 模式保持原生 target=_blank 行为。isDesktop 读 document 的 is-desktop class
