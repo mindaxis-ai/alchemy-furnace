@@ -340,9 +340,9 @@ func (s *ModelService) ResolveCredentials(ctx context.Context, name string) (*cr
 		return nil, errors.New(errors.ErrorTypeInvalidRequest, "service.model.disabled", "该道人使用的模型已停用，请更换模型")
 	}
 	if enabledCount > 1 {
-		zap.L().Warn("[炼丹炉] 同名模型存在于多个供应商，按 sort_order,id 取第一个",
+		zap.L().Warn("[炼丹炉] 同名模型存在于多个供应商，按 sort_order,uuid 取第一个",
 			zap.String("model", name),
-			zap.Uint("selected_id", selected.ID),
+			zap.String("selected_id", selected.UUID.String()),
 			zap.String("provider_id", selected.ProviderID))
 	}
 

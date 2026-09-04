@@ -151,7 +151,7 @@ func (s *Inventory) ConfirmFusion(ctx context.Context, req service.ConfirmFusion
 			}
 			// 9) 单 SQL「写 lineage + 条件绑定确认操作」：
 			//    RowsAffected==0 表示并发双确认已抢先 → 409，事务整体回滚（材料归还、产物撤销）
-			bound, err := dao.ConfirmFusionPreviewCAS(tx, preview.ID, op.UUID.String(), output)
+			bound, err := dao.ConfirmFusionPreviewCAS(tx, preview.UUID.String(), op.UUID.String(), output)
 			if err != nil {
 				return nil, err
 			}

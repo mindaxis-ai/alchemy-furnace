@@ -162,9 +162,9 @@ func CreateFusionPreview(tx *gorm.DB, preview *model.FusionPreview) error {
 
 // ConfirmFusionPreviewCAS 单 SQL 完成「写 lineage 附加后的输出 + 条件绑定确认操作」：
 // 只允许未确认预览绑定成功；RowsAffected==0 表示已被其他操作确认（并发双确认防护）
-func ConfirmFusionPreviewCAS(tx *gorm.DB, previewID uint, opUID string, outputJSON model.JSONMap) (bool, error) {
+func ConfirmFusionPreviewCAS(tx *gorm.DB, previewUID string, opUID string, outputJSON model.JSONMap) (bool, error) {
 	res := tx.Model(&model.FusionPreview{}).
-		Where("id = ? AND confirmed_operation_id IS NULL", previewID).
+		Where("uuid = ? AND confirmed_operation_id IS NULL", previewUID).
 		Updates(map[string]any{
 			"confirmed_operation_id": opUID,
 			"output_json":            outputJSON,

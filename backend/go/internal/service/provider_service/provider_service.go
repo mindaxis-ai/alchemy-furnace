@@ -49,7 +49,7 @@ func (s *ProviderService) toView(p *model.LLMProvider, modelCount int64) *model.
 	if p.APIKeyEncrypted != "" {
 		plain, err := credential.DecryptAPIKey(p.APIKeyEncrypted)
 		if err != nil {
-			zap.L().Warn("[炼丹炉] 供应商密钥解密失败，掩码降级显示", zap.Uint("provider_id", p.ID), zap.Error(err))
+			zap.L().Warn("[炼丹炉] 供应商密钥解密失败，掩码降级显示", zap.String("provider_id", p.UUID.String()), zap.Error(err))
 			masked = "****"
 		} else {
 			masked = credential.MaskAPIKey(plain)
