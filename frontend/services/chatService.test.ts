@@ -20,6 +20,10 @@ function sseResponse(body: string): Response {
   })
 }
 
+/** 资源身份一律 UUID 字符串；禁止 Number()/parseInt() 数字化（011 契约回归守卫） */
+const SESSION_UUID = '11111111-1111-4111-8111-111111111111'
+const RUN_UUID = '22222222-2222-4222-8222-222222222222'
+
 describe('chat SSE transport boundaries', () => {
   afterEach(() => vi.unstubAllGlobals())
 
@@ -68,6 +72,20 @@ describe('chat SSE transport boundaries', () => {
       agent_avatar: '/beta.png',
       content: 'reply',
     })
+  })
+
+  it('embeds the session UUID verbatim in the SSE endpoint URL (no numeric coercion)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(sseResponse('event: done\ndata: {}\n\n'))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await streamChatMessage(SESSION_UUID, 'question', handlers())
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url] = fetchMock.mock.calls[0]
+    expect(url).toBe(`/api/v1/chat/sse/${SESSION_UUID}`)
+    const request = fetchMock.mock.calls[0][1] as RequestInit
+    expect(request.method).toBe('POST')
+    expect(JSON.parse(String(request.body))).toEqual({ content: 'question' })
   })
 
   it('serializes the explicit retry contract', async () => {
@@ -172,9 +190,12 @@ describe('run-aware resume transport', () => {
     const fetchMock = vi.fn().mockResolvedValue(sseResponse('event: done\ndata: {}\n\n'))
     vi.stubGlobal('fetch', fetchMock)
 
-    await resumeChatRun('run-1', handlers())
+    await resumeChatRun(RUN_UUID, handlers())
 
-    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/runs/run-1/resume'), expect.anything())
+    // run_id 为 UUID 字符串:原样进 resume 路径,禁止数字化
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url] = fetchMock.mock.calls[0]
+    expect(url).toBe(`/api/v1/chat/runs/${RUN_UUID}/resume`)
     const request = fetchMock.mock.calls[0][1] as RequestInit
     expect(request.method).toBe('POST')
     expect(request.body).toBeUndefined()
