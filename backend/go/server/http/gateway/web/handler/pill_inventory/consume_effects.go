@@ -68,15 +68,15 @@ func (h *Handler) ConsumePill(c *gin.Context) (response.Code, any, error) {
 
 // effectOut 能力输出（UUID 在模型上是 json:"-"）
 type effectOut struct {
-	ID         uuid.UUID      `json:"id"`
-	Name       string         `json:"name"`
-	Schema     model.JSONMap  `json:"schema"`
-	Weight     float64        `json:"weight"`
-	SortOrder  int            `json:"sort_order"`
-	ItemID     uuid.UUID      `json:"item_id"`     // 来源金丹实例（消耗后仍指向原实例）
-	RevisionID uuid.UUID      `json:"revision_id"` // 来源丹方版本（不可变）
-	CreatedAt  time.Time      `json:"created_at"`
-	RemovedAt  *time.Time     `json:"removed_at,omitempty"`
+	ID         uuid.UUID     `json:"id"`
+	Name       string        `json:"name"`
+	Schema     model.JSONMap `json:"schema"`
+	Weight     float64       `json:"weight"`
+	SortOrder  int           `json:"sort_order"`
+	ItemID     uuid.UUID     `json:"item_id"`     // 来源金丹实例（消耗后仍指向原实例）
+	RevisionID uuid.UUID     `json:"revision_id"` // 来源丹方版本（不可变）
+	CreatedAt  time.Time     `json:"created_at"`
+	RemovedAt  *time.Time    `json:"removed_at,omitempty"`
 }
 
 // ListEffects 道人活跃能力列表（按 sort_order 升序；含 effects_revision 供 PUT 乐观锁）

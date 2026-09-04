@@ -1,5 +1,5 @@
 // main.go - 「炼丹炉」API 网关入口(新框架,Luna-CY 模板结构)
-// 子命令: serve(默认)/ migrate up|down / seed
+// 子命令: serve(默认)/ migrate up|down|reset / seed
 // 启动命令: go run cmd/main/main.go [serve]
 package main
 

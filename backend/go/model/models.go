@@ -413,12 +413,6 @@ type UpdateAgentRequest struct {
 	Status      string `json:"status" binding:"omitempty,oneof=active inactive"` // 状态
 }
 
-// CreateSessionRequest 创建会话请求
-type CreateSessionRequest struct {
-	AgentID uint   `json:"agent_id" binding:"required"` // 道人ID
-	Title   string `json:"title" binding:"max=200"`     // 会话标题
-}
-
 // ChatMessageRequest 聊天消息请求结构
 type ChatMessageRequest struct {
 	Content string `json:"content" binding:"required"` // 消息内容
@@ -483,26 +477,6 @@ type TestConnectionRequest struct {
 }
 
 // ---------- 模型管理 DTO ----------
-
-// LLMModelResponse 模型配置响应（凭证在供应商上，模型仅含供应商引用信息）
-type LLMModelResponse struct {
-	ID                  uint      `json:"id"`
-	ProviderID          uint      `json:"provider_id"`
-	Name                string    `json:"name"`
-	DisplayName         string    `json:"display_name"`
-	ProviderName        string    `json:"provider_name"`         // 所属供应商标识
-	ProviderDisplayName string    `json:"provider_display_name"` // 所属供应商显示名
-	Temperature         float64   `json:"temperature"`
-	MaxTokens           int       `json:"max_tokens"`
-	IsEnabled           bool      `json:"is_enabled"`
-	IsDefault           bool      `json:"is_default"`
-	IsSynthesis         bool      `json:"is_synthesis"`
-	IsFusion            bool      `json:"is_fusion"`
-	SortOrder           int       `json:"sort_order"`
-	ReferencedBy        int64     `json:"referenced_by"` // 引用该模型的道人数量
-	CreatedAt           time.Time `json:"created_at"`
-	UpdatedAt           time.Time `json:"updated_at"`
-}
 
 // LLMModelOption 道人表单下拉用的精简模型项
 type LLMModelOption struct {
