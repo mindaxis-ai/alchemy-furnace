@@ -219,47 +219,15 @@ func (m *FusionPreview) BeforeCreate(tx *gorm.DB) error {
 	return nil
 }
 
-// ---------- 迁移状态 ----------
-
-// PillMigrationState 库存迁移状态，对应 pill_migration_states 表
-// 完成标记持久化：迁移用户不得再领取一次启动赠送；第二次启动直接跳过回填
-type PillMigrationState struct {
-	Key         string    `json:"key" gorm:"primaryKey;size:64;comment:迁移版本键(如 pill-inventory-v1)"`
-	CompletedAt time.Time `json:"completed_at" gorm:"autoCreateTime;comment:完成时间"`
-	ReportJSON  JSONMap   `json:"-" gorm:"type:text;not null;serializer:json;comment:迁移报告(计数/备份路径/判定;不含 schema 全文)"`
-}
-
-// TableName 指定表名
-func (PillMigrationState) TableName() string {
-	return "pill_migration_states"
-}
-
-// ---------- 旧数据映射 ----------
-
-// PillLegacyMap 旧数据映射，对应 pill_legacy_maps 表
-// 支持旧链接跳转与回填核对：旧定义→丹方(legacy_kind=pill)、旧绑定→能力(legacy_kind=bind)
-type PillLegacyMap struct {
-	LegacyKind string    `json:"-" gorm:"size:16;not null;uniqueIndex:idx_legacy_kind_id;comment:旧实体类型: pill/bind"`
-	LegacyID   string    `json:"-" gorm:"size:64;not null;uniqueIndex:idx_legacy_kind_id;comment:旧实体标识(定义 UUID / 绑定行 ID)"`
-	TargetUUID uuid.UUID `json:"-" gorm:"type:uuid;not null;comment:新实体 UUID"`
-	CreatedAt  time.Time `json:"-" gorm:"autoCreateTime;comment:记录时间"`
-}
-
-// TableName 指定表名
-func (PillLegacyMap) TableName() string {
-	return "pill_legacy_maps"
-}
-
 // ---------- 一次性赠送 ----------
 
 // PillStarterGrant 内置丹方首次启动赠送记录，对应 pill_starter_grants 表
-// Disposition: granted=新用户实际赠送; legacy_accounted=迁移用户按旧数据核算过(不再领取)
+// RecipeID 唯一：每内置丹方最多赠送一次，重复启动靠唯一约束幂等跳过
 type PillStarterGrant struct {
-	ID          uint      `json:"-" gorm:"primaryKey;autoIncrement;comment:记录唯一标识"`
-	RecipeID    string    `json:"-" gorm:"type:uuid;not null;uniqueIndex;comment:内置丹方UUID文本"`
-	Disposition string    `json:"-" gorm:"size:24;not null;comment:granted/legacy_accounted"`
-	ItemID      *string   `json:"-" gorm:"type:uuid;comment:赠送的可用实例UUID文本;legacy_accounted 为空"`
-	CreatedAt   time.Time `json:"-" gorm:"autoCreateTime;comment:记录时间"`
+	ID        uint      `json:"-" gorm:"primaryKey;autoIncrement;comment:记录唯一标识"`
+	RecipeID  string    `json:"-" gorm:"type:uuid;not null;uniqueIndex;comment:内置丹方UUID文本"`
+	ItemID    *string   `json:"-" gorm:"type:uuid;comment:赠送的可用实例UUID文本"`
+	CreatedAt time.Time `json:"-" gorm:"autoCreateTime;comment:记录时间"`
 
 	// 011 关联标签：关系列存父实体 UUID 文本，FK 按父表 uuid 列约束
 	Recipe PillRecipe `json:"-" gorm:"foreignKey:RecipeID;references:UUID;constraint:OnDelete:Restrict"`

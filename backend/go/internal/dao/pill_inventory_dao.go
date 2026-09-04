@@ -309,14 +309,3 @@ func PillRecipesByIDs(tx *gorm.DB, uids []string) (map[string]model.PillRecipe, 
 	}
 	return out, nil
 }
-
-// PillLegacyMapByKindID 按 (legacy_kind, legacy_id) 唯一键读取旧实体映射
-// （任务 5 旧入口封堵：旧金丹详情跳转与旧 pill ID 导出）。
-// 未找到返回 gorm.ErrRecordNotFound，调用方映射为 404。
-func PillLegacyMapByKindID(tx *gorm.DB, kind, legacyID string) (*model.PillLegacyMap, error) {
-	var m model.PillLegacyMap
-	if err := tx.Where("legacy_kind = ? AND legacy_id = ?", kind, legacyID).First(&m).Error; err != nil {
-		return nil, err
-	}
-	return &m, nil
-}

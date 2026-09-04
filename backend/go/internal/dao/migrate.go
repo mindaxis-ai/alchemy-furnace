@@ -38,8 +38,6 @@ var allMigratableModels = []any{
 	&model.AgentPillEffect{},
 	&model.PillOperation{},
 	&model.FusionPreview{},
-	&model.PillMigrationState{},
-	&model.PillLegacyMap{},
 	&model.PillStarterGrant{},
 }
 

@@ -71,7 +71,7 @@ func openFusionTestDB(t *testing.T) *gorm.DB {
 	if err := db.AutoMigrate(
 		&model.PillRecipe{}, &model.PillRecipeRevision{}, &model.PillItem{},
 		&model.AgentPillEffect{}, &model.PillOperation{}, &model.FusionPreview{},
-		&model.PillMigrationState{}, &model.PillLegacyMap{}, &model.PillStarterGrant{},
+		&model.PillStarterGrant{},
 		&model.DaoAgent{}, &model.LanguagePattern{},
 	); err != nil {
 		t.Fatal(err)

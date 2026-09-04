@@ -58,16 +58,16 @@ var ErrExportCredentialRejected = errors.New("导出接口不接受任何密钥�
 // instructions/attribution 由服务端按结构化字段稳定渲染,客户端传入值不参与组装;
 // slug 由 Python 渲染器从名称派生,此处仅做格式重校验。
 type ExportableSkill struct {
-	Name         string            `json:"name"`
-	Slug         string            `json:"slug"`
-	Description  string            `json:"description"`
-	Instructions string            `json:"instructions"`
-	SkillSchema  model.JSONMap     `json:"skillSchema"`
-	Tags         []string          `json:"tags"`
-	Sources      []Source          `json:"sources"`
-	Attribution  map[string]string `json:"attribution"`
-	GeneratedAt  string            `json:"generatedAt"`
-	EvidenceLevel string           `json:"evidence_level,omitempty"`
+	Name          string            `json:"name"`
+	Slug          string            `json:"slug"`
+	Description   string            `json:"description"`
+	Instructions  string            `json:"instructions"`
+	SkillSchema   model.JSONMap     `json:"skillSchema"`
+	Tags          []string          `json:"tags"`
+	Sources       []Source          `json:"sources"`
+	Attribution   map[string]string `json:"attribution"`
+	GeneratedAt   string            `json:"generatedAt"`
+	EvidenceLevel string            `json:"evidence_level,omitempty"`
 }
 
 // ExportResult 导出产物: ZIP 字节 + 下载文件名(纯 ASCII,§3.4 命名)
@@ -80,7 +80,6 @@ type ExportResult struct {
 // 目标三选一：旧 pill_id（仅经 LegacyMap 解析，不读取可用库存）、
 // recipe_id（当前版本）+ 可选 revision_id（指定版本）、skill（结构化数据）。
 type SkillExportInput struct {
-	PillID     string
 	RecipeID   string
 	RevisionID string
 	Skill      *ExportableSkill

@@ -41,9 +41,9 @@ func setupTestDB(t *testing.T) *gorm.DB {
 	}
 	sqlDB.SetMaxOpenConns(1)
 	if err := db.AutoMigrate(
-		&model.PillRecipe{}, &model.PillRecipeRevision{}, &model.PillLegacyMap{},
+		&model.PillRecipe{}, &model.PillRecipeRevision{},
 		&model.PillItem{}, &model.AgentPillEffect{}, &model.PillOperation{},
-		&model.FusionPreview{}, &model.PillMigrationState{}, &model.PillStarterGrant{},
+		&model.FusionPreview{}, &model.PillStarterGrant{},
 	); err != nil {
 		t.Fatalf("迁移测试表失败: %v", err)
 	}
@@ -178,40 +178,6 @@ func seedRecipe(t *testing.T, db *gorm.DB, n int) (model.PillRecipe, []model.Pil
 	return recipe, revs
 }
 
-// TestSkillExport_LegacyPillIDResolvedViaMap 旧 pill ID 只经 LegacyMap 解析到丹方当前版本,
-// 不读取可用库存;导出后丹方只读
-func TestSkillExport_LegacyPillIDResolvedViaMap(t *testing.T) {
-	db := setupTestDB(t)
-	recipe, _ := seedRecipe(t, db, 1)
-	legacyID := "550e8400-e29b-41d4-a716-446655440000"
-	if err := db.Create(&model.PillLegacyMap{
-		LegacyKind: "pill", LegacyID: legacyID, TargetUUID: recipe.UUID,
-	}).Error; err != nil {
-		t.Fatalf("建旧映射失败: %v", err)
-	}
-	client := &fakeExportClient{result: &nudist.ExportResult{Filename: "alchemy-skill-x-claude.zip", Content: []byte("PK")}}
-	r, fake := setupSkillExportRouter(db, client)
-
-	body := fmt.Sprintf(`{"pill_id": %q, "format": "claude"}`, legacyID)
-	status, raw, _ := postSkillExport(t, r, body)
-
-	if status != http.StatusOK {
-		t.Fatalf("期望 200, 实际 %d, body=%s", status, raw)
-	}
-	if fake.skill == nil || fake.skill.Name != "丹方 v1" || fake.skill.Description != "第 1 版简介" {
-		t.Fatalf("服务端未按 LegacyMap 解析到丹方版本: %+v", fake.skill)
-	}
-	if fake.skill.EvidenceLevel != "limited" || fake.skill.GeneratedAt == "" {
-		t.Fatalf("版本投影字段异常: %+v", fake.skill)
-	}
-	// 接口只读: 丹方/版本不得被修改或删除
-	var revCount int64
-	db.Model(&model.PillRecipeRevision{}).Where("recipe_id = ?", recipe.UUID.String()).Count(&revCount)
-	if revCount != 1 {
-		t.Fatalf("导出后版本数 = %d, 期望 1", revCount)
-	}
-}
-
 // TestSkillExport_RecipeIDExportsCurrentRevision recipe_id 单独 → 导出当前版本(v2)
 func TestSkillExport_RecipeIDExportsCurrentRevision(t *testing.T) {
 	db := setupTestDB(t)
@@ -334,19 +300,6 @@ func TestSkillExport_CredentialFieldsForbidden(t *testing.T) {
 		if envelope["error_code"] != "skill_export_forbidden" {
 			t.Fatalf("error_code = %v, want skill_export_forbidden", envelope["error_code"])
 		}
-	}
-}
-
-// TestSkillExport_PillNotFound 旧 pill ID 无 LegacyMap 映射 → 404,不读取可用库存
-func TestSkillExport_PillNotFound(t *testing.T) {
-	db := setupTestDB(t)
-	r, _ := setupSkillExportRouter(db, &fakeExportClient{})
-
-	body := fmt.Sprintf(`{"pill_id": %q, "format": "codex"}`, uuid.NewString())
-	status, raw, _ := postSkillExport(t, r, body)
-
-	if status != http.StatusNotFound {
-		t.Fatalf("期望 404, 实际 %d, body=%s", status, raw)
 	}
 }
 

@@ -117,32 +117,6 @@ type PillInventory interface {
 	ListItems(ctx context.Context, page, size int, recipeID *uuid.UUID) (int64, []ItemListItem, errors.Error)
 	// GetItem 按 UUID 读金丹实例（任意状态可读，含来源丹方与版本内容；已消耗/弃置展示去向）
 	GetItem(ctx context.Context, uid uuid.UUID) (*ItemDetail, errors.Error)
-	// ResolveLegacy 旧实体映射解析（任务 5 旧入口封堵）：kind=pill 旧定义→丹方、
-	// kind=bind 旧绑定→能力 UUID。无映射 404 pill.legacy_not_found；未知 kind 400。
-	ResolveLegacy(ctx context.Context, kind, legacyID string) (uuid.UUID, errors.Error)
-	// MigrationSummary 迁移摘要只读查询（任务 8 升级用户展示）：读迁移完成标记
-	// ReportJSON（迁移时计数，非实时）；无标记 Migrated=false。禁止在此触发迁移。
-	MigrationSummary(context.Context) (*MigrationSummary, errors.Error)
-}
-
-// MigrationSummary 库存迁移摘要（升级用户只读展示；字段与迁移报告 ReportJSON 对齐）
-type MigrationSummary struct {
-	// 是否存在迁移完成标记（前端据此决定是否展示摘要条）
-	Migrated bool `json:"migrated"`
-	// 全新安装标记；true 时不展示升级摘要（新安装的一次性赠送另有入口）
-	IsFreshInstall bool `json:"is_fresh_install"`
-	// 旧金丹定义数 / 旧绑定数（迁移前存量）
-	LegacyPills int64 `json:"legacy_pills"`
-	LegacyBinds int64 `json:"legacy_binds"`
-	// 迁移出的丹方数 / 可用金丹数 / 历史已服用数 / 已吸收能力数
-	Recipes        int64 `json:"recipes"`
-	AvailableItems int64 `json:"available_items"`
-	HistoryItems   int64 `json:"history_items"`
-	Effects        int64 `json:"effects"`
-	// 迁移前一致性备份绝对路径（fresh 安装为空）
-	BackupPath string `json:"backup_path"`
-	// 完成时间 RFC3339
-	CompletedAt string `json:"completed_at"`
 }
 
 // RecipeListItem 丹方列表项（补当前版本名称与对外 UUID；模型上的 UUID 是 json:"-"）

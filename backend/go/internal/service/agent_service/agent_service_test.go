@@ -36,7 +36,7 @@ func setupServiceTestDB(t *testing.T) (*Agent, *gorm.DB) {
 		&model.DaoAgent{}, &model.ElixirPill{}, &model.AgentPill{}, &model.LanguagePattern{},
 		&model.AgentPillEffect{}, &model.PillItem{},
 		&model.PillRecipe{}, &model.PillRecipeRevision{}, &model.PillOperation{},
-		&model.FusionPreview{}, &model.PillMigrationState{}, &model.PillLegacyMap{}, &model.PillStarterGrant{},
+		&model.FusionPreview{}, &model.PillStarterGrant{},
 		&model.ChatSession{}, &model.SessionMember{}, &model.LLMProvider{}, &model.LLMModel{},
 	); err != nil {
 		t.Fatalf("迁移测试表失败: %v", err)

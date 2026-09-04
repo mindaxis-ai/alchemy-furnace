@@ -24,7 +24,7 @@ func inventoryModels() []any {
 	return []any{
 		&model.PillRecipe{}, &model.PillRecipeRevision{}, &model.PillItem{},
 		&model.AgentPillEffect{}, &model.PillOperation{}, &model.FusionPreview{},
-		&model.PillMigrationState{}, &model.PillLegacyMap{}, &model.PillStarterGrant{},
+		&model.PillStarterGrant{},
 		// 任务 3：服用事务操作道人（EffectsRevision 递增 + 缓存失效）
 		&model.DaoAgent{}, &model.LanguagePattern{},
 	}

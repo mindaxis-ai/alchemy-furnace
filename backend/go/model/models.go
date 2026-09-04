@@ -413,13 +413,6 @@ type UpdateAgentRequest struct {
 	Status      string `json:"status" binding:"omitempty,oneof=active inactive"` // 状态
 }
 
-// BindPillRequest 服用金丹请求
-type BindPillRequest struct {
-	PillID    uint    `json:"pill_id" binding:"required"`    // 金丹ID
-	Weight    float64 `json:"weight" binding:"gte=0,lte=10"` // 剂量/权重
-	SortOrder int     `json:"sort_order" binding:"gte=0"`    // 服用顺序
-}
-
 // CreateSessionRequest 创建会话请求
 type CreateSessionRequest struct {
 	AgentID uint   `json:"agent_id" binding:"required"` // 道人ID

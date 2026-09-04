@@ -65,8 +65,7 @@ func (s *Service) Distill(ctx context.Context, subject, brief, locale string) (*
 // SkillExport 只读导出: 服务端重校验(格式/目标唯一性/字段长度/slug/来源协议/敏感内容),
 // 绝不接收或透传 API Key。
 // 目标解析(任务 5 消耗品重构后): recipe_id 导出丹方当前版本;recipe_id+revision_id
-// 导出指定版本(归属校验,版本必须属于该丹方);旧 pill_id 只经 LegacyMap 解析到丹方,
-// 不读取可用库存;skill 结构化模式重校验后透传。
+// 导出指定版本(归属校验,版本必须属于该丹方);skill 结构化模式重校验后透传。
 // 接口不删除、不修改丹方;远端可重试错误映射为 503,内容错误映射为 400。
 func (s *Service) SkillExport(ctx context.Context, input *distillation.SkillExportInput) (*distillation.ExportResult, appErrors.Error) {
 	if input == nil {
@@ -76,37 +75,21 @@ func (s *Service) SkillExport(ctx context.Context, input *distillation.SkillExpo
 	if format != "codex" && format != "claude" {
 		return nil, appErrors.New(appErrors.ErrorTypeInvalidRequest, "service.skill_export.format", "format 必须是 codex 或 claude")
 	}
-	hasPill, hasRecipe, hasSkill := strings.TrimSpace(input.PillID) != "", strings.TrimSpace(input.RecipeID) != "", input.Skill != nil
+	hasRecipe, hasSkill := strings.TrimSpace(input.RecipeID) != "", input.Skill != nil
 	targetCount := 0
-	for _, has := range []bool{hasPill, hasRecipe, hasSkill} {
+	for _, has := range []bool{hasRecipe, hasSkill} {
 		if has {
 			targetCount++
 		}
 	}
 	if targetCount != 1 {
 		return nil, appErrors.New(appErrors.ErrorTypeInvalidRequest, "service.skill_export.target",
-			"必须且只能提供 pill_id、recipe_id(+revision_id) 或 skill 之一")
+			"必须且只能提供 recipe_id(+revision_id) 或 skill 之一")
 	}
 
 	skill := input.Skill
-	switch {
-	case hasRecipe:
+	if hasRecipe {
 		rev, aerr := s.resolveExportRevision(ctx, input)
-		if aerr != nil {
-			return nil, aerr
-		}
-		skill = projectExportRevision(rev)
-	case hasPill:
-		uid, err := uuid.Parse(strings.TrimSpace(input.PillID))
-		if err != nil {
-			return nil, appErrors.New(appErrors.ErrorTypeInvalidRequest, "service.skill_export.pill_id", "非法金丹 ID")
-		}
-		// 旧 pill ID 只经 LegacyMap 解析,不读取可用库存;无映射 → 404 pill.legacy_not_found
-		recipeUUID, aerr := s.inventory.ResolveLegacy(ctx, "pill", uid.String())
-		if aerr != nil {
-			return nil, aerr
-		}
-		rev, aerr := s.currentExportRevision(ctx, recipeUUID)
 		if aerr != nil {
 			return nil, aerr
 		}

@@ -69,7 +69,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 		&model.DaoAgent{}, &model.LanguagePattern{},
 		&model.PillRecipe{}, &model.PillRecipeRevision{}, &model.PillItem{},
 		&model.AgentPillEffect{}, &model.PillOperation{}, &model.FusionPreview{},
-		&model.PillMigrationState{}, &model.PillLegacyMap{}, &model.PillStarterGrant{},
+		&model.PillStarterGrant{},
 	); err != nil {
 		t.Fatalf("迁移测试表失败: %v", err)
 	}
@@ -114,10 +114,6 @@ func setupRouter() *gin.Engine {
 	v1.POST("/fusion/confirm", router.Wrapper(h.ConfirmFusion))
 	// 幂等操作查询（断线恢复）
 	v1.GET("/pill-operations/:id", router.Wrapper(h.GetOperation))
-	// 迁移摘要（任务 8 升级用户展示）
-	v1.GET("/migration-summary", router.Wrapper(h.MigrationSummary))
-	// 旧入口封堵：旧金丹详情仅提供 LegacyMap 跳转
-	v1.GET("/pills/:uuid", router.Wrapper(h.ResolveLegacyPill))
 	return r
 }
 

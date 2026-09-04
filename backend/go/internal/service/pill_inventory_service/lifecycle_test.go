@@ -1,6 +1,6 @@
 // 任务 7 测试：全链路生命周期 + 故障矩阵 + 旧行为回归
 // 覆盖：单条生命周期（炼丹→服用→再炼→融合，库存/能力去向全程断言）、
-// 重开 SQLite 重跑迁移/种子库存不复活、三处写失败点 trigger 回滚
+// 重开 SQLite 重跑种子/赠送库存不复活、三处写失败点 trigger 回滚
 // （效果插入在 consume_test.go TestConsumeTriggerRejection，此处补产物插入与
 // operation 结果写入）、双连接并发矩阵（两个 consume 抢一枚、同 preview 不同 key、
 // 同 key 不同 payload；consume/fusion 抢一枚在 fusion_confirm_test.go 已覆盖）。
@@ -163,19 +163,16 @@ func TestLifecycleConsumeThenCraftThenFusion(t *testing.T) {
 
 // ---------- 2) 重开 SQLite 库存不复活 ----------
 
-// TestReopenSQLiteInventoryPersists 关闭并重开 SQLite，重跑迁移与种子：
-// 迁移幂等跳过、种子查重不重写、启动赠送凭持久化标记不再补货。
+// TestReopenSQLiteInventoryPersists 关闭并重开 SQLite，重跑种子与赠送：
+// 种子查重不重写、启动赠送凭 PillStarterGrant 持久化标记不再补货（赠送幂等）。
 // 这是防止「重启自动复活」的必测项：已消耗实例保持终态，可用库存数量不变。
 func TestReopenSQLiteInventoryPersists(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "reopen.db")
 	fixed := func() time.Time { return confirmFixedNow }
 
-	// 第一程：完整启动链（迁移 → 内置丹方种子 → 一次性赠送）
+	// 第一程：完整启动链（内置丹方种子 → 一次性赠送）
 	db1 := openInventoryDBAt(t, path)
 	svc1 := New(db1, fixed)
-	if err := dao.MigratePillInventory(db1); err != nil {
-		t.Fatalf("迁移: %v", err)
-	}
 	if err := dao.SeedBuiltinRecipes(db1); err != nil {
 		t.Fatalf("内置种子: %v", err)
 	}
@@ -207,11 +204,8 @@ func TestReopenSQLiteInventoryPersists(t *testing.T) {
 	}
 	_ = raw.Close()
 
-	// 第二程：重开 + 重跑同一链
+	// 第二程：重开 + 重跑同一链（种子查重不重写、赠送凭 PillStarterGrant 标记不补货）
 	db2 := openInventoryDBAt(t, path)
-	if err := dao.MigratePillInventory(db2); err != nil {
-		t.Fatalf("二次迁移: %v", err)
-	}
 	if err := dao.SeedBuiltinRecipes(db2); err != nil {
 		t.Fatalf("二次种子: %v", err)
 	}

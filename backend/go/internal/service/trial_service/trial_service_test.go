@@ -17,14 +17,13 @@ import (
 	"github.com/google/uuid"
 )
 
-// fakeInventory 丹方库存读接口桩(试丹只用 GetRecipe/GetRecipeRevision/ResolveLegacy;
+// fakeInventory 丹方库存读接口桩(试丹只用 GetRecipe/GetRecipeRevision;
 // 其余方法由嵌入接口兜底,误用即 nil panic)
 type fakeInventory struct {
 	iservice.PillInventory
 	recipes   map[string]*model.PillRecipe
 	revisions map[string]*model.PillRecipeRevision
 	byUID     map[string]*model.PillRecipeRevision // 版本 UUID 文本 → 版本(当前版本指针已翻转为 UUID 文本)
-	legacy    map[string]uuid.UUID                 // "kind:legacyID" -> 目标 UUID
 }
 
 func (f *fakeInventory) GetRecipe(ctx context.Context, uid uuid.UUID) (*model.PillRecipe, *model.PillRecipeRevision, appErrors.Error) {
@@ -46,14 +45,6 @@ func (f *fakeInventory) GetRecipeRevision(ctx context.Context, recipeID, revisio
 		return nil, appErrors.ErrorRecordNotFound("recipe.revision_not_found")
 	}
 	return rev, nil
-}
-
-func (f *fakeInventory) ResolveLegacy(ctx context.Context, kind, legacyID string) (uuid.UUID, appErrors.Error) {
-	target, ok := f.legacy[kind+":"+legacyID]
-	if !ok {
-		return uuid.Nil, appErrors.ErrorRecordNotFound("pill.legacy_not_found")
-	}
-	return target, nil
 }
 
 type fakeSynth struct {
@@ -99,10 +90,9 @@ func (f *fakeHTTP) Do(req *http.Request) (*http.Response, error) {
 // ---------- 夹具 ----------
 
 const (
-	legacyPillUUID = "550e8400-e29b-41d4-a716-446655440000"
-	recipeUUIDStr  = "11111111-1111-4111-8111-111111111111"
-	rev1UUIDStr    = "22222222-2222-4222-8222-222222222222"
-	rev2UUIDStr    = "33333333-3333-4333-8333-333333333333"
+	recipeUUIDStr = "11111111-1111-4111-8111-111111111111"
+	rev1UUIDStr   = "22222222-2222-4222-8222-222222222222"
+	rev2UUIDStr   = "33333333-3333-4333-8333-333333333333"
 )
 
 // trialMarkerSchema 带全部已知字段 + 未知字段标记的能力内容
@@ -129,7 +119,7 @@ var trialMarkers = []string{
 	"HONEST_LIMIT_MARKER", "UNKNOWN_FIELD_MARKER",
 }
 
-// trialInventory 造一份丹方: v1/v2 两个版本,当前指向 v2;旧 pill ID 映射到该丹方
+// trialInventory 造一份丹方: v1/v2 两个版本,当前指向 v2
 func trialInventory() *fakeInventory {
 	recipeUUID := uuid.MustParse(recipeUUIDStr)
 	recipeID := uint(1)
@@ -147,7 +137,6 @@ func trialInventory() *fakeInventory {
 		recipes:   map[string]*model.PillRecipe{recipeUID: {ID: recipeID, UUID: recipeUUID, CurrentRevisionID: &curUID}},
 		revisions: map[string]*model.PillRecipeRevision{rev1UUIDStr: rev1, rev2UUIDStr: rev2},
 		byUID:     map[string]*model.PillRecipeRevision{rev1UUIDStr: rev1, rev2UUIDStr: rev2},
-		legacy:    map[string]uuid.UUID{"pill:" + legacyPillUUID: recipeUUID},
 	}
 }
 
@@ -274,21 +263,6 @@ func TestSynthesizeFromSpecifiedRevision(t *testing.T) {
 	}
 }
 
-// TestSynthesizeFromLegacyPill 旧 pill_id 只经 LegacyMap 解析到丹方当前版本(不读取可用库存)
-func TestSynthesizeFromLegacyPill(t *testing.T) {
-	svc := newTrialService(trialInventory(), &fakeSynth{resp: &synthesis.CombineResponse{}})
-
-	result, err := svc.Synthesize(context.Background(), "沉稳内敛", []iservice.TrialPillInput{
-		{PillID: uuid.MustParse(legacyPillUUID), SortOrder: 0},
-	}, "")
-	if err != nil {
-		t.Fatalf("Synthesize: %v", err)
-	}
-	if !strings.Contains(result.SystemPrompt, "V2_MARKER") {
-		t.Error("旧 pill_id 应解析到当前版本 v2")
-	}
-}
-
 // TestSynthesizeFromDraft 未保存草稿内联内容试丹:不查询库存
 func TestSynthesizeFromDraft(t *testing.T) {
 	// 空库存:若服务误走 DB 路径必然 404,草稿模式必须完全内联
@@ -334,15 +308,15 @@ func TestSynthesizeRejectsRevisionWithoutRecipe(t *testing.T) {
 	}
 }
 
-// TestSynthesizeLegacyPillUnmapped 旧 pill_id 无映射 → 404(服务层透传,不猜测默认内容)
-func TestSynthesizeLegacyPillUnmapped(t *testing.T) {
+// TestSynthesizeUnknownRecipe recipe_id 不存在 → 404(服务层透传,不猜测默认内容)
+func TestSynthesizeUnknownRecipe(t *testing.T) {
 	svc := newTrialService(trialInventory(), &fakeSynth{resp: &synthesis.CombineResponse{}})
 
 	_, err := svc.Synthesize(context.Background(), "沉稳内敛", []iservice.TrialPillInput{
-		{PillID: uuid.New(), SortOrder: 0},
+		{RecipeID: uuid.New(), SortOrder: 0},
 	}, "")
 	if err == nil {
-		t.Fatal("无映射旧金丹应报错")
+		t.Fatal("不存在的丹方应报错")
 	}
 	if appErrors.HTTPStatus(err) != 404 {
 		t.Errorf("HTTP 状态 = %d, want 404", appErrors.HTTPStatus(err))

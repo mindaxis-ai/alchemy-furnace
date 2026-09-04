@@ -26,10 +26,9 @@ func New(trial service.Trial) *Trial {
 // ---------- 请求/响应 DTO ----------
 
 // PillInput 试丹请求中的单颗金丹引用(任务 5 消耗品重构后)
-// 三选一: pill_id(旧金丹,仅经 LegacyMap 解析)/ recipe_id(+revision_id 指定版本)/ 草稿(name+skill_schema)。
+// 二选一: recipe_id(+revision_id 指定版本)/ 草稿(name+skill_schema)。
 // 试丹是模拟: 不消耗金丹、不写 AgentPillEffect。
 type PillInput struct {
-	PillID      string        `json:"pill_id"`
 	RecipeID    string        `json:"recipe_id"`
 	RevisionID  string        `json:"revision_id"`
 	Name        string        `json:"name"`
@@ -58,27 +57,20 @@ func parsePillInputs(inputs []PillInput) ([]service.TrialPillInput, errors.Error
 			return nil, errors.New(errors.ErrorTypeInvalidRequest, "handler.trial.revision_requires_recipe",
 				"第%d颗金丹: 指定版本必须携带所属丹方 recipe_id", i+1)
 		}
-		hasPill, hasRecipe, hasDraft := in.PillID != "", in.RecipeID != "", in.Name != "" || in.SkillSchema != nil
+		hasRecipe, hasDraft := in.RecipeID != "", in.Name != "" || in.SkillSchema != nil
 		targetCount := 0
-		for _, has := range []bool{hasPill, hasRecipe, hasDraft} {
+		for _, has := range []bool{hasRecipe, hasDraft} {
 			if has {
 				targetCount++
 			}
 		}
 		if targetCount != 1 {
 			return nil, errors.New(errors.ErrorTypeInvalidRequest, "handler.trial.input_target",
-				"第%d颗金丹必须且只能提供 pill_id、recipe_id(+revision_id) 或草稿之一", i+1)
+				"第%d颗金丹必须且只能提供 recipe_id(+revision_id) 或草稿之一", i+1)
 		}
 
 		item := service.TrialPillInput{Weight: in.Weight, SortOrder: in.SortOrder}
-		switch {
-		case hasPill:
-			uid, err := uuid.Parse(in.PillID)
-			if err != nil {
-				return nil, errors.New(errors.ErrorTypeInvalidRequest, "handler.trial.pill_id_parse", "第%d颗金丹ID格式不正确", i+1)
-			}
-			item.PillID = uid
-		case hasRecipe:
+		if hasRecipe {
 			rid, err := uuid.Parse(in.RecipeID)
 			if err != nil {
 				return nil, errors.New(errors.ErrorTypeInvalidRequest, "handler.trial.recipe_id_parse", "第%d颗丹方ID格式不正确", i+1)
@@ -91,7 +83,7 @@ func parsePillInputs(inputs []PillInput) ([]service.TrialPillInput, errors.Error
 				}
 				item.RevisionID = vid
 			}
-		default:
+		} else {
 			name := strings.TrimSpace(in.Name)
 			if name == "" || in.SkillSchema == nil {
 				return nil, errors.New(errors.ErrorTypeInvalidRequest, "handler.trial.draft_invalid",
