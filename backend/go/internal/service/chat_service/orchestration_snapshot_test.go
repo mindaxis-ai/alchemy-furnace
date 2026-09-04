@@ -222,6 +222,33 @@ func TestBuildOrchestrationRequestExcludesUserTurnAndSystemFromHistory(t *testin
 	}
 }
 
+// 空快照上线契约:全新会话(库中只有本轮消息)的历史/记忆为空时必须上线为 []
+// 而非 null——Python 必填 list/dict 字段拒收 null(2026-09-03 全新单聊会话首条
+// 消息 8 连 422 的根因回归锚点);字段亦不得因 omitempty 静默缺席。
+func TestBuildOrchestrationRequestWireNeverEmitsNullForEmptySnapshots(t *testing.T) {
+	svc, chats, byName, _, _ := buildSnapshotFixture(t)
+	agent := *byName["li"]
+	session := &model.ChatSession{ID: 2, UUID: uuid.New(), Type: model.SessionTypeSingle, AgentID: &agent.ID, Agent: agent}
+	userMessage := &model.ChatMessage{ID: 1, UUID: uuid.New(), SessionID: session.ID, Role: "user", Content: "你好"}
+	chats.messages = []*model.ChatMessage{userMessage}
+
+	req, err := svc.BuildOrchestrationRequest(context.Background(), session, userMessage, snapshotRun(session))
+	if err != nil {
+		t.Fatalf("BuildOrchestrationRequest: %v", err)
+	}
+	raw := mustJSON(t, req)
+	for _, field := range []string{"history_snapshot", "agent_snapshots", "memory_snapshots", "credentials"} {
+		if strings.Contains(raw, `"`+field+`":null`) {
+			t.Fatalf("%s marshals as null on the wire, want []/{}: %s", field, raw)
+		}
+	}
+	for _, want := range []string{`"history_snapshot":[]`, `"memory_snapshots":[]`} {
+		if !strings.Contains(raw, want) {
+			t.Fatalf("missing %s on the wire: %s", want, raw)
+		}
+	}
+}
+
 // 模型停用:快照构建失败,不产出可执行请求。
 func TestBuildOrchestrationRequestFailsOnInactiveModel(t *testing.T) {
 	svc, _, _, session, userMessage := buildSnapshotFixture(t)

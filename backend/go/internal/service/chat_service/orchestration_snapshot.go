@@ -53,6 +53,11 @@ func (s *Chat) BuildOrchestrationRequest(ctx context.Context, session *model.Cha
 			Text:      userMessage.Content,
 			Mentions:  mentionsFromSnapshot(userMessage.Mentions),
 		},
+		// 空快照必须初始化为空 slice/map:Python 契约对必填 list 拒收 null,
+		// nil 切片会序列化为 null 导致全新会话首条消息 422。
+		History:      []orchestration.Message{},
+		Agents:       []orchestration.Agent{},
+		Memories:     []orchestration.Memory{},
 		Credentials:  map[string]orchestration.Credential{},
 		DebugEnabled: promptDebugEnabled(ctx),
 	}
