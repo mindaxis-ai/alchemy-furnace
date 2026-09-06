@@ -151,7 +151,7 @@ func (s *Fusion) PreviewFusion(ctx context.Context, req service.PreviewFusionReq
 			"id":   resp.Operator.ID,
 			"name": resp.Operator.Name,
 		},
-		CreatedAt: now,
+		Base:      model.Base{CreatedAt: now},
 		ExpiresAt: now.Add(previewTTL),
 	}
 	if req.ExcludeOperatorID != "" {

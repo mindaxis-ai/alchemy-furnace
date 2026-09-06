@@ -96,7 +96,7 @@ func (s *Inventory) Consume(ctx context.Context, req service.ConsumePillRequest)
 				SchemaSnapshot:   deepCopySchema(rev.SkillSchema),
 				Weight:           weight,
 				SortOrder:        sortOrder,
-				CreatedAt:        s.now(),
+				Base:             model.Base{CreatedAt: s.now()},
 			}
 			if err := dao.CreateAgentPillEffect(tx, ef); err != nil {
 				if isActiveEffectUniqueViolation(err) {

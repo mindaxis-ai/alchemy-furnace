@@ -104,7 +104,7 @@ func (s *Inventory) ConfirmFusion(ctx context.Context, req service.ConfirmFusion
 					"金丹不可用（并发冲突），请重新生成预览")
 			}
 			// 7) 建新丹方 + 不可变 v1 + 一枚产物（schema 深拷贝自预览输出，不共享引用）
-			recipe := &model.PillRecipe{CreatedAt: s.now()}
+			recipe := &model.PillRecipe{Base: model.Base{CreatedAt: s.now()}}
 			if err := dao.CreatePillRecipe(tx, recipe); err != nil {
 				return nil, err
 			}
@@ -121,7 +121,7 @@ func (s *Inventory) ConfirmFusion(ctx context.Context, req service.ConfirmFusion
 				SkillSchema:  model.JSONMap(schema),
 				Tags:         model.JSONList{},
 				VersionLabel: "1.0.0",
-				CreatedAt:    s.now(),
+				Base:         model.Base{CreatedAt: s.now()},
 			}
 			if err := dao.CreatePillRecipeRevision(tx, rev); err != nil {
 				return nil, err
@@ -134,7 +134,7 @@ func (s *Inventory) ConfirmFusion(ctx context.Context, req service.ConfirmFusion
 				State:             model.PillAvailable,
 				OriginOperationID: op.PillOperationID,
 				OriginIndex:       0,
-				CreatedAt:         s.now(),
+				Base:              model.Base{CreatedAt: s.now()},
 			}
 			if err := dao.CreatePillItem(tx, item); err != nil {
 				return nil, err

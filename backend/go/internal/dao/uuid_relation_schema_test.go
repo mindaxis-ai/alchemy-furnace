@@ -1,9 +1,11 @@
-// 修订轮 schema 契约:业务实体主键统一为 <EntityID> text(uuid.UUID.String()),
-// 无内部自增 id、无独立 uuid 列;全部跨表关系为 text 列引用父实体业务主键
+// schema 契约(#52 gorm.Model 落地):业务实体物理主键为 Base.ID uint 自增(gorm.Model 约定,
+// 业务代码暂不使用),业务身份由 <EntityID> text(uuid.UUID.String())唯一业务键承载;
+// 全部跨表关系为 text 列引用父实体业务键
 // (specs/011 修订轮裁决:本质上是每个实体的唯一标识都是 uuid.UUID.String())。
 package dao
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -38,17 +40,21 @@ var businessEntities = []struct {
 	{"fusion_previews", "fusion_preview_id", &model.FusionPreview{}},
 }
 
-// TestBusinessEntitiesUseUUIDTextPrimaryKey 每个业务实体表必须以 <entity>_id
-// text 为唯一主键列;内部自增 id 与独立 uuid 列必须已删除。
-func TestBusinessEntitiesUseUUIDTextPrimaryKey(t *testing.T) {
+// TestBusinessEntitiesUseUUIDTextBusinessKey 每个业务实体表必须有 <entity>_id text
+// 唯一业务键(FK 目标资格)与 Base.ID uint 自增物理主键(gorm.Model 约定,暂不使用);
+// 不允许出现独立 uuid 列。
+func TestBusinessEntitiesUseUUIDTextBusinessKey(t *testing.T) {
 	db := newSQLiteTestDB(t, filepath.Join(t.TempDir(), "uuid-schema.db"))
 	require.NoError(t, db.AutoMigrate(allMigratableModels...))
 
 	for _, ent := range businessEntities {
 		t.Run(ent.name, func(t *testing.T) {
-			require.True(t, db.Migrator().HasColumn(ent.model, ent.pk), "%s 缺业务主键列 %s", ent.name, ent.pk)
-			require.False(t, db.Migrator().HasColumn(ent.model, "id"), "%s 不应再有内部自增主键列 id", ent.name)
-			require.False(t, db.Migrator().HasColumn(ent.model, "uuid"), "%s 不应再有独立 uuid 列", ent.name)
+			require.True(t, db.Migrator().HasColumn(ent.model, ent.pk), "%s 缺业务键列 %s", ent.name, ent.pk)
+			require.True(t, db.Migrator().HasColumn(ent.model, "id"), "%s 缺内部自增主键列 id(gorm.Model 约定)", ent.name)
+			require.False(t, db.Migrator().HasColumn(ent.model, "uuid"), "%s 不应有独立 uuid 列", ent.name)
+			// 业务键必须带唯一索引(GORM 默认名 idx_<table>_<column>)
+			uniqueIdx := fmt.Sprintf("idx_%s_%s", ent.name, ent.pk)
+			require.True(t, db.Migrator().HasIndex(ent.model, uniqueIdx), "%s 业务键列 %s 缺唯一索引 %s", ent.name, ent.pk, uniqueIdx)
 		})
 	}
 }
@@ -89,11 +95,49 @@ func TestForeignKeysReferenceBusinessKey(t *testing.T) {
 	require.Error(t, err, "不存在的 uuid 文本不得作为 agent_pills 关系值")
 	require.Contains(t, err.Error(), "FOREIGN KEY", "拒绝原因应为外键约束")
 
-	// 3) 删除父实体(按业务主键定位):关联行级联删除
-	require.NoError(t, db.Where("dao_agent_id = ?", agent.DaoAgentID).Delete(&model.DaoAgent{}).Error)
+	// 3) 物理删除父实体(按业务主键定位,Unscoped):关联行级联删除;
+	//    gorm 软删(写 deleted_at)保留行与关系,不触发级联
+	require.NoError(t, db.Unscoped().Where("dao_agent_id = ?", agent.DaoAgentID).Delete(&model.DaoAgent{}).Error)
 	var remain int64
 	require.NoError(t, db.Table("agent_pills").Where("agent_id = ?", agent.DaoAgentID).Count(&remain).Error)
 	require.Zero(t, remain, "删除父实体后以业务主键关联的服用记录应级联删除")
+}
+
+// TestSoftDeletedProviderNameReusable 软删 + 部分唯一索引契约(#52):
+// llm_providers.name 的唯一索引带 where deleted_at IS NULL——软删供应商释放名称,
+// 同名可重建;若索引退化为全行唯一则本测试失败。
+func TestSoftDeletedProviderNameReusable(t *testing.T) {
+	db := newSQLiteTestDB(t, filepath.Join(t.TempDir(), "softdelete-provider.db"))
+	require.NoError(t, db.AutoMigrate(allMigratableModels...))
+
+	first := &model.LLMProvider{Name: "同名供应商", DisplayName: "同名", BaseURL: "http://localhost:9"}
+	require.NoError(t, db.Create(first).Error)
+	require.NoError(t, db.Delete(first).Error, "provider 删除应为软删(写 deleted_at)")
+
+	second := &model.LLMProvider{Name: "同名供应商", DisplayName: "同名", BaseURL: "http://localhost:9"}
+	require.NoError(t, db.Create(second).Error, "软删后同名供应商应可重建(部分唯一索引 where deleted_at IS NULL)")
+
+	// 存活同名仍互斥(部分唯一索引对未删行生效)
+	third := &model.LLMProvider{Name: "同名供应商", DisplayName: "同名", BaseURL: "http://localhost:9"}
+	require.Error(t, db.Create(third).Error, "未软删时同名供应商必须被唯一索引拒绝")
+}
+
+// TestSoftDeletedDefaultModelFlagReleased 软删 + 标志位部分唯一索引契约(#52):
+// 默认模型软删后,标志位部分唯一索引(排除 deleted_at IS NOT NULL 行)必须释放槽位——
+// 应能新建另一枚 is_default 模型;若墓碑仍占槽则本测试失败。
+func TestSoftDeletedDefaultModelFlagReleased(t *testing.T) {
+	db := newSQLiteTestDB(t, filepath.Join(t.TempDir(), "softdelete-model.db"))
+	require.NoError(t, db.AutoMigrate(allMigratableModels...))
+
+	provider := &model.LLMProvider{Name: "p", DisplayName: "p", BaseURL: "http://localhost:9"}
+	require.NoError(t, db.Create(provider).Error)
+
+	first := &model.LLMModel{ProviderID: provider.LLMProviderID, Name: "m1", DisplayName: "m1", IsDefault: true}
+	require.NoError(t, db.Create(first).Error)
+	require.NoError(t, db.Delete(first).Error, "模型删除应为软删(写 deleted_at)")
+
+	second := &model.LLMModel{ProviderID: provider.LLMProviderID, Name: "m2", DisplayName: "m2", IsDefault: true}
+	require.NoError(t, db.Create(second).Error, "软删默认模型后应能新建默认模型(标志位部分唯一索引须排除软删行)")
 }
 
 // TestRelationColumnsUseUUIDType 关系列数据库类型必须为文本语义(SQLite 下

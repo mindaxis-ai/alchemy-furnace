@@ -41,7 +41,7 @@ func (s *Inventory) CraftOne(ctx context.Context, req service.CraftPillRequest) 
 				State:             model.PillAvailable,
 				OriginOperationID: op.PillOperationID,
 				OriginIndex:       0,
-				CreatedAt:         s.now(),
+				Base:              model.Base{CreatedAt: s.now()},
 			}
 			if err := dao.CreatePillItem(tx, item); err != nil {
 				return nil, err

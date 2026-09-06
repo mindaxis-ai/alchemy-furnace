@@ -63,7 +63,7 @@ func seedFusionPreview(t *testing.T, db *gorm.DB, svc *Inventory, itemUUIDs ...u
 		InputHash:        FusionInputHash(itemUUIDs), // 与真实预览流程（fusion_service）同一哈希算法
 		OutputJSON:       model.JSONMap{"name": "融合新丹", "description": "d", "skill_schema": minSchema(), "degraded": false},
 		OperatorSnapshot: model.JSONMap{"id": "dialectic", "name": "对立调和"},
-		CreatedAt:        svc.now(),
+		Base:             model.Base{CreatedAt: svc.now()},
 		ExpiresAt:        svc.now().Add(15 * time.Minute),
 	}
 	if err := db.Create(p).Error; err != nil {

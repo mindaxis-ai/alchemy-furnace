@@ -83,9 +83,9 @@ func (d *MemoryDao) DeleteMemory(ctx context.Context, memoryUID string) errors.E
 	return nil
 }
 
-// DeleteMemoriesByAgent 物理清空道人全部记忆
+// DeleteMemoriesByAgent 物理清空道人全部记忆(spec §10.2,Unscoped 不走 gorm 软删)
 func (d *MemoryDao) DeleteMemoriesByAgent(ctx context.Context, agentID string) (int64, errors.Error) {
-	result := GetDB().WithContext(ctx).Where("agent_id = ?", agentID).Delete(&model.AgentMemory{})
+	result := GetDB().WithContext(ctx).Where("agent_id = ?", agentID).Unscoped().Delete(&model.AgentMemory{})
 	if result.Error != nil {
 		return 0, errors.ErrorServerInternalError("dao.memory.delete_by_agent")
 	}

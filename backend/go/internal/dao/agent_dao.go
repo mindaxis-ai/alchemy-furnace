@@ -93,9 +93,10 @@ func (d *AgentDao) UpdateAgent(ctx context.Context, agent *model.DaoAgent, updat
 	return nil
 }
 
-// DeleteAgent 删除道人
+// DeleteAgent 删除道人(物理删除:service 层已挡有历史道人只能沉睡;
+// Unscoped 使 FK 级联照旧清理能力快照/语言模式缓存/旧 junction,不走 gorm 软删)
 func (d *AgentDao) DeleteAgent(ctx context.Context, agent *model.DaoAgent) errors.Error {
-	if err := GetDB().WithContext(ctx).Delete(agent).Error; err != nil {
+	if err := GetDB().WithContext(ctx).Unscoped().Delete(agent).Error; err != nil {
 		return errors.ErrorServerInternalError("dao.agent.delete_agent")
 	}
 	return nil
@@ -158,8 +159,8 @@ func (d *AgentDao) FindPillsByAgentID(ctx context.Context, agentUID string) ([]*
 // 任一步失败由 GORM Transaction 回滚,旧关系与缓存状态保持不变
 func (d *AgentDao) ReplaceAgentPills(ctx context.Context, agentUID string, pills []idao.AgentPillInput) errors.Error {
 	txErr := GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// 1) 删除旧关系
-		if err := tx.Where("agent_id = ?", agentUID).Delete(&model.AgentPill{}).Error; err != nil {
+		// 1) 删除旧关系(junction 表物理删除:软删墓碑会被 idx_agent_pill 唯一约束挡住重新绑定)
+		if err := tx.Where("agent_id = ?", agentUID).Unscoped().Delete(&model.AgentPill{}).Error; err != nil {
 			return err
 		}
 		// 2) 校验 + 按请求顺序批量写新关系(sort_order 从 1 开始)

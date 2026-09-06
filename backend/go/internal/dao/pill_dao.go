@@ -90,10 +90,12 @@ func (d *PillDao) UpdatePill(ctx context.Context, pill *model.ElixirPill, update
 // DeletePill 删除金丹及服用记录(事务)
 func (d *PillDao) DeletePill(ctx context.Context, pill *model.ElixirPill) errors.Error {
 	if err := Transaction(func(tx *gorm.DB) error {
-		if err := tx.WithContext(ctx).Where("pill_id = ?", pill.ElixirPillID).Delete(&model.AgentPill{}).Error; err != nil {
+		// agent_pills 是 junction 表:物理删除(软删墓碑会被 idx_agent_pill 唯一约束挡住重新绑定)
+		if err := tx.WithContext(ctx).Where("pill_id = ?", pill.ElixirPillID).Unscoped().Delete(&model.AgentPill{}).Error; err != nil {
 			return err
 		}
-		return tx.WithContext(ctx).Delete(pill).Error
+		// 金丹本体物理删除(既有硬删语义;junction 已在上面显式清理)
+		return tx.WithContext(ctx).Unscoped().Delete(pill).Error
 	}); err != nil {
 		return errors.ErrorServerInternalError("dao.pill.delete_pill")
 	}

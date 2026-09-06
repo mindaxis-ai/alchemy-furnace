@@ -397,7 +397,7 @@ func fakeRecipeAndRevision() (*model.PillRecipe, *model.PillRecipeRevision) {
 		Description:          "一份结构化的语言风格技能包",
 		SkillSchema:          model.JSONMap{"identity_card": "我是金丹"},
 		Tags:                 model.JSONList{"语言"},
-		CreatedAt:            time.Date(2026, 8, 27, 10, 0, 0, 0, time.UTC),
+		Base:                 model.Base{CreatedAt: time.Date(2026, 8, 27, 10, 0, 0, 0, time.UTC)},
 	}
 	revUID := rev.PillRecipeRevisionID
 	recipe.CurrentRevisionID = &revUID

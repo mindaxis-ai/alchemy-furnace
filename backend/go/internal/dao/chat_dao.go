@@ -96,9 +96,9 @@ func (d *ChatDao) UpdateSession(ctx context.Context, session *model.ChatSession,
 	return nil
 }
 
-// DeleteSession 删除会话(消息由 FK CASCADE 清理)
+// DeleteSession 删除会话(物理删除:消息/成员由 FK CASCADE 清理,不走 gorm 软删)
 func (d *ChatDao) DeleteSession(ctx context.Context, session *model.ChatSession) errors.Error {
-	if err := GetDB().WithContext(ctx).Delete(session).Error; err != nil {
+	if err := GetDB().WithContext(ctx).Unscoped().Delete(session).Error; err != nil {
 		return errors.ErrorServerInternalError("dao.chat.delete_session")
 	}
 	return nil
@@ -216,9 +216,10 @@ func (d *ChatDao) FindMembersBySessionIDs(ctx context.Context, sessionIDs []stri
 
 // DeleteMember 移出群成员
 func (d *ChatDao) DeleteMember(ctx context.Context, sessionUUID string, agentUUID string) errors.Error {
+	// session_members 是 junction 表:物理删除(软删墓碑会被 idx_session_agent 唯一约束挡住重新入群)
 	res := GetDB().WithContext(ctx).
 		Where("session_id = ? AND agent_id = ?", sessionUUID, agentUUID).
-		Delete(&model.SessionMember{})
+		Unscoped().Delete(&model.SessionMember{})
 	if res.Error != nil {
 		return errors.ErrorServerInternalError("dao.chat.delete_member")
 	}

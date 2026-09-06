@@ -31,7 +31,7 @@ func (s *Inventory) SaveRecipe(ctx context.Context, req service.SaveRecipeReques
 	}
 	return s.runOperation(ctx, req.OperationID, "save_recipe", saveRecipeHash(req),
 		func(tx *gorm.DB, op *model.PillOperation) (*service.PillOperationResult, error) {
-			recipe := &model.PillRecipe{CreatedAt: s.now()}
+			recipe := &model.PillRecipe{Base: model.Base{CreatedAt: s.now()}}
 			if err := dao.CreatePillRecipe(tx, recipe); err != nil {
 				return nil, err
 			}
@@ -44,7 +44,7 @@ func (s *Inventory) SaveRecipe(ctx context.Context, req service.SaveRecipeReques
 				Tags:         deepCopyList(req.Draft.Tags),
 				Author:       req.Draft.Author,
 				VersionLabel: orDefault(req.Draft.VersionLabel, "1.0.0"),
-				CreatedAt:    s.now(),
+				Base:         model.Base{CreatedAt: s.now()},
 			}
 			if err := dao.CreatePillRecipeRevision(tx, rev); err != nil {
 				return nil, err
@@ -63,7 +63,7 @@ func (s *Inventory) SaveRecipe(ctx context.Context, req service.SaveRecipeReques
 					State:             model.PillAvailable,
 					OriginOperationID: op.PillOperationID,
 					OriginIndex:       0,
-					CreatedAt:         s.now(),
+					Base:              model.Base{CreatedAt: s.now()},
 				}
 				if err := dao.CreatePillItem(tx, item); err != nil {
 					return nil, err
@@ -121,7 +121,7 @@ func (s *Inventory) UpdateRecipe(ctx context.Context, req service.UpdateRecipeRe
 				Tags:         deepCopyList(req.Draft.Tags),
 				Author:       req.Draft.Author,
 				VersionLabel: orDefault(req.Draft.VersionLabel, current.VersionLabel),
-				CreatedAt:    s.now(),
+				Base:         model.Base{CreatedAt: s.now()},
 			}
 			if err := dao.CreatePillRecipeRevision(tx, rev); err != nil {
 				return nil, err

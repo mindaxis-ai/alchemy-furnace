@@ -116,7 +116,7 @@ func TestChatDaoFindMessagesPagesBackwardFromNewestAndPresentsAscending(t *testi
 			SessionID:     session.ChatSessionID,
 			Role:          "assistant",
 			Content:       fmt.Sprintf("message-%02d", i),
-			CreatedAt:     base.Add(time.Duration(i) * time.Second),
+			Base:          model.Base{CreatedAt: base.Add(time.Duration(i) * time.Second)},
 		})
 	}
 	if err := DB.Create(&messages).Error; err != nil {
