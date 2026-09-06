@@ -36,7 +36,7 @@ type Response struct {
 // ToResponse 内部模型 → 对外 DTO(导出供 agent 详情等跨包嵌入)
 func ToResponse(p *model.ElixirPill) *Response {
 	return &Response{
-		ID:          p.UUID.String(),
+		ID:          p.ElixirPillID,
 		Name:        p.Name,
 		Description: p.Description,
 		SkillSchema: p.SkillSchema,

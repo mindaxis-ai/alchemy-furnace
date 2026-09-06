@@ -23,7 +23,7 @@ func (s *Agent) ListEffects(ctx context.Context, agentUID uuid.UUID) ([]*service
 	if err != nil {
 		return nil, 0, err.Relation(errors.ErrorRecordNotFound("service.agent.list_effects_take"))
 	}
-	effects, err := s.agent.ListActiveEffects(ctx, agent.UUID.String())
+	effects, err := s.agent.ListActiveEffects(ctx, agent.DaoAgentID)
 	if err != nil {
 		return nil, 0, err.Relation(errors.ErrorServerInternalError("service.agent.list_effects"))
 	}
@@ -48,7 +48,7 @@ func (s *Agent) UpdateEffects(ctx context.Context, agentUID uuid.UUID, expectedE
 	if err != nil {
 		return nil, err.Relation(errors.ErrorRecordNotFound("service.agent.update_effects_take"))
 	}
-	active, err := s.agent.ListActiveEffects(ctx, agent.UUID.String())
+	active, err := s.agent.ListActiveEffects(ctx, agent.DaoAgentID)
 	if err != nil {
 		return nil, err.Relation(errors.ErrorServerInternalError("service.agent.update_effects_list"))
 	}
@@ -60,9 +60,9 @@ func (s *Agent) UpdateEffects(ctx context.Context, agentUID uuid.UUID, expectedE
 	writes := make([]idao.EffectWrite, 0, len(items))
 	for _, it := range items {
 		for _, ef := range active {
-			if ef.Effect.UUID == it.EffectID {
+			if ef.Effect.AgentPillEffectID == it.EffectID.String() {
 				writes = append(writes, idao.EffectWrite{
-					EffectUUID: ef.Effect.UUID.String(),
+					EffectUUID: ef.Effect.AgentPillEffectID,
 					Weight:     it.Weight,
 					SortOrder:  it.SortOrder,
 				})
@@ -71,7 +71,7 @@ func (s *Agent) UpdateEffects(ctx context.Context, agentUID uuid.UUID, expectedE
 		}
 	}
 
-	ok, err := s.agent.UpdateActiveEffectsCAS(ctx, agent.UUID.String(), expectedEffectsRevision, writes)
+	ok, err := s.agent.UpdateActiveEffectsCAS(ctx, agent.DaoAgentID, expectedEffectsRevision, writes)
 	if err != nil {
 		return nil, err
 	}
@@ -93,18 +93,18 @@ func validateEffectSet(active []idao.EffectWithSource, items []service.EffectUpd
 		return errors.ErrorConflict("service.agent.effects_conflict",
 			"提交的能力集合与当前活跃能力不一致")
 	}
-	activeSet := make(map[uuid.UUID]struct{}, len(active))
+	activeSet := make(map[string]struct{}, len(active))
 	for _, ef := range active {
-		activeSet[ef.Effect.UUID] = struct{}{}
+		activeSet[ef.Effect.AgentPillEffectID] = struct{}{}
 	}
-	seen := make(map[uuid.UUID]struct{}, len(items))
+	seen := make(map[string]struct{}, len(items))
 	for _, it := range items {
-		if _, dup := seen[it.EffectID]; dup {
+		if _, dup := seen[it.EffectID.String()]; dup {
 			return errors.ErrorConflict("service.agent.effects_conflict",
 				"提交的能力集合与当前活跃能力不一致")
 		}
-		seen[it.EffectID] = struct{}{}
-		if _, exists := activeSet[it.EffectID]; !exists {
+		seen[it.EffectID.String()] = struct{}{}
+		if _, exists := activeSet[it.EffectID.String()]; !exists {
 			return errors.ErrorConflict("service.agent.effects_conflict",
 				"提交的能力集合与当前活跃能力不一致")
 		}
@@ -120,7 +120,7 @@ func (s *Agent) RemoveEffect(ctx context.Context, agentUID uuid.UUID, effectUUID
 	if err != nil {
 		return err.Relation(errors.ErrorRecordNotFound("service.agent.remove_effect_take"))
 	}
-	if err := s.agent.RemoveAgentPillEffectByUUID(ctx, agent.UUID.String(), effectUUID, time.Now()); err != nil {
+	if err := s.agent.RemoveAgentPillEffectByUUID(ctx, agent.DaoAgentID, effectUUID, time.Now()); err != nil {
 		return err
 	}
 	zap.L().Info("[炼丹炉] 道人移除已吸收能力",

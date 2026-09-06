@@ -64,7 +64,7 @@ func NewPromptDebugPayload(agentID, agentName, modelName string, messages []map[
 }
 
 // Chat 对话域业务逻辑接口(会话/消息/SSE 流式对话)
-// 对外以 UUID 标识会话;内部联结仍用自增 ID。SSE 入口按 session UUID 解析
+// 对外以 UUID 文本标识会话/道人;主键统一 uuid 文本。SSE 入口按 session UUID 解析
 type Chat interface {
 	// GetReadiness 汇总可发起正式对话的道人就绪状态;仅道人列表读取失败才返回错误
 	GetReadiness(ctx context.Context) (*ChatReadiness, errors.Error)
@@ -82,7 +82,7 @@ type Chat interface {
 	// TakeLatestUserMessage 查询会话最新用户消息，不受历史列表分页影响;sessionUID 为会话 UUID 文本。
 	TakeLatestUserMessage(ctx context.Context, sessionUID string) (*model.ChatMessage, errors.Error)
 
-	// GetSessionAgentInfo 按会话 UUID 取会话(预加载道人),供 SSE 构建对话请求(session.ID/AgentID/Agent.ModelName)
+	// GetSessionAgentInfo 按会话 UUID 取会话(预加载道人),供 SSE 构建对话请求(ChatSessionID/AgentID/Agent.ModelName)
 	GetSessionAgentInfo(ctx context.Context, sessionUID uuid.UUID) (*model.ChatSession, errors.Error)
 
 	// GetOrBuildPattern 获取道人语言模式(委托 LanguagePatternProvider);agentUID 为道人 UUID 文本

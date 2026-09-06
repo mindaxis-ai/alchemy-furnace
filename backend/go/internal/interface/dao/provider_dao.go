@@ -1,4 +1,4 @@
-// Package dao 供应商数据访问接口(新架构 internal 分层;UUID 边界在实现层解析)
+// Package dao 供应商数据访问接口(新架构 internal 分层;对外标识为 uuid 文本业务键,入参 uid 仍为 uuid.UUID 类型)
 package dao
 
 import (
@@ -21,7 +21,7 @@ type Provider interface {
 	UpdateProvider(ctx context.Context, provider *model.LLMProvider, updates map[string]any) errors.Error
 	// DeleteProvider 删除供应商
 	DeleteProvider(ctx context.Context, provider *model.LLMProvider) errors.Error
-	// CountModelsByProvider 统计供应商下模型数量(删除前引用检查);providerUID 为供应商 UUID 文本,直接匹配 llm_models.provider_id
+	// CountModelsByProvider 统计供应商下模型数量(删除前引用检查);providerUID 为供应商业务键文本,直接匹配 llm_models.provider_id
 	CountModelsByProvider(ctx context.Context, providerUID string) (int64, errors.Error)
 	// CountProvidersByName 统计同名供应商数量(唯一性校验,excludeUID 为空串时不排除)
 	CountProvidersByName(ctx context.Context, name string, excludeUID string) (int64, errors.Error)

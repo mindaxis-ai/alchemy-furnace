@@ -159,7 +159,7 @@ func seedRecipe(t *testing.T, db *gorm.DB, n int) (model.PillRecipe, []model.Pil
 	revs := make([]model.PillRecipeRevision, 0, n)
 	for i := 1; i <= n; i++ {
 		rev := model.PillRecipeRevision{
-			RecipeID:    recipe.UUID.String(),
+			RecipeID:    recipe.PillRecipeID,
 			Revision:    i,
 			Name:        fmt.Sprintf("丹方 v%d", i),
 			Description: fmt.Sprintf("第 %d 版简介", i),
@@ -172,7 +172,7 @@ func seedRecipe(t *testing.T, db *gorm.DB, n int) (model.PillRecipe, []model.Pil
 		revs = append(revs, rev)
 	}
 	latest := revs[len(revs)-1]
-	if err := db.Model(&recipe).Update("current_revision_id", latest.UUID.String()).Error; err != nil {
+	if err := db.Model(&recipe).Update("current_revision_id", latest.PillRecipeRevisionID).Error; err != nil {
 		t.Fatalf("指向当前版本失败: %v", err)
 	}
 	return recipe, revs
@@ -185,7 +185,7 @@ func TestSkillExport_RecipeIDExportsCurrentRevision(t *testing.T) {
 	client := &fakeExportClient{result: &nudist.ExportResult{Filename: "x.zip", Content: []byte("PK")}}
 	r, fake := setupSkillExportRouter(db, client)
 
-	body := fmt.Sprintf(`{"recipe_id": %q, "format": "codex"}`, recipe.UUID.String())
+	body := fmt.Sprintf(`{"recipe_id": %q, "format": "codex"}`, recipe.PillRecipeID)
 	status, raw, _ := postSkillExport(t, r, body)
 
 	if status != http.StatusOK {
@@ -204,7 +204,7 @@ func TestSkillExport_RevisionIDExportsSpecifiedRevision(t *testing.T) {
 	r, fake := setupSkillExportRouter(db, client)
 
 	body := fmt.Sprintf(`{"recipe_id": %q, "revision_id": %q, "format": "codex"}`,
-		recipe.UUID.String(), revs[0].UUID.String())
+		recipe.PillRecipeID, revs[0].PillRecipeRevisionID)
 	status, raw, _ := postSkillExport(t, r, body)
 
 	if status != http.StatusOK {
@@ -223,7 +223,7 @@ func TestSkillExport_RevisionOfOtherRecipe404(t *testing.T) {
 	r, _ := setupSkillExportRouter(db, &fakeExportClient{})
 
 	body := fmt.Sprintf(`{"recipe_id": %q, "revision_id": %q, "format": "codex"}`,
-		recipeA.UUID.String(), revsB[0].UUID.String())
+		recipeA.PillRecipeID, revsB[0].PillRecipeRevisionID)
 	status, raw, _ := postSkillExport(t, r, body)
 
 	if status != http.StatusNotFound {

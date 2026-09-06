@@ -41,7 +41,7 @@ func (f *fakeInventory) GetRecipe(ctx context.Context, uid uuid.UUID) (*model.Pi
 func (f *fakeInventory) GetRecipeRevision(ctx context.Context, recipeID, revisionID uuid.UUID) (*model.PillRecipeRevision, appErrors.Error) {
 	rev, ok := f.revisions[revisionID.String()]
 	recipe, rOK := f.recipes[recipeID.String()]
-	if !ok || !rOK || rev.RecipeID != recipe.UUID.String() {
+	if !ok || !rOK || rev.RecipeID != recipe.PillRecipeID {
 		return nil, appErrors.ErrorRecordNotFound("recipe.revision_not_found")
 	}
 	return rev, nil
@@ -121,20 +121,18 @@ var trialMarkers = []string{
 
 // trialInventory 造一份丹方: v1/v2 两个版本,当前指向 v2
 func trialInventory() *fakeInventory {
-	recipeUUID := uuid.MustParse(recipeUUIDStr)
-	recipeID := uint(1)
-	recipeUID := recipeUUID.String()
+	recipeUID := recipeUUIDStr
 	rev1 := &model.PillRecipeRevision{
-		ID: 11, UUID: uuid.MustParse(rev1UUIDStr), RecipeID: recipeUID, Revision: 1,
+		PillRecipeRevisionID: rev1UUIDStr, RecipeID: recipeUID, Revision: 1,
 		Name: "丹方 v1", SkillSchema: trialMarkerSchema("V1_MARKER"),
 	}
 	rev2 := &model.PillRecipeRevision{
-		ID: 12, UUID: uuid.MustParse(rev2UUIDStr), RecipeID: recipeUID, Revision: 2,
+		PillRecipeRevisionID: rev2UUIDStr, RecipeID: recipeUID, Revision: 2,
 		Name: "丹方 v2", SkillSchema: trialMarkerSchema("V2_MARKER"),
 	}
-	curUID := rev2.UUID.String()
+	curUID := rev2.PillRecipeRevisionID
 	return &fakeInventory{
-		recipes:   map[string]*model.PillRecipe{recipeUID: {ID: recipeID, UUID: recipeUUID, CurrentRevisionID: &curUID}},
+		recipes:   map[string]*model.PillRecipe{recipeUID: {PillRecipeID: recipeUID, CurrentRevisionID: &curUID}},
 		revisions: map[string]*model.PillRecipeRevision{rev1UUIDStr: rev1, rev2UUIDStr: rev2},
 		byUID:     map[string]*model.PillRecipeRevision{rev1UUIDStr: rev1, rev2UUIDStr: rev2},
 	}
@@ -329,7 +327,7 @@ func TestSynthesizeRevisionOfOtherRecipe(t *testing.T) {
 	inv := trialInventory()
 	rev2UID := rev2UUIDStr
 	inv.recipes[otherRecipeUUID.String()] = &model.PillRecipe{
-		ID: 2, UUID: otherRecipeUUID, CurrentRevisionID: &rev2UID,
+		PillRecipeID: otherRecipeUUID.String(), CurrentRevisionID: &rev2UID,
 	}
 	svc := newTrialService(inv, &fakeSynth{resp: &synthesis.CombineResponse{}})
 

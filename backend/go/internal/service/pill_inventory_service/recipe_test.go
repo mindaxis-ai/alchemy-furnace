@@ -129,7 +129,7 @@ func TestSaveRecipeCraftTrueProducesOneItem(t *testing.T) {
 		t.Fatalf("ItemIDs=%v, want 1 枚", res.ItemIDs)
 	}
 	var item model.PillItem
-	if err := db.Where("uuid = ?", res.ItemIDs[0]).First(&item).Error; err != nil {
+	if err := db.Where("pill_item_id = ?", res.ItemIDs[0].String()).First(&item).Error; err != nil {
 		t.Fatalf("实例未落库: %v", err)
 	}
 	if item.State != model.PillAvailable {
@@ -139,8 +139,8 @@ func TestSaveRecipeCraftTrueProducesOneItem(t *testing.T) {
 	if err := db.First(&rev).Error; err != nil {
 		t.Fatal(err)
 	}
-	if item.RecipeRevisionID != rev.UUID.String() {
-		t.Fatalf("实例未引用新版本: item=%s rev=%s", item.RecipeRevisionID, rev.UUID)
+	if item.RecipeRevisionID != rev.PillRecipeRevisionID {
+		t.Fatalf("实例未引用新版本: item=%s rev=%s", item.RecipeRevisionID, rev.PillRecipeRevisionID)
 	}
 }
 
@@ -280,7 +280,7 @@ func TestUpdateRecipeCreatesV2KeepsV1(t *testing.T) {
 
 	// v1 内容不变
 	var v1 model.PillRecipeRevision
-	if err := db.Where("uuid = ?", saved.RevisionID).First(&v1).Error; err != nil {
+	if err := db.Where("pill_recipe_revision_id = ?", saved.RevisionID).First(&v1).Error; err != nil {
 		t.Fatal(err)
 	}
 	if v1.Name != "演进丹" {
@@ -291,7 +291,7 @@ func TestUpdateRecipeCreatesV2KeepsV1(t *testing.T) {
 	}
 	// v2 是新内容
 	var v2 model.PillRecipeRevision
-	if err := db.Where("uuid = ?", res.RevisionID).First(&v2).Error; err != nil {
+	if err := db.Where("pill_recipe_revision_id = ?", res.RevisionID).First(&v2).Error; err != nil {
 		t.Fatal(err)
 	}
 	if v2.Name != "演进丹v2" || v2.Revision != 2 {
@@ -299,19 +299,19 @@ func TestUpdateRecipeCreatesV2KeepsV1(t *testing.T) {
 	}
 	// 丹方当前版本指向 v2
 	var recipe model.PillRecipe
-	if err := db.Where("uuid = ?", saved.RecipeID).First(&recipe).Error; err != nil {
+	if err := db.Where("pill_recipe_id = ?", saved.RecipeID).First(&recipe).Error; err != nil {
 		t.Fatal(err)
 	}
-	if recipe.CurrentRevisionID == nil || *recipe.CurrentRevisionID != v2.UUID.String() {
+	if recipe.CurrentRevisionID == nil || *recipe.CurrentRevisionID != v2.PillRecipeRevisionID {
 		t.Fatalf("current_revision 未指向 v2: %v", recipe.CurrentRevisionID)
 	}
 	// 旧实例仍引用 v1
 	var item model.PillItem
-	if err := db.Where("uuid = ?", itemUUID).First(&item).Error; err != nil {
+	if err := db.Where("pill_item_id = ?", itemUUID.String()).First(&item).Error; err != nil {
 		t.Fatal(err)
 	}
-	if item.RecipeRevisionID != v1.UUID.String() {
-		t.Fatalf("旧实例被迁移到新版本: item.rev=%s v1.id=%s", item.RecipeRevisionID, v1.UUID)
+	if item.RecipeRevisionID != v1.PillRecipeRevisionID {
+		t.Fatalf("旧实例被迁移到新版本: item.rev=%s v1.id=%s", item.RecipeRevisionID, v1.PillRecipeRevisionID)
 	}
 }
 
@@ -389,7 +389,7 @@ func TestDiscardItemTerminalState(t *testing.T) {
 		t.Fatalf("DiscardItem: %v", err)
 	}
 	var item model.PillItem
-	if err := db.Where("uuid = ?", itemID).First(&item).Error; err != nil {
+	if err := db.Where("pill_item_id = ?", itemID.String()).First(&item).Error; err != nil {
 		t.Fatal(err)
 	}
 	if item.State != model.PillDiscarded {
@@ -454,7 +454,7 @@ func TestListRecipesAvailableCounts(t *testing.T) {
 	}
 	got := map[string]int64{}
 	for _, r := range recipes {
-		got[r.PillRecipe.UUID.String()] = counts[r.PillRecipe.UUID.String()]
+		got[r.PillRecipe.PillRecipeID] = counts[r.PillRecipe.PillRecipeID]
 	}
 	if got[a.RecipeID.String()] != 1 {
 		t.Fatalf("多产丹可用数=%d, want 1", got[a.RecipeID.String()])

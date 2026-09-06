@@ -87,7 +87,7 @@ func (s *Agent) CreateAgent(ctx context.Context, name string, avatar string, per
 		return nil, err.Relation(errors.ErrorServerInternalError("service.agent.create"))
 	}
 
-	zap.L().Info("[炼丹炉] 新道人下山历练", zap.String("name", agent.Name), zap.String("uuid", agent.UUID.String()))
+	zap.L().Info("[炼丹炉] 新道人下山历练", zap.String("name", agent.Name), zap.String("uuid", agent.DaoAgentID))
 	return agent, nil
 }
 
@@ -158,7 +158,7 @@ func (s *Agent) UpdateAgent(ctx context.Context, uid uuid.UUID, name *string, av
 		}
 		// 基础性格变化时失效语言模式缓存
 		if _, ok := updates["personality"]; ok {
-			s.invalidatePattern(ctx, agent.UUID.String())
+			s.invalidatePattern(ctx, agent.DaoAgentID)
 		}
 	}
 
@@ -180,7 +180,7 @@ func (s *Agent) DeleteAgent(ctx context.Context, uid uuid.UUID) errors.Error {
 	}
 
 	// 历史感知: 有会话历史只能沉睡不能删
-	sessionCount, err := s.agent.CountSessionsByAgentID(ctx, agent.UUID.String())
+	sessionCount, err := s.agent.CountSessionsByAgentID(ctx, agent.DaoAgentID)
 	if err != nil {
 		return err.Relation(errors.ErrorServerInternalError("service.agent.delete_count_sessions"))
 	}
@@ -232,7 +232,7 @@ func (s *Agent) UpdateAgentPill(ctx context.Context, agentUID uuid.UUID, itemUID
 		return err.Relation(errors.ErrorRecordNotFound("service.agent.uap_take_agent"))
 	}
 
-	if err := s.agent.UpdateAgentPillEffect(ctx, agent.UUID.String(), itemUID, weight, sortOrder); err != nil {
+	if err := s.agent.UpdateAgentPillEffect(ctx, agent.DaoAgentID, itemUID, weight, sortOrder); err != nil {
 		return err
 	}
 	return nil
@@ -247,7 +247,7 @@ func (s *Agent) UnbindPill(ctx context.Context, agentUID uuid.UUID, itemUID uuid
 		return err.Relation(errors.ErrorRecordNotFound("service.agent.unbind_take_agent"))
 	}
 
-	if err := s.agent.RemoveAgentPillEffect(ctx, agent.UUID.String(), itemUID, time.Now()); err != nil {
+	if err := s.agent.RemoveAgentPillEffect(ctx, agent.DaoAgentID, itemUID, time.Now()); err != nil {
 		return err
 	}
 
@@ -263,7 +263,7 @@ func (s *Agent) ListAgentPills(ctx context.Context, agentUID uuid.UUID) ([]*mode
 	if err != nil {
 		return nil, err.Relation(errors.ErrorRecordNotFound("service.agent.list_pills_take"))
 	}
-	pills, err := s.agent.FindPillsByAgentID(ctx, agent.UUID.String())
+	pills, err := s.agent.FindPillsByAgentID(ctx, agent.DaoAgentID)
 	if err != nil {
 		return nil, err.Relation(errors.ErrorServerInternalError("service.agent.list_pills"))
 	}

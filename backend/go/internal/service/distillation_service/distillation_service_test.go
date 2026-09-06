@@ -303,17 +303,17 @@ type fakeInventory struct {
 }
 
 func (f *fakeInventory) GetRecipe(_ context.Context, uid uuid.UUID) (*model.PillRecipe, *model.PillRecipeRevision, appErrors.Error) {
-	if f.recipe == nil || f.recipe.UUID != uid {
+	if f.recipe == nil || f.recipe.PillRecipeID != uid.String() {
 		return nil, nil, appErrors.ErrorRecordNotFound("fake.recipe")
 	}
 	return f.recipe, f.revision, nil
 }
 
 func (f *fakeInventory) GetRecipeRevision(_ context.Context, recipeID, revisionID uuid.UUID) (*model.PillRecipeRevision, appErrors.Error) {
-	if f.revision != nil && f.revision.UUID == revisionID && recipeID == f.recipe.UUID {
+	if f.revision != nil && f.revision.PillRecipeRevisionID == revisionID.String() && recipeID.String() == f.recipe.PillRecipeID {
 		return f.revision, nil
 	}
-	if f.otherRev != nil && f.otherRev.UUID == revisionID && recipeID != f.recipe.UUID {
+	if f.otherRev != nil && f.otherRev.PillRecipeRevisionID == revisionID.String() && recipeID.String() != f.recipe.PillRecipeID {
 		return nil, appErrors.ErrorRecordNotFound("fake.revision_not_of_recipe")
 	}
 	return nil, appErrors.ErrorRecordNotFound("fake.revision")
@@ -362,7 +362,7 @@ func TestSkillExport_RecipeModeNeverSendsNullSources(t *testing.T) {
 	service := New(client, fakeResolver{}, &fakeInventory{recipe: recipe, revision: rev})
 
 	_, appErr := service.SkillExport(context.Background(), &distillation.SkillExportInput{
-		RecipeID: recipe.UUID.String(),
+		RecipeID: recipe.PillRecipeID,
 		Format:   "codex",
 	})
 	if appErr != nil {
@@ -388,18 +388,18 @@ func TestSkillExport_RecipeModeNeverSendsNullSources(t *testing.T) {
 
 // fakeRecipeAndRevision 构造测试用丹方与当前版本(不可变)
 func fakeRecipeAndRevision() (*model.PillRecipe, *model.PillRecipeRevision) {
-	recipe := &model.PillRecipe{UUID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440001")}
+	recipe := &model.PillRecipe{PillRecipeID: "550e8400-e29b-41d4-a716-446655440001"}
 	rev := &model.PillRecipeRevision{
-		UUID:        uuid.MustParse("550e8400-e29b-41d4-a716-446655440010"),
-		RecipeID:    recipe.UUID.String(),
-		Revision:    1,
-		Name:        "结构化金丹",
-		Description: "一份结构化的语言风格技能包",
-		SkillSchema: model.JSONMap{"identity_card": "我是金丹"},
-		Tags:        model.JSONList{"语言"},
-		CreatedAt:   time.Date(2026, 8, 27, 10, 0, 0, 0, time.UTC),
+		PillRecipeRevisionID: "550e8400-e29b-41d4-a716-446655440010",
+		RecipeID:             recipe.PillRecipeID,
+		Revision:             1,
+		Name:                 "结构化金丹",
+		Description:          "一份结构化的语言风格技能包",
+		SkillSchema:          model.JSONMap{"identity_card": "我是金丹"},
+		Tags:                 model.JSONList{"语言"},
+		CreatedAt:            time.Date(2026, 8, 27, 10, 0, 0, 0, time.UTC),
 	}
-	revUID := rev.UUID.String()
+	revUID := rev.PillRecipeRevisionID
 	recipe.CurrentRevisionID = &revUID
 	return recipe, rev
 }
@@ -411,7 +411,7 @@ func TestSkillExport_RecipeIDExportsCurrentRevision(t *testing.T) {
 	service := New(client, fakeResolver{}, &fakeInventory{recipe: recipe, revision: rev})
 
 	result, appErr := service.SkillExport(context.Background(), &distillation.SkillExportInput{
-		RecipeID: recipe.UUID.String(),
+		RecipeID: recipe.PillRecipeID,
 		Format:   "codex",
 	})
 	if appErr != nil || result == nil {
@@ -442,8 +442,8 @@ func TestSkillExport_RevisionIDExportsSpecifiedRevision(t *testing.T) {
 	service := New(client, fakeResolver{}, &fakeInventory{recipe: recipe, revision: rev})
 
 	_, appErr := service.SkillExport(context.Background(), &distillation.SkillExportInput{
-		RecipeID:   recipe.UUID.String(),
-		RevisionID: rev.UUID.String(),
+		RecipeID:   recipe.PillRecipeID,
+		RevisionID: rev.PillRecipeRevisionID,
 		Format:     "codex",
 	})
 	if appErr != nil {
@@ -459,16 +459,16 @@ func TestSkillExport_RevisionOfOtherRecipe404(t *testing.T) {
 	client := &fakeClient{}
 	recipe, rev := fakeRecipeAndRevision()
 	other := &model.PillRecipeRevision{
-		UUID:     uuid.New(),
-		RecipeID: uuid.New().String(), // 另一个丹方的 UUID 文本
-		Revision: 2,
-		Name:     "别人家的丹",
+		PillRecipeRevisionID: uuid.New().String(),
+		RecipeID:             uuid.New().String(), // 另一个丹方的 UUID 文本
+		Revision:             2,
+		Name:                 "别人家的丹",
 	}
 	service := New(client, fakeResolver{}, &fakeInventory{recipe: recipe, revision: rev, otherRev: other})
 
 	_, appErr := service.SkillExport(context.Background(), &distillation.SkillExportInput{
-		RecipeID:   recipe.UUID.String(),
-		RevisionID: other.UUID.String(),
+		RecipeID:   recipe.PillRecipeID,
+		RevisionID: other.PillRecipeRevisionID,
 		Format:     "codex",
 	})
 	if appErr == nil || !appErr.IsType(appErrors.ErrorTypeRecordNotFound) {

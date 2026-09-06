@@ -99,7 +99,7 @@ func (s *MemoryService) CreateMemory(ctx context.Context, agentUID string, in se
 		return nil, err
 	}
 	m := &model.AgentMemory{
-		UUID:            uuid.New(),
+		AgentMemoryID:   uuid.New().String(),
 		AgentID:         agentUID,
 		Kind:            in.Kind,
 		Content:         strings.TrimSpace(in.Content),
@@ -183,7 +183,7 @@ func (s *MemoryService) DeleteMemory(ctx context.Context, agentUID string, memor
 	if m.AgentID != agentUID {
 		return errors.New(errors.ErrorTypeInvalidRequest, "memory.agent_mismatch", "不属于该道人的记忆")
 	}
-	return s.dao.DeleteMemory(ctx, m.UUID.String())
+	return s.dao.DeleteMemory(ctx, m.AgentMemoryID)
 }
 
 // ClearMemories 物理清空道人全部记忆;agentUID 为道人 UUID 文本
@@ -241,7 +241,7 @@ func (s *MemoryService) Retrieve(ctx context.Context, agentUID string, userMessa
 		}
 		out = append(out, service.MemorySnippet{Kind: s.m.Kind, Content: s.m.Content})
 		total += len([]rune(s.m.Content))
-		touched = append(touched, s.m.UUID.String())
+		touched = append(touched, s.m.AgentMemoryID)
 	}
 	for _, id := range touched {
 		_ = s.dao.TouchMemory(ctx, id)
@@ -340,7 +340,7 @@ func (s *MemoryService) supersedeConflicts(ctx context.Context, agentUID string,
 			continue // pinned 永不自动置替(§10.2)
 		}
 		if bigramSimilarity(norm, normalizeForCompare(m.Content)) >= 0.85 {
-			if err := s.dao.SupersedeMemory(ctx, m.UUID.String()); err != nil {
+			if err := s.dao.SupersedeMemory(ctx, m.AgentMemoryID); err != nil {
 				return err
 			}
 		}

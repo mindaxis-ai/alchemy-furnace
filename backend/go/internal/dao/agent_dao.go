@@ -1,4 +1,4 @@
-// Package dao 道人数据访问实现(新架构 internal 分层;UUID 边界在此解析,内部联结仍用自增 ID)
+// Package dao 道人数据访问实现(新架构 internal 分层;业务主键统一 uuid 文本,对外标识解析在此完成)
 package dao
 
 import (
@@ -25,7 +25,7 @@ func NewAgentDao() *AgentDao {
 // TakeAgentByUUID 按对外 UUID 查询道人
 func (d *AgentDao) TakeAgentByUUID(ctx context.Context, uid uuid.UUID) (*model.DaoAgent, errors.Error) {
 	var agent model.DaoAgent
-	if err := GetDB().WithContext(ctx).Where("uuid = ?", uid.String()).First(&agent).Error; err != nil {
+	if err := GetDB().WithContext(ctx).Where("dao_agent_id = ?", uid.String()).First(&agent).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, errors.ErrorRecordNotFound("dao.agent.take_by_uuid")
 		}
@@ -41,11 +41,11 @@ func (d *AgentDao) TakeAgentDetailByUUID(ctx context.Context, uid uuid.UUID) (*m
 	var agent model.DaoAgent
 	if err := GetDB().WithContext(ctx).
 		Preload("AgentPillEffects", func(db *gorm.DB) *gorm.DB {
-			return db.Where("removed_at IS NULL").Order("sort_order ASC, id ASC")
+			return db.Where("removed_at IS NULL").Order("sort_order ASC, agent_pill_effect_id ASC")
 		}).
 		Preload("AgentPillEffects.Item").
 		Preload("LanguagePattern").
-		Where("uuid = ?", uid.String()).
+		Where("dao_agent_id = ?", uid.String()).
 		First(&agent).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, errors.ErrorRecordNotFound("dao.agent.take_detail_by_uuid")
@@ -139,14 +139,14 @@ func (d *AgentDao) UpdateAgentPill(ctx context.Context, agentPill *model.AgentPi
 
 // FindPillsByAgentID 道人已服用金丹列表(按服用顺序)
 // agentUID 为道人 UUID 文本(011 业务键): agent_pills.agent_id/pill_id 均为 UUID 文本列,
-// JOIN 按金丹业务键 elixir_pills.uuid 对齐
+// JOIN 按金丹业务键 elixir_pills.elixir_pill_id 对齐
 func (d *AgentDao) FindPillsByAgentID(ctx context.Context, agentUID string) ([]*model.ElixirPill, errors.Error) {
 	var pills []*model.ElixirPill
 	if err := GetDB().WithContext(ctx).Table("elixir_pills").
 		Select("elixir_pills.*").
-		Joins("JOIN agent_pills ON agent_pills.pill_id = elixir_pills.uuid").
+		Joins("JOIN agent_pills ON agent_pills.pill_id = elixir_pills.elixir_pill_id").
 		Where("agent_pills.agent_id = ?", agentUID).
-		Order("agent_pills.sort_order ASC, agent_pills.id ASC").
+		Order("agent_pills.sort_order ASC, agent_pills.agent_pill_id ASC").
 		Find(&pills).Error; err != nil {
 		return nil, errors.ErrorServerInternalError("dao.agent.find_pills_by_agent")
 	}
@@ -175,7 +175,7 @@ func (d *AgentDao) ReplaceAgentPills(ctx context.Context, agentUID string, pills
 				ids = append(ids, p.PillID)
 			}
 			var existCount int64
-			if err := tx.Model(&model.ElixirPill{}).Where("uuid IN ?", ids).Count(&existCount).Error; err != nil {
+			if err := tx.Model(&model.ElixirPill{}).Where("elixir_pill_id IN ?", ids).Count(&existCount).Error; err != nil {
 				return err
 			}
 			if existCount != int64(len(ids)) {
@@ -274,7 +274,7 @@ func (d *AgentDao) InvalidateLanguagePattern(ctx context.Context, agentUID strin
 	return nil
 }
 
-// SaveLanguagePattern 写入/更新语言模式缓存(GORM Save: ID==0 创建,否则全字段更新)
+// SaveLanguagePattern 写入/更新语言模式缓存(GORM Save: 业务主键为空创建,否则全字段更新)
 func (d *AgentDao) SaveLanguagePattern(ctx context.Context, pattern *model.LanguagePattern) errors.Error {
 	if err := GetDB().WithContext(ctx).Save(pattern).Error; err != nil {
 		return errors.ErrorServerInternalError("dao.agent.save_language_pattern")
@@ -290,7 +290,7 @@ func (d *AgentDao) SaveLanguagePatternIfRevision(ctx context.Context, pattern *m
 	txErr := GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var cur int
 		if err := tx.Model(&model.DaoAgent{}).
-			Where("uuid = ?", pattern.AgentID).
+			Where("dao_agent_id = ?", pattern.AgentID).
 			Select("effects_revision").
 			Scan(&cur).Error; err != nil {
 			return err
@@ -341,10 +341,19 @@ func (d *AgentDao) ListActiveEffects(ctx context.Context, agentUID string) ([]id
 			if !okItem || !okRev {
 				return stderrors.New("dao.agent.effect_source_missing")
 			}
+			// 业务主键已统一为 uuid 文本:对外标识在此解析为 uuid.UUID(理论不可达的脏文本视为内部错误)
+			itemUID, itemParseErr := uuid.Parse(it.PillItemID)
+			if itemParseErr != nil {
+				return stderrors.New("dao.agent.item_uuid_invalid")
+			}
+			revUID, revParseErr := uuid.Parse(rv.PillRecipeRevisionID)
+			if revParseErr != nil {
+				return stderrors.New("dao.agent.revision_uuid_invalid")
+			}
 			out = append(out, idao.EffectWithSource{
 				Effect:       ef,
-				ItemUUID:     it.UUID,
-				RevisionUUID: rv.UUID,
+				ItemUUID:     itemUID,
+				RevisionUUID: revUID,
 			})
 		}
 		return nil

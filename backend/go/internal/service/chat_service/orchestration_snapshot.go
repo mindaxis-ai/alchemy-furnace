@@ -17,6 +17,7 @@ import (
 
 	"github.com/alchemy-furnace/server/internal/service/orchestration"
 	"github.com/alchemy-furnace/server/model"
+	"github.com/google/uuid"
 )
 
 // mentionsFromSnapshot 从用户消息 Mentions JSONMap 读取本轮被 @ 的道人 UUID 列表。
@@ -45,11 +46,11 @@ func mentionsFromSnapshot(m model.JSONMap) []string {
 // 参与者校验/模型停用等失败即整体失败:返回值不可作为可执行请求使用。
 func (s *Chat) BuildOrchestrationRequest(ctx context.Context, session *model.ChatSession, userMessage *model.ChatMessage, run *model.ChatRun) (orchestration.Request, error) {
 	req := orchestration.Request{
-		RunID:       run.UUID.String(),
-		SessionID:   session.UUID.String(),
+		RunID:       run.ChatRunID,
+		SessionID:   session.ChatSessionID,
 		SessionType: session.Type,
 		UserTurn: orchestration.UserTurn{
-			MessageID: userMessage.UUID.String(),
+			MessageID: userMessage.ChatMessageID,
 			Text:      userMessage.Content,
 			Mentions:  mentionsFromSnapshot(userMessage.Mentions),
 		},
@@ -65,7 +66,7 @@ func (s *Chat) BuildOrchestrationRequest(ctx context.Context, session *model.Cha
 	// 参与者:群聊按 FindMembers 返回序(建群序);单聊=会话归属道人(TakeSessionByUUID 预加载)。
 	var participants []model.DaoAgent
 	if session.Type == model.SessionTypeGroup {
-		members, mErr := s.chat.FindMembers(ctx, session.UUID.String())
+		members, mErr := s.chat.FindMembers(ctx, session.ChatSessionID)
 		if mErr != nil {
 			return req, fmt.Errorf("编排快照查询成员失败: %w", mErr)
 		}
@@ -77,11 +78,15 @@ func (s *Chat) BuildOrchestrationRequest(ctx context.Context, session *model.Cha
 	}
 
 	for _, agent := range participants {
-		got, creds, verr := s.validateChatAgentAccess(ctx, agent.UUID)
+		agentUID, perr := uuid.Parse(agent.DaoAgentID)
+		if perr != nil {
+			return req, fmt.Errorf("编排快照道人标识无效: %w", perr)
+		}
+		got, creds, verr := s.validateChatAgentAccess(ctx, agentUID)
 		if verr != nil {
 			return req, verr
 		}
-		agentID := got.UUID.String()
+		agentID := got.DaoAgentID
 		req.Agents = append(req.Agents, orchestration.Agent{
 			AgentID: agentID,
 			Name:    got.Name,
@@ -92,7 +97,7 @@ func (s *Chat) BuildOrchestrationRequest(ctx context.Context, session *model.Cha
 		})
 		req.Credentials[agentID] = orchestration.Credential{APIKey: creds.APIKey, BaseURL: creds.BaseURL}
 		if got.MemoryEnabled {
-			for i, snip := range s.RetrieveMemories(ctx, got.UUID.String(), userMessage.Content) {
+			for i, snip := range s.RetrieveMemories(ctx, got.DaoAgentID, userMessage.Content) {
 				req.Memories = append(req.Memories, orchestration.Memory{
 					MemoryID: fmt.Sprintf("%s#%d", agentID, i+1),
 					AgentID:  agentID,
@@ -103,21 +108,21 @@ func (s *Chat) BuildOrchestrationRequest(ctx context.Context, session *model.Cha
 	}
 
 	// 历史:最近 20 条;剔除 system 通知与本轮用户消息(重试场景下本轮已在库)。
-	_, msgs, hErr := s.chat.FindMessages(ctx, session.UUID.String(), 1, 20)
+	_, msgs, hErr := s.chat.FindMessages(ctx, session.ChatSessionID, 1, 20)
 	if hErr != nil {
 		return req, fmt.Errorf("编排快照查询历史失败: %w", hErr)
 	}
 	for _, m := range msgs {
-		if m.Role == "system" || m.UUID == userMessage.UUID {
+		if m.Role == "system" || m.ChatMessageID == userMessage.ChatMessageID {
 			continue
 		}
 		entry := orchestration.Message{
-			MessageID: m.UUID.String(),
+			MessageID: m.ChatMessageID,
 			Role:      m.Role,
 			Text:      m.Content,
 		}
 		if m.AgentID != nil && m.Agent != nil {
-			agentUUID := m.Agent.UUID.String()
+			agentUUID := m.Agent.DaoAgentID
 			entry.AgentID = &agentUUID
 		}
 		req.History = append(req.History, entry)

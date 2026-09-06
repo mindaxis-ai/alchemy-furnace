@@ -119,7 +119,7 @@ func TestSeedGrantStarterPills(t *testing.T) {
 		t.Fatalf("内置丹方数=%d, want 5", len(recipes))
 	}
 	for _, r := range recipes {
-		recipeUID := r.UUID.String()
+		recipeUID := r.PillRecipeID
 		// 每内置丹方恰好 1 条赠送记录
 		var grants int64
 		if err := db.Model(&model.PillStarterGrant{}).Where("recipe_id = ?", recipeUID).Count(&grants).Error; err != nil {

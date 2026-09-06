@@ -49,10 +49,10 @@ func TestCreateSessionRejectsInvalidAgentBeforePersistence(t *testing.T) {
 	missingUID := uuid.New()
 	agents := &fakeAgentDao{agents: map[string]*model.DaoAgent{
 		activeUID.String(): {
-			ID: 1, UUID: activeUID, Name: "太上老君", Status: "active", ModelName: "formal-model",
+			DaoAgentID: activeUID.String(), Name: "太上老君", Status: "active", ModelName: "formal-model",
 		},
 		inactiveUID.String(): {
-			ID: 2, UUID: inactiveUID, Name: "睡道人", Status: "inactive", ModelName: "formal-model",
+			DaoAgentID: inactiveUID.String(), Name: "睡道人", Status: "inactive", ModelName: "formal-model",
 		},
 	}}
 
@@ -120,7 +120,7 @@ func TestCreateSessionCreatesUUIDForAvailableFormalModel(t *testing.T) {
 	agentUID := uuid.New()
 	agents := &fakeAgentDao{agents: map[string]*model.DaoAgent{
 		agentUID.String(): {
-			ID: 7, UUID: agentUID, Name: "太上老君", Status: "active", ModelName: "formal-model",
+			DaoAgentID: agentUID.String(), Name: "太上老君", Status: "active", ModelName: "formal-model",
 		},
 	}}
 	chats := &fakeChatDao{
@@ -134,14 +134,14 @@ func TestCreateSessionCreatesUUIDForAvailableFormalModel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateSession() error = %v", err)
 	}
-	if session.UUID == uuid.Nil {
-		t.Fatal("CreateSession() UUID is nil")
+	if session.ChatSessionID == "" {
+		t.Fatal("CreateSession() UUID is empty")
 	}
 	if session.Type != model.SessionTypeSingle || session.AgentID == nil || *session.AgentID != agentUID.String() {
 		t.Fatalf("CreateSession() = %+v, want single session for agent %s", session, agentUID)
 	}
-	if _, ok := chats.sessions[session.UUID.String()]; !ok {
-		t.Fatalf("CreateSession() UUID %s was not persisted", session.UUID)
+	if _, ok := chats.sessions[session.ChatSessionID]; !ok {
+		t.Fatalf("CreateSession() UUID %s was not persisted", session.ChatSessionID)
 	}
 }
 
@@ -149,7 +149,7 @@ func TestGetMessagesKeepsInactiveAgentHistoryReadable(t *testing.T) {
 	agentUID := uuid.New()
 	agents := &fakeAgentDao{agents: map[string]*model.DaoAgent{
 		agentUID.String(): {
-			ID: 9, UUID: agentUID, Name: "旧友", Status: "active", ModelName: "formal-model",
+			DaoAgentID: agentUID.String(), Name: "旧友", Status: "active", ModelName: "formal-model",
 		},
 	}}
 	chats := &fakeChatDao{
@@ -161,12 +161,12 @@ func TestGetMessagesKeepsInactiveAgentHistoryReadable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateSession() error = %v", err)
 	}
-	if _, err := svc.SaveMessage(context.Background(), session.UUID.String(), "assistant", "旧日答复"); err != nil {
+	if _, err := svc.SaveMessage(context.Background(), session.ChatSessionID, "assistant", "旧日答复"); err != nil {
 		t.Fatalf("SaveMessage() error = %v", err)
 	}
 	agents.agents[agentUID.String()].Status = "inactive"
 
-	_, messages, historyErr := svc.GetMessages(context.Background(), session.UUID, 1, 20)
+	_, messages, historyErr := svc.GetMessages(context.Background(), mustUID(t, session.ChatSessionID), 1, 20)
 	if historyErr != nil {
 		t.Fatalf("GetMessages() error = %v", historyErr)
 	}

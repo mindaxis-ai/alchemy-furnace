@@ -12,7 +12,7 @@ import (
 
 // FusionPreviewResult 融合预览结果（两阶段第一阶段；确认需携带 PreviewID）
 type FusionPreviewResult struct {
-	PreviewID   uuid.UUID
+	PreviewID   string // uuid 文本(实体的唯一标识即 uuid.UUID.String())
 	ExpiresAt   time.Time
 	Name        string
 	Description string

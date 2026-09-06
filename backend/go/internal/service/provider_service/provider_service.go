@@ -49,7 +49,7 @@ func (s *ProviderService) toView(p *model.LLMProvider, modelCount int64) *model.
 	if p.APIKeyEncrypted != "" {
 		plain, err := credential.DecryptAPIKey(p.APIKeyEncrypted)
 		if err != nil {
-			zap.L().Warn("[炼丹炉] 供应商密钥解密失败，掩码降级显示", zap.String("provider_id", p.UUID.String()), zap.Error(err))
+			zap.L().Warn("[炼丹炉] 供应商密钥解密失败，掩码降级显示", zap.String("provider_id", p.LLMProviderID), zap.Error(err))
 			masked = "****"
 		} else {
 			masked = credential.MaskAPIKey(plain)
@@ -84,7 +84,7 @@ func (s *ProviderService) ListProviders(ctx context.Context, page, size int, ena
 
 	views := make([]*model.ProviderView, 0, len(providers))
 	for _, p := range providers {
-		count, cerr := s.provider.CountModelsByProvider(ctx, p.UUID.String())
+		count, cerr := s.provider.CountModelsByProvider(ctx, p.LLMProviderID)
 		if cerr != nil {
 			return 0, nil, cerr.Relation(errors.ErrorServerInternalError("service.provider.list_count"))
 		}
@@ -99,7 +99,7 @@ func (s *ProviderService) GetProviderByUUID(ctx context.Context, uid uuid.UUID) 
 	if err != nil {
 		return nil, err.Relation(errors.ErrorRecordNotFound("service.provider.get"))
 	}
-	count, cerr := s.provider.CountModelsByProvider(ctx, p.UUID.String())
+	count, cerr := s.provider.CountModelsByProvider(ctx, p.LLMProviderID)
 	if cerr != nil {
 		return nil, cerr.Relation(errors.ErrorServerInternalError("service.provider.get_count"))
 	}
@@ -191,7 +191,7 @@ func (s *ProviderService) CreateProvider(ctx context.Context, name, displayName,
 	}
 
 	zap.L().Info("[炼丹炉] 新供应商入炉",
-		zap.String("uuid", p.UUID.String()),
+		zap.String("uuid", p.LLMProviderID),
 		zap.String("name", p.Name),
 		zap.String("protocol", p.Protocol))
 	return s.toView(p, 0), nil
@@ -211,7 +211,7 @@ func (s *ProviderService) UpdateProvider(ctx context.Context, uid uuid.UUID, nam
 		if err := validateProviderName(trimmed); err != nil {
 			return nil, err
 		}
-		exists, cerr := s.provider.CountProvidersByName(ctx, trimmed, p.UUID.String())
+		exists, cerr := s.provider.CountProvidersByName(ctx, trimmed, p.LLMProviderID)
 		if cerr != nil {
 			return nil, cerr.Relation(errors.ErrorServerInternalError("service.provider.update_name_check"))
 		}
@@ -269,7 +269,7 @@ func (s *ProviderService) UpdateProvider(ctx context.Context, uid uuid.UUID, nam
 	if err != nil {
 		return nil, err.Relation(errors.ErrorServerInternalError("service.provider.update_retake"))
 	}
-	count, cerr := s.provider.CountModelsByProvider(ctx, fresh.UUID.String())
+	count, cerr := s.provider.CountModelsByProvider(ctx, fresh.LLMProviderID)
 	if cerr != nil {
 		return nil, cerr.Relation(errors.ErrorServerInternalError("service.provider.update_count"))
 	}
@@ -285,7 +285,7 @@ func (s *ProviderService) DeleteProvider(ctx context.Context, uid uuid.UUID) err
 		return err.Relation(errors.ErrorRecordNotFound("service.provider.delete_take"))
 	}
 
-	count, cerr := s.provider.CountModelsByProvider(ctx, p.UUID.String())
+	count, cerr := s.provider.CountModelsByProvider(ctx, p.LLMProviderID)
 	if cerr != nil {
 		return cerr.Relation(errors.ErrorServerInternalError("service.provider.delete_count"))
 	}
@@ -316,7 +316,7 @@ func (s *ProviderService) TestConnection(ctx context.Context, uid uuid.UUID, mod
 
 	modelName = strings.TrimSpace(modelName)
 	if modelName == "" {
-		m, merr := s.model.FindFirstEnabledModelByProvider(ctx, p.UUID.String())
+		m, merr := s.model.FindFirstEnabledModelByProvider(ctx, p.LLMProviderID)
 		if merr != nil {
 			return nil, errors.New(errors.ErrorTypeInvalidRequest, "service.provider.test.no_model", "请先为该供应商添加已启用模型")
 		}

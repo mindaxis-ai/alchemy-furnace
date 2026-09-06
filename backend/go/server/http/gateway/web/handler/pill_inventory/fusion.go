@@ -41,7 +41,7 @@ func (h *Handler) PreviewFusion(c *gin.Context) (response.Code, any, error) {
 		return 0, nil, err
 	}
 	return response.Ok, map[string]any{
-		"preview_id":   result.PreviewID.String(),
+		"preview_id":   result.PreviewID,
 		"expires_at":   result.ExpiresAt,
 		"name":         result.Name,
 		"description":  result.Description,

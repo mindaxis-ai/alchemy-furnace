@@ -79,8 +79,21 @@ var legacyFKProbes = []struct {
 	{&model.LLMModel{}, "provider_id"},
 }
 
+// legacyUUIDColumnProbes 修订轮之前(011 双标识)schema 探测点:已废弃的 uuid 列。
+// 修订轮把实体主键统一为 <EntityID> text 单主键并删除 UUID 列;存量库若带着旧 uuid 列
+// 被 AutoMigrate 升级,新主键列对旧行是空串,行身份全毁,必须拒绝静默升级并引导 reset。
+var legacyUUIDColumnProbes = []struct {
+	Model  any    // 探测表对应的模型(用于 HasTable/HasColumn)
+	Column string // 已废弃的 uuid 列名
+	Table  string // 表名(用于错误信息,显式写死避免反射出 *model.Xxx)
+}{
+	{&model.DaoAgent{}, "uuid", "dao_agents"},
+	{&model.ElixirPill{}, "uuid", "elixir_pills"},
+}
+
 // detectLegacyIntegerFK 检查探测点关系列的数据库类型;任一为整数类型 → 返回旧 schema 错误。
-// 全新库(表不存在)或已是 uuid/text(新 schema) → nil。只读探测,不做任何写入。
+// 另检查废弃 uuid 列是否存在(011 双标识中间态库) → 同样拒绝。
+// 全新库(表不存在)或已是 text(新 schema) → nil。只读探测,不做任何写入。
 func detectLegacyIntegerFK(db *gorm.DB) error {
 	for _, probe := range legacyFKProbes {
 		if !db.Migrator().HasTable(probe.Model) {
@@ -101,6 +114,18 @@ func detectLegacyIntegerFK(db *gorm.DB) error {
 						"请运行 `migrate reset` 重建数据库(全部业务数据将被清空并重新种子),或删除数据目录后重新初始化",
 					probe.Column)
 			}
+		}
+	}
+	// 011 双标识中间态库:废弃 uuid 列仍存在 → 拒绝(主键统一后旧行无法安全映射)
+	for _, probe := range legacyUUIDColumnProbes {
+		if !db.Migrator().HasTable(probe.Model) {
+			continue
+		}
+		if db.Migrator().HasColumn(probe.Model, probe.Column) {
+			return fmt.Errorf(
+				"检测到修订前数据库 schema(%s 仍带 uuid 独立列),实体主键已统一为业务主键文本,无法自动升级;"+
+					"请运行 `migrate reset` 重建数据库(全部业务数据将被清空并重新种子),或删除数据目录后重新初始化",
+				probe.Table)
 		}
 	}
 	return nil

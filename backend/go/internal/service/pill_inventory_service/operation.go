@@ -1,5 +1,5 @@
 // 幂等操作包装（§3.1 通用事务规则）
-// PillOperation.UUID 全局幂等键；PayloadHash = kind + 标准化参数 SHA-256。
+// PillOperation.PillOperationID 全局幂等键；PayloadHash = kind + 标准化参数 SHA-256。
 // 执行顺序：验证格式 → 查已提交操作 → 校验同 key 的 kind/hash →
 // 事务（插入唯一占位 → 业务变更 → 写完整 ResultJSON）→ 提交。
 // 占位与业务同一事务，外部读不到"空结果的成功操作"；SQLite BUSY 最多重试 3 次。
@@ -52,7 +52,7 @@ func (s *Inventory) runOperation(ctx context.Context, key uuid.UUID, kind, hash 
 			}
 			// 唯一占位：UUID 约束承担并发兜底（唯一冲突方回滚后重读已提交结果）。
 			// 必须显式带上幂等键——否则 BeforeCreate 会另生成随机 UUID，幂等键即丢失
-			op := &model.PillOperation{UUID: key, Kind: kind, PayloadHash: hash, ResultJSON: model.JSONMap{}}
+			op := &model.PillOperation{PillOperationID: key.String(), Kind: kind, PayloadHash: hash, ResultJSON: model.JSONMap{}}
 			if err := dao.CreatePillOperation(tx, op); err != nil {
 				if !isUniqueViolation(err) {
 					return err
@@ -69,7 +69,7 @@ func (s *Inventory) runOperation(ctx context.Context, key uuid.UUID, kind, hash 
 				return err
 			}
 			result = res
-			return dao.SetPillOperationResult(tx, op.ID, resultToJSON(res))
+			return dao.SetPillOperationResult(tx, op.PillOperationID, resultToJSON(res))
 		})
 		if runErr == nil {
 			if committed != nil {

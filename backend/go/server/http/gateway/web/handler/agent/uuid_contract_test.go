@@ -6,7 +6,7 @@
 // pill_inventory 包的 GET /api/v1/agents/:uuid/effects,其契约由该包同款测试锁定),
 // 本包关系面为列表 id 与详情的 language_pattern 嵌套对象。
 // 夹具: 复用同包既有 setupTestDB/getJSON/seedAgentForBindPill,真实 sqlite 内存库,
-// 关系字段一律用父实体 .UUID.String()(禁用内部 .ID),经 httptest 发真实请求。
+// 关系字段一律用父实体业务主键(.DaoAgentID 等,uuid 文本;禁用内部 .ID),经 httptest 发真实请求。
 package agent
 
 import (
@@ -49,7 +49,7 @@ func seedContractAgents(t *testing.T, db *gorm.DB, names ...string) []string {
 		if err := db.Create(&a).Error; err != nil {
 			t.Fatalf("创建道人 %s 失败: %v", name, err)
 		}
-		uids = append(uids, a.UUID.String())
+		uids = append(uids, a.DaoAgentID)
 	}
 	return uids
 }
@@ -93,11 +93,11 @@ func TestUUIDContractAgentDetail(t *testing.T) {
 	agentUUID, _ := seedAgentForBindPill(t, db)
 
 	var agent model.DaoAgent
-	if err := db.Where("uuid = ?", agentUUID).First(&agent).Error; err != nil {
+	if err := db.Where("dao_agent_id = ?", agentUUID).First(&agent).Error; err != nil {
 		t.Fatalf("查询道人失败: %v", err)
 	}
 	if err := db.Create(&model.LanguagePattern{
-		AgentID: agent.UUID.String(), SystemPrompt: "cached", SourceFingerprint: "sha256:x", IsValid: true,
+		AgentID: agent.DaoAgentID, SystemPrompt: "cached", SourceFingerprint: "sha256:x", IsValid: true,
 	}).Error; err != nil {
 		t.Fatalf("创建语言模式缓存失败: %v", err)
 	}

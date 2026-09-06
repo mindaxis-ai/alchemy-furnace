@@ -37,9 +37,9 @@ func (s *Inventory) CraftOne(ctx context.Context, req service.CraftPillRequest) 
 					"丹方已归档，禁止新炼制")
 			}
 			item := &model.PillItem{
-				RecipeRevisionID:  rev.UUID.String(),
+				RecipeRevisionID:  rev.PillRecipeRevisionID,
 				State:             model.PillAvailable,
-				OriginOperationID: op.UUID.String(),
+				OriginOperationID: op.PillOperationID,
 				OriginIndex:       0,
 				CreatedAt:         s.now(),
 			}
@@ -47,10 +47,10 @@ func (s *Inventory) CraftOne(ctx context.Context, req service.CraftPillRequest) 
 				return nil, err
 			}
 			return &service.PillOperationResult{
-				OperationID: op.UUID,
-				RecipeID:    &recipe.UUID,
-				RevisionID:  &rev.UUID,
-				ItemIDs:     []uuid.UUID{item.UUID},
+				OperationID: req.OperationID,
+				RecipeID:    uuidPtr(recipe.PillRecipeID),
+				RevisionID:  uuidPtr(rev.PillRecipeRevisionID),
+				ItemIDs:     []uuid.UUID{uuidVal(item.PillItemID)},
 			}, nil
 		})
 }
@@ -67,7 +67,7 @@ func (s *Inventory) ListItems(ctx context.Context, page, size int, recipeID *uui
 		if err != nil {
 			return 0, nil, errors.ErrorServerInternalError("pill.items_query_failed")
 		}
-		uid := recipe.UUID.String()
+		uid := recipe.PillRecipeID
 		recipeUID = &uid
 	}
 	total, items, err := dao.ListAvailablePillItems(s.db, page, size, recipeUID)
@@ -96,9 +96,9 @@ func (s *Inventory) ListItems(ctx context.Context, page, size int, recipeID *uui
 		if !okRev {
 			return 0, nil, errors.ErrorServerInternalError("pill.items_query_failed")
 		}
-		item := service.ItemListItem{Item: it, RevisionUUID: rv.UUID, Revision: rv.Revision, RecipeName: rv.Name}
+		item := service.ItemListItem{Item: it, RevisionUUID: uuidVal(rv.PillRecipeRevisionID), Revision: rv.Revision, RecipeName: rv.Name}
 		if recipe, ok := recipes[rv.RecipeID]; ok {
-			item.RecipeUUID = recipe.UUID
+			item.RecipeUUID = uuidVal(recipe.PillRecipeID)
 		}
 		out = append(out, item)
 	}
@@ -143,7 +143,7 @@ func (s *Inventory) DiscardItem(ctx context.Context, req service.DiscardItemRequ
 				return nil, err
 			}
 			// CAS：只有 available 可转 discarded；竞争/重复触发返回 false
-			ok, err := dao.DiscardPillItemCAS(tx, item.ID)
+			ok, err := dao.DiscardPillItemCAS(tx, item.PillItemID)
 			if err != nil {
 				return nil, err
 			}
@@ -151,7 +151,7 @@ func (s *Inventory) DiscardItem(ctx context.Context, req service.DiscardItemRequ
 				return nil, errors.New(errors.ErrorTypeConflict, "pill.not_available",
 					"金丹不可弃置（已被服用或已弃置）")
 			}
-			return &service.PillOperationResult{OperationID: op.UUID}, nil
+			return &service.PillOperationResult{OperationID: req.OperationID}, nil
 		})
 	return err
 }

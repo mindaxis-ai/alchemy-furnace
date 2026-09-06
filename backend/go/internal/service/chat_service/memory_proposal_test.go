@@ -13,7 +13,6 @@ import (
 	"github.com/alchemy-furnace/server/internal/errors"
 	"github.com/alchemy-furnace/server/internal/interface/service"
 	"github.com/alchemy-furnace/server/model"
-	"github.com/google/uuid"
 )
 
 // proposalMemory 最小记忆替身:只记录 CreateMemory 调用。
@@ -36,8 +35,8 @@ func TestMemoryProposalValidationRules(t *testing.T) {
 		li: {uid: li, name: "李雪琴", memoryEnabled: true},
 	}
 	seen := map[string]bool{}
-	session := &model.ChatSession{UUID: uuid.MustParse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")}
-	run := &model.ChatRun{UUID: uuid.MustParse("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")}
+	session := &model.ChatSession{ChatSessionID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}
+	run := &model.ChatRun{ChatRunID: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}
 
 	cases := []struct {
 		name      string
@@ -69,10 +68,10 @@ func TestMemoryProposalValidationRules(t *testing.T) {
 	if last.in.Kind != "episode" {
 		t.Fatalf("memory kind = %q, want episode", last.in.Kind)
 	}
-	if last.in.SourceSessionID != session.UUID.String() {
-		t.Fatalf("source session = %q, want %q", last.in.SourceSessionID, session.UUID.String())
+	if last.in.SourceSessionID != session.ChatSessionID {
+		t.Fatalf("source session = %q, want %q", last.in.SourceSessionID, session.ChatSessionID)
 	}
-	if last.in.SourceMessageID != run.UUID.String() {
-		t.Fatalf("source run = %q, want 当前 run %q", last.in.SourceMessageID, run.UUID.String())
+	if last.in.SourceMessageID != run.ChatRunID {
+		t.Fatalf("source run = %q, want 当前 run %q", last.in.SourceMessageID, run.ChatRunID)
 	}
 }

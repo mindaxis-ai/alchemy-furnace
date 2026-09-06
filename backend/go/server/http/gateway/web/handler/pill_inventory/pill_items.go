@@ -12,26 +12,26 @@ import (
 	"github.com/google/uuid"
 )
 
-// itemListOut 库存列表项（可用实例）
+// itemListOut 库存列表项（可用实例；主键统一为 uuid 文本）
 type itemListOut struct {
-	ID         uuid.UUID `json:"id"`
+	ID         string    `json:"id"`
 	Name       string    `json:"name"`        // 来源丹方当前版本名称
 	State      string    `json:"state"`       // available（本列表恒为 available）
-	RecipeID   uuid.UUID `json:"recipe_id"`   // 来源丹方对外标识
-	RevisionID uuid.UUID `json:"revision_id"` // 来源不可变版本对外标识
+	RecipeID   string    `json:"recipe_id"`   // 来源丹方对外标识
+	RevisionID string    `json:"revision_id"` // 来源不可变版本对外标识
 	Revision   int       `json:"revision"`    // 版本号
 	CreatedAt  time.Time `json:"created_at"`
 }
 
 // itemDetailOut 实例详情（任意状态可读；已消耗/弃置展示去向）
 type itemDetailOut struct {
-	ID           uuid.UUID      `json:"id"`
+	ID           string         `json:"id"`
 	Name         string         `json:"name"`
 	Description  string         `json:"description"`
 	Tags         model.JSONList `json:"tags"`  // 来源版本标签(hero spotlight 丹性行)
 	State        string         `json:"state"` // available / consumed_by_agent / consumed_by_fusion / discarded
-	RecipeID     uuid.UUID      `json:"recipe_id"`
-	RevisionID   uuid.UUID      `json:"revision_id"`
+	RecipeID     string         `json:"recipe_id"`
+	RevisionID   string         `json:"revision_id"`
 	Revision     int            `json:"revision"`
 	VersionLabel string         `json:"version_label"`
 	ArchivedAt   *time.Time     `json:"archived_at,omitempty"` // 来源丹方已归档时展示
@@ -58,11 +58,11 @@ func (h *Handler) ListPillItems(c *gin.Context) (response.Code, any, error) {
 	out := make([]itemListOut, 0, len(items))
 	for _, it := range items {
 		out = append(out, itemListOut{
-			ID:         it.Item.UUID,
+			ID:         it.Item.PillItemID,
 			Name:       it.RecipeName,
 			State:      string(it.Item.State),
-			RecipeID:   it.RecipeUUID,
-			RevisionID: it.RevisionUUID,
+			RecipeID:   it.RecipeUUID.String(),
+			RevisionID: it.RevisionUUID.String(),
 			Revision:   it.Revision,
 			CreatedAt:  it.Item.CreatedAt,
 		})
@@ -86,13 +86,13 @@ func (h *Handler) GetPillItem(c *gin.Context) (response.Code, any, error) {
 		archivedAt = detail.Recipe.ArchivedAt
 	}
 	return response.Ok, itemDetailOut{
-		ID:           detail.Item.UUID,
+		ID:           detail.Item.PillItemID,
 		Name:         detail.Revision.Name,
 		Description:  detail.Revision.Description,
 		Tags:         detail.Revision.Tags,
 		State:        string(detail.Item.State),
-		RecipeID:     detail.Recipe.UUID,
-		RevisionID:   detail.Revision.UUID,
+		RecipeID:     detail.Recipe.PillRecipeID,
+		RevisionID:   detail.Revision.PillRecipeRevisionID,
 		Revision:     detail.Revision.Revision,
 		VersionLabel: detail.Revision.VersionLabel,
 		ArchivedAt:   archivedAt,

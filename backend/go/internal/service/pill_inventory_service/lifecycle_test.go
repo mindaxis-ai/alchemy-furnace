@@ -47,8 +47,8 @@ func countAvailableForRevision(t *testing.T, db *gorm.DB, revUUID uuid.UUID) int
 	t.Helper()
 	var n int64
 	if err := db.Model(&model.PillItem{}).
-		Joins("JOIN pill_recipe_revisions r ON r.uuid = pill_items.recipe_revision_id").
-		Where("r.uuid = ? AND pill_items.state = ?", revUUID.String(), model.PillAvailable).
+		Joins("JOIN pill_recipe_revisions r ON r.pill_recipe_revision_id = pill_items.recipe_revision_id").
+		Where("r.pill_recipe_revision_id = ? AND pill_items.state = ?", revUUID.String(), model.PillAvailable).
 		Count(&n).Error; err != nil {
 		t.Fatalf("统计版本库存失败: %v", err)
 	}
@@ -59,7 +59,7 @@ func countAvailableForRevision(t *testing.T, db *gorm.DB, revUUID uuid.UUID) int
 func loadItem(t *testing.T, db *gorm.DB, uid uuid.UUID) *model.PillItem {
 	t.Helper()
 	var it model.PillItem
-	if err := db.Where("uuid = ?", uid.String()).First(&it).Error; err != nil {
+	if err := db.Where("pill_item_id = ?", uid.String()).First(&it).Error; err != nil {
 		t.Fatalf("查实例 %s 失败: %v", uid, err)
 	}
 	return &it
@@ -89,7 +89,7 @@ func TestLifecycleConsumeThenCraftThenFusion(t *testing.T) {
 
 	// 2) 服用 A 实例：A 库存 0、能力 1
 	consumeRes, err := svc.Consume(ctx, service.ConsumePillRequest{
-		OperationID: uuid.New(), AgentID: agent.UUID, ItemID: aItem, Weight: 2, SortOrder: 1,
+		OperationID: uuid.New(), AgentID: uuid.MustParse(agent.DaoAgentID), ItemID: aItem, Weight: 2, SortOrder: 1,
 	})
 	if err != nil {
 		t.Fatalf("Consume: %v", err)
@@ -153,8 +153,8 @@ func TestLifecycleConsumeThenCraftThenFusion(t *testing.T) {
 	if err := db.Find(&effects).Error; err != nil {
 		t.Fatal(err)
 	}
-	if len(effects) != 1 || effects[0].UUID != effectID {
-		t.Fatalf("融合后能力=%d 且 UUID=%v, want 1 且 %v（融合不触碰能力）", len(effects), effects[0].UUID, effectID)
+	if len(effects) != 1 || effects[0].AgentPillEffectID != effectID.String() {
+		t.Fatalf("融合后能力=%d 且 id=%v, want 1 且 %v（融合不触碰能力）", len(effects), effects[0].AgentPillEffectID, effectID)
 	}
 	if loadPreview(t, db, pID).ConfirmedOperationID == nil {
 		t.Fatal("预览应绑定成功操作")
@@ -186,7 +186,7 @@ func TestReopenSQLiteInventoryPersists(t *testing.T) {
 		t.Fatalf("找赠送金丹: %v", err)
 	}
 	if _, err := svc1.Consume(context.Background(), service.ConsumePillRequest{
-		OperationID: uuid.New(), AgentID: agent.UUID, ItemID: first.UUID, Weight: 1, SortOrder: 1,
+		OperationID: uuid.New(), AgentID: uuid.MustParse(agent.DaoAgentID), ItemID: uuid.MustParse(first.PillItemID), Weight: 1, SortOrder: 1,
 	}); err != nil {
 		t.Fatalf("服用: %v", err)
 	}
@@ -388,7 +388,7 @@ func TestTwoConsumeRaceSingleItem(t *testing.T) {
 		t.Fatalf("实例状态=%s, want consumed_by_agent", got)
 	}
 	var ag model.DaoAgent
-	if err := db1.First(&ag, "uuid = ?", agent.String()).Error; err != nil {
+	if err := db1.Where("dao_agent_id = ?", agent.String()).First(&ag).Error; err != nil {
 		t.Fatal(err)
 	}
 	if ag.EffectsRevision != 1 {

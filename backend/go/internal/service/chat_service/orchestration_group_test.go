@@ -112,9 +112,9 @@ func newLangGraphGroupFixture(t *testing.T) (*Chat, *fakeChatDao, *groupMemory, 
 	agents := &fakeAgentDao{agents: map[string]*model.DaoAgent{}}
 	byID := map[string]*model.DaoAgent{}
 	for i, uid := range uids {
-		agent := &model.DaoAgent{ID: uint(i + 1), UUID: uid, Name: names[i], Status: "active", ModelName: "test-model", MemoryEnabled: i != 2}
+		agent := &model.DaoAgent{DaoAgentID: uid.String(), Name: names[i], Status: "active", ModelName: "test-model", MemoryEnabled: i != 2}
 		agents.agents[uid.String()] = agent
-		byID[agent.UUID.String()] = agent
+		byID[agent.DaoAgentID] = agent
 	}
 	chats := &fakeChatDao{
 		sessions:  map[string]*model.ChatSession{},
@@ -148,7 +148,7 @@ func runGroupFixtureCmd(t *testing.T, stream []turnEvent, cmd service.Conversati
 	if prepare != nil {
 		prepare(svc, chats, session)
 	}
-	cmd.SessionUID = session.UUID
+	cmd.SessionUID = mustUID(t, session.ChatSessionID)
 	rec := newTurnEventRecorder()
 	svc.RunConversation(context.Background(), cmd, rec.emit)
 
@@ -374,11 +374,11 @@ func TestLangGraphGroupMemoryProposalPersistsValidated(t *testing.T) {
 	if call.in.Content != "李雪琴辰时约饭" {
 		t.Fatalf("memory content = %q", call.in.Content)
 	}
-	if call.in.SourceSessionID != session.UUID.String() {
-		t.Fatalf("source session = %q, want %q", call.in.SourceSessionID, session.UUID.String())
+	if call.in.SourceSessionID != session.ChatSessionID {
+		t.Fatalf("source session = %q, want %q", call.in.SourceSessionID, session.ChatSessionID)
 	}
-	if call.in.SourceMessageID != chats.runs[0].UUID.String() {
-		t.Fatalf("source run = %q, want 当前 run %q", call.in.SourceMessageID, chats.runs[0].UUID.String())
+	if call.in.SourceMessageID != chats.runs[0].ChatRunID {
+		t.Fatalf("source run = %q, want 当前 run %q", call.in.SourceMessageID, chats.runs[0].ChatRunID)
 	}
 	if result.TurnDoneReason != "answered" {
 		t.Fatalf("turn_done reason = %q, want answered (提案失败不影响发言)", result.TurnDoneReason)
@@ -461,12 +461,12 @@ func TestLangGraphGroupCarriesRunIDOnControlEvents(t *testing.T) {
 	svc, chats, _, session := rawGroupFixture(t, server)
 
 	rec := newTurnEventRecorder()
-	svc.RunConversation(context.Background(), service.ConversationCommand{SessionUID: session.UUID, Content: "@全体成员 全体都有！报数！"}, rec.emit)
+	svc.RunConversation(context.Background(), service.ConversationCommand{SessionUID: mustUID(t, session.ChatSessionID), Content: "@全体成员 全体都有！报数！"}, rec.emit)
 
 	if len(chats.runs) != 1 {
 		t.Fatalf("runs = %d, want 1", len(chats.runs))
 	}
-	runID := chats.runs[0].UUID.String()
+	runID := chats.runs[0].ChatRunID
 	for _, event := range []string{"speaker_start", "speaker_done", "turn_done"} {
 		assertGroupRunID(t, rec, event, runID)
 	}
@@ -493,12 +493,12 @@ func TestLangGraphGroupStoppedCarriesRunID(t *testing.T) {
 	svc, chats, _, session := rawGroupFixture(t, server)
 
 	rec := newTurnEventRecorder()
-	svc.RunConversation(context.Background(), service.ConversationCommand{SessionUID: session.UUID, Content: "@全体成员 全体都有！报数！"}, rec.emit)
+	svc.RunConversation(context.Background(), service.ConversationCommand{SessionUID: mustUID(t, session.ChatSessionID), Content: "@全体成员 全体都有！报数！"}, rec.emit)
 
 	if len(chats.runs) != 1 || chats.runs[0].Status != model.ChatRunStatusInterrupted {
 		t.Fatalf("run = %d 个, want interrupted", len(chats.runs))
 	}
-	assertGroupRunID(t, rec, "stopped", chats.runs[0].UUID.String())
+	assertGroupRunID(t, rec, "stopped", chats.runs[0].ChatRunID)
 }
 
 // TestResumeGroupInterruptedRunReplaysSpeakersWithoutNewRun 群聊续跑:不落新用户消息、
@@ -515,11 +515,11 @@ func TestResumeGroupInterruptedRunReplaysSpeakersWithoutNewRun(t *testing.T) {
 	svc, chats, mem, session := rawGroupFixture(t, firstServer)
 
 	rec := newTurnEventRecorder()
-	svc.RunConversation(context.Background(), service.ConversationCommand{SessionUID: session.UUID, Content: "@全体成员 报数"}, rec.emit)
+	svc.RunConversation(context.Background(), service.ConversationCommand{SessionUID: mustUID(t, session.ChatSessionID), Content: "@全体成员 报数"}, rec.emit)
 	if len(chats.runs) != 1 || chats.runs[0].Status != model.ChatRunStatusInterrupted {
 		t.Fatalf("首轮 run = %d 个, want interrupted", len(chats.runs))
 	}
-	runID := chats.runs[0].UUID
+	runID := chats.runs[0].ChatRunID
 	userCount := 0
 	for _, m := range chats.messages {
 		if m.Role == "user" {
@@ -540,16 +540,16 @@ func TestResumeGroupInterruptedRunReplaysSpeakersWithoutNewRun(t *testing.T) {
 	resumeServer := newGroupOrchestrationServer(t, &paths, resumeStream)
 	svc.engineBaseURL = engineendpoint.Static(resumeServer.URL)
 	rec2 := newTurnEventRecorder()
-	svc.RunConversationResume(context.Background(), runID, rec2.emit)
+	svc.RunConversationResume(context.Background(), mustUID(t, runID), rec2.emit)
 
 	for _, e := range rec2.events {
 		if e == "accepted" {
 			t.Fatalf("resume 不应发 accepted, events = %v", rec2.events)
 		}
 	}
-	assertGroupRunID(t, rec2, "speaker_start", runID.String())
-	assertGroupRunID(t, rec2, "speaker_done", runID.String())
-	assertGroupRunID(t, rec2, "turn_done", runID.String())
+	assertGroupRunID(t, rec2, "speaker_start", runID)
+	assertGroupRunID(t, rec2, "speaker_done", runID)
+	assertGroupRunID(t, rec2, "turn_done", runID)
 	var done GroupTurnDonePayload
 	_ = json.Unmarshal([]byte(rec2.data["turn_done"][0]), &done)
 	if done.Spoke != 2 || done.Reason != "answered" {

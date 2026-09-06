@@ -21,7 +21,7 @@ func NewPillDao() *PillDao {
 // TakePillByUUID 按对外 UUID 查询金丹
 func (d *PillDao) TakePillByUUID(ctx context.Context, uid uuid.UUID) (*model.ElixirPill, errors.Error) {
 	var pill model.ElixirPill
-	if err := GetDB().WithContext(ctx).Where("uuid = ?", uid.String()).First(&pill).Error; err != nil {
+	if err := GetDB().WithContext(ctx).Where("elixir_pill_id = ?", uid.String()).First(&pill).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, errors.ErrorRecordNotFound("dao.pill.take_by_uuid")
 		}
@@ -40,7 +40,7 @@ func (d *PillDao) FindPillsByUUIDs(ctx context.Context, uids []uuid.UUID) ([]*mo
 		strs = append(strs, u.String())
 	}
 	var pills []*model.ElixirPill
-	if err := GetDB().WithContext(ctx).Where("uuid IN ?", strs).Find(&pills).Error; err != nil {
+	if err := GetDB().WithContext(ctx).Where("elixir_pill_id IN ?", strs).Find(&pills).Error; err != nil {
 		return nil, errors.ErrorServerInternalError("dao.pill.find_by_uuids")
 	}
 	return pills, nil
@@ -90,7 +90,7 @@ func (d *PillDao) UpdatePill(ctx context.Context, pill *model.ElixirPill, update
 // DeletePill 删除金丹及服用记录(事务)
 func (d *PillDao) DeletePill(ctx context.Context, pill *model.ElixirPill) errors.Error {
 	if err := Transaction(func(tx *gorm.DB) error {
-		if err := tx.WithContext(ctx).Where("pill_id = ?", pill.UUID.String()).Delete(&model.AgentPill{}).Error; err != nil {
+		if err := tx.WithContext(ctx).Where("pill_id = ?", pill.ElixirPillID).Delete(&model.AgentPill{}).Error; err != nil {
 			return err
 		}
 		return tx.WithContext(ctx).Delete(pill).Error

@@ -72,7 +72,7 @@ func (s *Pill) CreatePill(ctx context.Context, name string, description string, 
 		return nil, err.Relation(errors.ErrorServerInternalError("service.pill.create"))
 	}
 
-	zap.L().Info("[炼丹炉] 金丹炼成", zap.String("name", pill.Name), zap.String("uuid", pill.UUID.String()))
+	zap.L().Info("[炼丹炉] 金丹炼成", zap.String("name", pill.Name), zap.String("uuid", pill.ElixirPillID))
 	return pill, nil
 }
 
@@ -165,20 +165,20 @@ func (s *Pill) ClonePill(ctx context.Context, uid uuid.UUID) (*model.ElixirPill,
 	}
 
 	clone := &model.ElixirPill{
-		UUID:        uuid.New(),
-		Name:        pill.Name + " 副本",
-		Description: pill.Description,
-		SkillSchema: schema,
-		Tags:        tags,
-		Author:      pill.Author,
-		Version:     pill.Version,
-		IsBuiltin:   false,
+		ElixirPillID: uuid.New().String(),
+		Name:         pill.Name + " 副本",
+		Description:  pill.Description,
+		SkillSchema:  schema,
+		Tags:         tags,
+		Author:       pill.Author,
+		Version:      pill.Version,
+		IsBuiltin:    false,
 	}
 	if err := s.pill.SavePill(ctx, clone); err != nil {
 		return nil, err.Relation(errors.ErrorServerInternalError("service.pill.clone"))
 	}
 
-	zap.L().Info("[炼丹炉] 金丹副本已制作", zap.String("source_uuid", uid.String()), zap.String("clone_uuid", clone.UUID.String()))
+	zap.L().Info("[炼丹炉] 金丹副本已制作", zap.String("source_uuid", uid.String()), zap.String("clone_uuid", clone.ElixirPillID))
 	return clone, nil
 }
 
@@ -210,18 +210,18 @@ func deepCopyList(src model.JSONList) (model.JSONList, error) {
 
 // invalidateByPill 失效服用该金丹的全部道人缓存;失败仅告警不阻塞主流程
 func (s *Pill) invalidateByPill(ctx context.Context, pill *model.ElixirPill) {
-	agentIDs, err := s.pill.FindAgentIDsByPillID(ctx, pill.UUID.String())
+	agentIDs, err := s.pill.FindAgentIDsByPillID(ctx, pill.ElixirPillID)
 	if err != nil {
-		zap.L().Warn("[炼丹炉] 查询服用金丹的道人失败", zap.String("pill_uuid", pill.UUID.String()), zap.Error(err))
+		zap.L().Warn("[炼丹炉] 查询服用金丹的道人失败", zap.String("pill_uuid", pill.ElixirPillID), zap.Error(err))
 		return
 	}
 	if err := s.pill.InvalidateLanguagePatternsByAgentIDs(ctx, agentIDs); err != nil {
-		zap.L().Warn("[炼丹炉] 失效语言模式缓存失败", zap.String("pill_uuid", pill.UUID.String()), zap.Error(err))
+		zap.L().Warn("[炼丹炉] 失效语言模式缓存失败", zap.String("pill_uuid", pill.ElixirPillID), zap.Error(err))
 		return
 	}
 	if len(agentIDs) > 0 {
 		zap.L().Info("[炼丹炉] 金丹变化,已失效相关语言模式缓存",
-			zap.String("pill_uuid", pill.UUID.String()),
+			zap.String("pill_uuid", pill.ElixirPillID),
 			zap.Int("affected_agents", len(agentIDs)))
 	}
 }

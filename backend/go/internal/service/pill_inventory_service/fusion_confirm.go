@@ -51,7 +51,7 @@ func (s *Inventory) ConfirmFusion(ctx context.Context, req service.ConfirmFusion
 					return nil, err
 				}
 				return nil, errors.New(errors.ErrorTypeConflict, "fusion.preview_already_confirmed",
-					"该预览已被操作(%s)确认，请刷新后重试", existing.UUID.String())
+					"该预览已被操作(%s)确认，请刷新后重试", existing.PillOperationID)
 			}
 			// 3) 过期（410）：预览只保证 15 分钟内材料未动
 			if s.now().After(preview.ExpiresAt) {
@@ -76,7 +76,7 @@ func (s *Inventory) ConfirmFusion(ctx context.Context, req service.ConfirmFusion
 				return nil, errors.New(errors.ErrorTypeConflict, "pill.not_available",
 					"融合材料已变化，请重新生成预览")
 			}
-			itemIDs := make([]uint, 0, len(items))
+			itemIDs := make([]string, 0, len(items))
 			parentNames := make([]string, 0, len(items))
 			parentRevisions := make([]string, 0, len(items))
 			for _, item := range items {
@@ -84,18 +84,18 @@ func (s *Inventory) ConfirmFusion(ctx context.Context, req service.ConfirmFusion
 					return nil, errors.New(errors.ErrorTypeConflict, "pill.not_available",
 						"金丹不可用（已被服用/融合/弃置）")
 				}
-				itemIDs = append(itemIDs, item.ID)
+				itemIDs = append(itemIDs, item.PillItemID)
 				// lineage 需要父版本名称/版本 UUID 快照（不可变版本，引用安全）
 				rev, err := dao.PillRecipeRevisionByID(tx, item.RecipeRevisionID)
 				if err != nil {
 					return nil, err
 				}
 				parentNames = append(parentNames, rev.Name)
-				parentRevisions = append(parentRevisions, rev.UUID.String())
+				parentRevisions = append(parentRevisions, rev.PillRecipeRevisionID)
 			}
 			// 6) 批量 CAS 全部材料：available→consumed_by_fusion。
 			//    条件更新原子性：任一材料已被并发消耗 → 0 行 → 整体回滚
-			ok, err := dao.ConsumeFusionItemsCAS(tx, itemIDs, s.now(), op.UUID.String())
+			ok, err := dao.ConsumeFusionItemsCAS(tx, itemIDs, s.now(), op.PillOperationID)
 			if err != nil {
 				return nil, err
 			}
@@ -114,7 +114,7 @@ func (s *Inventory) ConfirmFusion(ctx context.Context, req service.ConfirmFusion
 				return nil, errors.ErrorServerInternalError("fusion.preview_corrupt")
 			}
 			rev := &model.PillRecipeRevision{
-				RecipeID:     recipe.UUID.String(),
+				RecipeID:     recipe.PillRecipeID,
 				Revision:     1,
 				Name:         req.Name,
 				Description:  req.Description,
@@ -126,13 +126,13 @@ func (s *Inventory) ConfirmFusion(ctx context.Context, req service.ConfirmFusion
 			if err := dao.CreatePillRecipeRevision(tx, rev); err != nil {
 				return nil, err
 			}
-			if err := dao.SetPillRecipeCurrentRevision(tx, recipe.ID, rev.UUID.String()); err != nil {
+			if err := dao.SetPillRecipeCurrentRevision(tx, recipe.PillRecipeID, rev.PillRecipeRevisionID); err != nil {
 				return nil, err
 			}
 			item := &model.PillItem{
-				RecipeRevisionID:  rev.UUID.String(),
+				RecipeRevisionID:  rev.PillRecipeRevisionID,
 				State:             model.PillAvailable,
-				OriginOperationID: op.UUID.String(),
+				OriginOperationID: op.PillOperationID,
 				OriginIndex:       0,
 				CreatedAt:         s.now(),
 			}
@@ -142,7 +142,7 @@ func (s *Inventory) ConfirmFusion(ctx context.Context, req service.ConfirmFusion
 			// 8) 服务器 lineage 附加到输出深拷贝（§3.3 落点）：
 			//    父实例 UUID / 父版本 UUID / 名称快照 / 操作 UUID / 操作者快照
 			output["lineage"] = map[string]any{
-				"operation_id":     op.UUID.String(),
+				"operation_id":     op.PillOperationID,
 				"parent_items":     uuidStrings(inputIDs),
 				"parent_names":     parentNames,
 				"parent_revisions": parentRevisions,
@@ -151,7 +151,7 @@ func (s *Inventory) ConfirmFusion(ctx context.Context, req service.ConfirmFusion
 			}
 			// 9) 单 SQL「写 lineage + 条件绑定确认操作」：
 			//    RowsAffected==0 表示并发双确认已抢先 → 409，事务整体回滚（材料归还、产物撤销）
-			bound, err := dao.ConfirmFusionPreviewCAS(tx, preview.UUID.String(), op.UUID.String(), output)
+			bound, err := dao.ConfirmFusionPreviewCAS(tx, preview.FusionPreviewID, op.PillOperationID, output)
 			if err != nil {
 				return nil, err
 			}
@@ -160,10 +160,10 @@ func (s *Inventory) ConfirmFusion(ctx context.Context, req service.ConfirmFusion
 					"该预览已被其他请求确认，请刷新后重试")
 			}
 			return &service.PillOperationResult{
-				OperationID:     op.UUID,
-				RecipeID:        &recipe.UUID,
-				RevisionID:      &rev.UUID,
-				ItemIDs:         []uuid.UUID{item.UUID},
+				OperationID:     req.OperationID,
+				RecipeID:        uuidPtr(recipe.PillRecipeID),
+				RevisionID:      uuidPtr(rev.PillRecipeRevisionID),
+				ItemIDs:         []uuid.UUID{uuidVal(item.PillItemID)},
 				ConsumedItemIDs: inputIDs,
 			}, nil
 		})

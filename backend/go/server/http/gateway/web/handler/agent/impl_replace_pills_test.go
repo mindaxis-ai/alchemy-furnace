@@ -46,9 +46,9 @@ func seedAgentWithPillsForReplace(t *testing.T, db *gorm.DB, pillCount int) (str
 		if err := db.Create(&p).Error; err != nil {
 			t.Fatalf("创建金丹失败: %v", err)
 		}
-		pillUUIDs = append(pillUUIDs, p.UUID.String())
+		pillUUIDs = append(pillUUIDs, p.ElixirPillID)
 	}
-	return agent.UUID.String(), pillUUIDs
+	return agent.DaoAgentID, pillUUIDs
 }
 
 // assertGone410 断言 410 + 稳定错误码 pill.legacy_api_removed

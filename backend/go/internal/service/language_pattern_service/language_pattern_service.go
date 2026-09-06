@@ -99,14 +99,14 @@ func (s *LanguagePatternService) buildOnce(ctx context.Context, agentUID string)
 		// 旧逻辑「失败时降级用旧缓存」删除: 旧缓存缺 behavior_profile 已被缓存判定排除
 		zap.L().Warn("[炼丹炉] 语言模式合成失败，返回无损确定性渲染(不落库)",
 			zap.String("agent_uid", agentUID), zap.Error(combineErr))
-		return s.losslessTempPattern(agent.UUID.String(), agent.Name, agent.Personality, fingerprint, "combine_error", pills), nil
+		return s.losslessTempPattern(agent.DaoAgentID, agent.Name, agent.Personality, fingerprint, "combine_error", pills), nil
 	}
 
 	// 降级结果(涌现层不可用)不落库: is_valid=false 临时对象,下次请求重试合成
 	if resp.Degraded {
 		zap.L().Warn("[炼丹炉] 语言模式合成降级,本次不落库",
 			zap.String("agent_uid", agentUID), zap.String("reason", resp.DegradedReason))
-		return s.losslessTempPattern(agent.UUID.String(), agent.Name, agent.Personality, fingerprint, resp.DegradedReason, pills), nil
+		return s.losslessTempPattern(agent.DaoAgentID, agent.Name, agent.Personality, fingerprint, resp.DegradedReason, pills), nil
 	}
 
 	// 合成成功: 确定性编译 + 合并涌现层 + 渲染 + 写回缓存
@@ -135,7 +135,7 @@ func (s *LanguagePatternService) buildOnce(ctx context.Context, agentUID string)
 		pattern = agent.LanguagePattern
 	} else {
 		pattern = &model.LanguagePattern{
-			AgentID:           agent.UUID.String(),
+			AgentID:           agent.DaoAgentID,
 			SystemPrompt:      behavior.RenderSystemPrompt(profile, agent.Name),
 			EmergenceRules:    emergenceRules,
 			InnerTensions:     innerTensions,
@@ -162,7 +162,7 @@ func buildPillInputs(agent *model.DaoAgent) []synthesis.PillInput {
 	pills := make([]synthesis.PillInput, 0, len(effects))
 	for _, ef := range effects {
 		pills = append(pills, synthesis.PillInput{
-			ID:          ef.Item.UUID.String(),
+			ID:          ef.Item.PillItemID,
 			Name:        ef.NameSnapshot,
 			Weight:      ef.Weight,
 			SortOrder:   ef.SortOrder,

@@ -76,7 +76,7 @@ func (s *ModelService) ListModelsByProvider(ctx context.Context, providerUID uui
 		return nil, err.Relation(errors.ErrorRecordNotFound("service.model.list_take_provider"))
 	}
 
-	_, models, err := s.model.FindModelsByProvider(ctx, p.UUID.String(), page, size)
+	_, models, err := s.model.FindModelsByProvider(ctx, p.LLMProviderID, page, size)
 	if err != nil {
 		return nil, err.Relation(errors.ErrorServerInternalError("service.model.list"))
 	}
@@ -143,7 +143,7 @@ func (s *ModelService) CreateModel(ctx context.Context, providerUID uuid.UUID, n
 		return nil, err
 	}
 
-	exists, err := s.model.ModelNameExistsInProvider(ctx, p.UUID.String(), name, "")
+	exists, err := s.model.ModelNameExistsInProvider(ctx, p.LLMProviderID, name, "")
 	if err != nil {
 		return nil, err.Relation(errors.ErrorServerInternalError("service.model.create_name_check"))
 	}
@@ -152,7 +152,7 @@ func (s *ModelService) CreateModel(ctx context.Context, providerUID uuid.UUID, n
 	}
 
 	m := &model.LLMModel{
-		ProviderID:  p.UUID.String(),
+		ProviderID:  p.LLMProviderID,
 		Name:        name,
 		DisplayName: displayName,
 		Temperature: temperature,
@@ -169,7 +169,7 @@ func (s *ModelService) CreateModel(ctx context.Context, providerUID uuid.UUID, n
 
 	m.Provider = *p
 	zap.L().Info("[炼丹炉] 新模型入炉",
-		zap.String("uuid", m.UUID.String()),
+		zap.String("uuid", m.LLMModelID),
 		zap.String("name", m.Name),
 		zap.String("provider", p.Name))
 	return s.toView(m, 0), nil
@@ -188,7 +188,7 @@ func (s *ModelService) UpdateModel(ctx context.Context, uid uuid.UUID, name, dis
 		if err := validateName(trimmed); err != nil {
 			return nil, err
 		}
-		exists, cerr := s.model.ModelNameExistsInProvider(ctx, m.ProviderID, trimmed, m.UUID.String())
+		exists, cerr := s.model.ModelNameExistsInProvider(ctx, m.ProviderID, trimmed, m.LLMModelID)
 		if cerr != nil {
 			return nil, cerr.Relation(errors.ErrorServerInternalError("service.model.update_name_check"))
 		}
@@ -307,7 +307,7 @@ func (s *ModelService) resolveCredentials(ctx context.Context, m *model.LLMModel
 }
 
 // ResolveCredentials 解析对话模型调用凭证;name 空时取默认模型
-//   - 同名模型存在于多个供应商时,取 sort_order,id 最小者并记录 warning
+//   - 同名模型存在于多个供应商时,取 sort_order,llm_model_id 最小者并记录 warning
 //   - 找到已启用模型:返回供应商凭证
 //   - 找到但全部停用:返回明确错误
 //   - 未找到:返回仅含模型名的空凭证(Python 回退环境变量),向后兼容
@@ -340,9 +340,9 @@ func (s *ModelService) ResolveCredentials(ctx context.Context, name string) (*cr
 		return nil, errors.New(errors.ErrorTypeInvalidRequest, "service.model.disabled", "该道人使用的模型已停用，请更换模型")
 	}
 	if enabledCount > 1 {
-		zap.L().Warn("[炼丹炉] 同名模型存在于多个供应商，按 sort_order,uuid 取第一个",
+		zap.L().Warn("[炼丹炉] 同名模型存在于多个供应商，按 sort_order,llm_model_id 取第一个",
 			zap.String("model", name),
-			zap.String("selected_id", selected.UUID.String()),
+			zap.String("selected_id", selected.LLMModelID),
 			zap.String("provider_id", selected.ProviderID))
 	}
 

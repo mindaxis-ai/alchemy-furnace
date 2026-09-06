@@ -1,5 +1,6 @@
-// 011 重构 schema 契约:业务实体同时具有自增内部主键 id 与唯一 uuid 业务键;
-// 全部跨表关系必须引用父实体 uuid,禁止以内部 id 作为关系值(specs/011 §2/§3)。
+// 修订轮 schema 契约:业务实体主键统一为 <EntityID> text(uuid.UUID.String()),
+// 无内部自增 id、无独立 uuid 列;全部跨表关系为 text 列引用父实体业务主键
+// (specs/011 修订轮裁决:本质上是每个实体的唯一标识都是 uuid.UUID.String())。
 package dao
 
 import (
@@ -14,50 +15,52 @@ import (
 	"gorm.io/gorm"
 )
 
-// businessEntities 011 spec §2.1:被 API 寻址/被引用/需稳定身份的业务实体表
+// businessEntities 011 spec §2.1:被 API 寻址/被引用/需稳定身份的业务实体表,
+// 以及各自统一的业务主键列名(GORM NamingStrategy snake_case)。
 var businessEntities = []struct {
 	name  string
+	pk    string
 	model any
 }{
-	{"elixir_pills", &model.ElixirPill{}},
-	{"dao_agents", &model.DaoAgent{}},
-	{"chat_sessions", &model.ChatSession{}},
-	{"chat_messages", &model.ChatMessage{}},
-	{"chat_runs", &model.ChatRun{}},
-	{"llm_providers", &model.LLMProvider{}},
-	{"llm_models", &model.LLMModel{}},
-	{"agent_memories", &model.AgentMemory{}},
-	{"pill_recipes", &model.PillRecipe{}},
-	{"pill_recipe_revisions", &model.PillRecipeRevision{}},
-	{"pill_items", &model.PillItem{}},
-	{"agent_pill_effects", &model.AgentPillEffect{}},
-	{"pill_operations", &model.PillOperation{}},
-	{"fusion_previews", &model.FusionPreview{}},
+	{"elixir_pills", "elixir_pill_id", &model.ElixirPill{}},
+	{"dao_agents", "dao_agent_id", &model.DaoAgent{}},
+	{"chat_sessions", "chat_session_id", &model.ChatSession{}},
+	{"chat_messages", "chat_message_id", &model.ChatMessage{}},
+	{"chat_runs", "chat_run_id", &model.ChatRun{}},
+	{"llm_providers", "llm_provider_id", &model.LLMProvider{}},
+	{"llm_models", "llm_model_id", &model.LLMModel{}},
+	{"agent_memories", "agent_memory_id", &model.AgentMemory{}},
+	{"pill_recipes", "pill_recipe_id", &model.PillRecipe{}},
+	{"pill_recipe_revisions", "pill_recipe_revision_id", &model.PillRecipeRevision{}},
+	{"pill_items", "pill_item_id", &model.PillItem{}},
+	{"agent_pill_effects", "agent_pill_effect_id", &model.AgentPillEffect{}},
+	{"pill_operations", "pill_operation_id", &model.PillOperation{}},
+	{"fusion_previews", "fusion_preview_id", &model.FusionPreview{}},
 }
 
-// TestBusinessEntitiesKeepInternalIDAndUniqueUUID 每个业务实体表必须同时具备
-// id 自增主键列与 uuid 唯一业务键列(索引名 idx_<table>_uuid)。
-func TestBusinessEntitiesKeepInternalIDAndUniqueUUID(t *testing.T) {
+// TestBusinessEntitiesUseUUIDTextPrimaryKey 每个业务实体表必须以 <entity>_id
+// text 为唯一主键列;内部自增 id 与独立 uuid 列必须已删除。
+func TestBusinessEntitiesUseUUIDTextPrimaryKey(t *testing.T) {
 	db := newSQLiteTestDB(t, filepath.Join(t.TempDir(), "uuid-schema.db"))
 	require.NoError(t, db.AutoMigrate(allMigratableModels...))
 
 	for _, ent := range businessEntities {
 		t.Run(ent.name, func(t *testing.T) {
-			require.True(t, db.Migrator().HasColumn(ent.model, "id"), "%s 缺内部主键列 id", ent.name)
-			require.True(t, db.Migrator().HasColumn(ent.model, "uuid"), "%s 缺业务键列 uuid", ent.name)
-			require.True(t, db.Migrator().HasIndex(ent.model, "idx_"+ent.name+"_uuid"), "%s 缺 uuid 唯一索引", ent.name)
+			require.True(t, db.Migrator().HasColumn(ent.model, ent.pk), "%s 缺业务主键列 %s", ent.name, ent.pk)
+			require.False(t, db.Migrator().HasColumn(ent.model, "id"), "%s 不应再有内部自增主键列 id", ent.name)
+			require.False(t, db.Migrator().HasColumn(ent.model, "uuid"), "%s 不应再有独立 uuid 列", ent.name)
 		})
 	}
 }
 
-// TestUUIDForeignKeysReferenceBusinessUUID 关系行为契约(FK 强制开启的独立库):
-//  1. agent_pills.agent_id/pill_id 必须能写入父实体 uuid(数据库接受 uuid 值并满足 FK);
-//  2. 用父实体的内部自增 id 作为关系值必须被 FK 拒绝(内部 id 永不得成为关系值);
-//  3. 删除父实体时,以 uuid 关联的 agent_pills 行必须级联删除。
+// TestForeignKeysReferenceBusinessKey 关系行为契约(FK 强制开启的独立库):
+//  1. agent_pills.agent_id/pill_id 必须能写入父实体业务主键(uuid 文本);
+//  2. 不存在的 uuid 文本作为关系值必须被 FK 拒绝(关系值必须真实指向父实体);
+//  3. 删除父实体时,以业务主键关联的 agent_pills 行必须级联删除。
 //
 // 共享的 newSQLiteTestDB 不带 FK 强制(_fk=1 不被 glebarez/modernc 识别,
 // 实测 PRAGMA foreign_keys=0),故此处用 _pragma=foreign_keys(1) 自开库。
-func TestUUIDForeignKeysReferenceBusinessUUID(t *testing.T) {
+func TestForeignKeysReferenceBusinessKey(t *testing.T) {
 	db, err := gorm.Open(
 		sqlite.Open("file:"+filepath.Join(t.TempDir(), "uuid-fk.db")+"?_pragma=foreign_keys(1)"),
 		&gorm.Config{})
@@ -66,36 +69,34 @@ func TestUUIDForeignKeysReferenceBusinessUUID(t *testing.T) {
 
 	agent := &model.DaoAgent{Name: "契约道人"}
 	require.NoError(t, db.Create(agent).Error)
-	require.NotEqual(t, uuid.Nil, agent.UUID)
-	require.NotZero(t, agent.ID)
+	require.NotEmpty(t, agent.DaoAgentID, "BeforeCreate 应生成 uuid 文本业务主键")
 
 	pill := &model.ElixirPill{Name: "契约金丹", SkillSchema: model.JSONMap{"identity_card": "x"}}
 	require.NoError(t, db.Create(pill).Error)
-	require.NotEqual(t, uuid.Nil, pill.UUID)
-	require.NotZero(t, pill.ID)
+	require.NotEmpty(t, pill.ElixirPillID, "BeforeCreate 应生成 uuid 文本业务主键")
 
-	// 1) 以父实体 uuid 写关系列:必须成功
+	// 1) 以父实体业务主键写关系列:必须成功
 	require.NoError(t, db.Exec(
 		`INSERT INTO agent_pills (agent_id, pill_id) VALUES (?, ?)`,
-		agent.UUID.String(), pill.UUID.String(),
-	).Error, "agent_pills 必须接受父实体 uuid 作为关系值")
+		agent.DaoAgentID, pill.ElixirPillID,
+	).Error, "agent_pills 必须接受父实体业务主键作为关系值")
 
-	// 2) 以父实体内部自增 id 写关系列:必须被 FK 拒绝
+	// 2) 以不存在的 uuid 文本写关系列:必须被 FK 拒绝
 	err = db.Exec(
 		`INSERT INTO agent_pills (agent_id, pill_id) VALUES (?, ?)`,
-		agent.ID, pill.ID,
+		uuid.New().String(), uuid.New().String(),
 	).Error
-	require.Error(t, err, "内部自增 id 不得作为 agent_pills 关系值")
+	require.Error(t, err, "不存在的 uuid 文本不得作为 agent_pills 关系值")
 	require.Contains(t, err.Error(), "FOREIGN KEY", "拒绝原因应为外键约束")
 
-	// 3) 删除父实体(按 uuid 定位):uuid 关联行级联删除
-	require.NoError(t, db.Where("uuid = ?", agent.UUID).Delete(&model.DaoAgent{}).Error)
+	// 3) 删除父实体(按业务主键定位):关联行级联删除
+	require.NoError(t, db.Where("dao_agent_id = ?", agent.DaoAgentID).Delete(&model.DaoAgent{}).Error)
 	var remain int64
-	require.NoError(t, db.Table("agent_pills").Where("agent_id = ?", agent.UUID.String()).Count(&remain).Error)
-	require.Zero(t, remain, "删除父实体后 uuid 关联的服用记录应级联删除")
+	require.NoError(t, db.Table("agent_pills").Where("agent_id = ?", agent.DaoAgentID).Count(&remain).Error)
+	require.Zero(t, remain, "删除父实体后以业务主键关联的服用记录应级联删除")
 }
 
-// TestRelationColumnsUseUUIDType 关系列数据库类型必须为文本/uuid 语义(SQLite 下
+// TestRelationColumnsUseUUIDType 关系列数据库类型必须为文本语义(SQLite 下
 // 存放 uuid 字符串),不得是 integer:覆盖 agent_pills/language_patterns/chat_messages/
 // chat_runs/session_members/llm_models/agent_memories 的代表关系列。
 func TestRelationColumnsUseUUIDType(t *testing.T) {
@@ -134,7 +135,7 @@ func TestRelationColumnsUseUUIDType(t *testing.T) {
 	for _, rc := range rels {
 		t.Run(rc.column, func(t *testing.T) {
 			colType := strings.ToLower(columnDatabaseType(t, db, rc.model, rc.column))
-			require.NotContains(t, colType, "int", "%s.%s 是整数列 %q,关系列必须是 UUID", tableNameOf(t, db, rc.model), rc.column, colType)
+			require.NotContains(t, colType, "int", "%s.%s 是整数列 %q,关系列必须是 uuid 文本", tableNameOf(t, db, rc.model), rc.column, colType)
 		})
 	}
 }

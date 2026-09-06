@@ -42,7 +42,7 @@ func toMemoryResponse(m *model.AgentMemory) *MemoryResponse {
 		}
 	}
 	return &MemoryResponse{
-		ID:              m.UUID.String(),
+		ID:              m.AgentMemoryID,
 		Kind:            m.Kind,
 		Content:         m.Content,
 		Keywords:        keywords,
@@ -135,7 +135,7 @@ func (cls *Agent) ListMemories(c *gin.Context) (response.Code, any, error) {
 	if v, ok := c.GetQuery("active"); ok {
 		onlyActive = v != "false"
 	}
-	list, merr := cls.memory.ListMemories(contextutil.NewContextWithGin(c), agent.UUID.String(), kind, onlyActive)
+	list, merr := cls.memory.ListMemories(contextutil.NewContextWithGin(c), agent.DaoAgentID, kind, onlyActive)
 	if merr != nil {
 		return 0, nil, merr
 	}
@@ -157,7 +157,7 @@ func (cls *Agent) CreateMemory(c *gin.Context) (response.Code, any, error) {
 	if berr := request.ShouldBindJSON(c, &body); berr != nil {
 		return response.InvalidParams, nil, berr
 	}
-	m, merr := cls.memory.CreateMemory(contextutil.NewContextWithGin(c), agent.UUID.String(), body.toMemoryInput())
+	m, merr := cls.memory.CreateMemory(contextutil.NewContextWithGin(c), agent.DaoAgentID, body.toMemoryInput())
 	if merr != nil {
 		return 0, nil, merr
 	}
@@ -183,7 +183,7 @@ func (cls *Agent) UpdateMemory(c *gin.Context) (response.Code, any, error) {
 	if berr := request.ShouldBindJSON(c, &body); berr != nil {
 		return response.InvalidParams, nil, berr
 	}
-	m, merr := cls.memory.UpdateMemory(contextutil.NewContextWithGin(c), agent.UUID.String(), memUID, body.toMemoryInput())
+	m, merr := cls.memory.UpdateMemory(contextutil.NewContextWithGin(c), agent.DaoAgentID, memUID, body.toMemoryInput())
 	if merr != nil {
 		return 0, nil, merr
 	}
@@ -205,7 +205,7 @@ func (cls *Agent) DeleteMemory(c *gin.Context) (response.Code, any, error) {
 	if serr != nil {
 		return 0, nil, serr
 	}
-	if merr := cls.memory.DeleteMemory(contextutil.NewContextWithGin(c), agent.UUID.String(), memUID); merr != nil {
+	if merr := cls.memory.DeleteMemory(contextutil.NewContextWithGin(c), agent.DaoAgentID, memUID); merr != nil {
 		return 0, nil, merr
 	}
 	return response.Ok, gin.H{"deleted": true}, nil
@@ -222,7 +222,7 @@ func (cls *Agent) ClearMemories(c *gin.Context) (response.Code, any, error) {
 	if serr != nil {
 		return 0, nil, serr
 	}
-	n, merr := cls.memory.ClearMemories(contextutil.NewContextWithGin(c), agent.UUID.String())
+	n, merr := cls.memory.ClearMemories(contextutil.NewContextWithGin(c), agent.DaoAgentID)
 	if merr != nil {
 		return 0, nil, merr
 	}

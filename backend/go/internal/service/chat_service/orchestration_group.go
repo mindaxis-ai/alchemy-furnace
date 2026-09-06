@@ -109,7 +109,7 @@ func buildMentionsJSON(members []*model.SessionMember, names []string, user bool
 	for _, name := range names {
 		for _, m := range members {
 			if m.Agent.Name == name {
-				uuids = append(uuids, m.Agent.UUID.String())
+				uuids = append(uuids, m.Agent.DaoAgentID)
 			}
 		}
 	}
@@ -126,14 +126,14 @@ func groupParticipantTables(members []*model.SessionMember) (map[string]*groupPa
 	participants := make(map[string]*groupParticipant, len(members))
 	modelByAgent := make(map[string]string, len(members))
 	for _, m := range members {
-		participants[m.Agent.UUID.String()] = &groupParticipant{uid: m.Agent.UUID.String(), name: m.Agent.Name, avatar: m.Agent.Avatar, memoryEnabled: m.Agent.MemoryEnabled}
-		modelByAgent[m.Agent.UUID.String()] = m.Agent.ModelName
+		participants[m.Agent.DaoAgentID] = &groupParticipant{uid: m.Agent.DaoAgentID, name: m.Agent.Name, avatar: m.Agent.Avatar, memoryEnabled: m.Agent.MemoryEnabled}
+		modelByAgent[m.Agent.DaoAgentID] = m.Agent.ModelName
 	}
 	return participants, modelByAgent
 }
 
 func (s *Chat) runGroupConversation(ctx context.Context, session *model.ChatSession, cmd service.ConversationCommand, emit func(event string, payload any)) {
-	members, merr := s.chat.FindMembers(ctx, session.UUID.String())
+	members, merr := s.chat.FindMembers(ctx, session.ChatSessionID)
 	if merr != nil {
 		emit("error", GroupSpeakerPayload{Content: "获取群成员失败", ErrorCode: "service.chat.stream_unavailable", Terminal: true, Recovery: StreamRecoveryResend})
 		return
@@ -153,14 +153,14 @@ func (s *Chat) runGroupConversation(ctx context.Context, session *model.ChatSess
 	}
 
 	// 群聊公共契约无 accepted(发言即反馈)
-	userMessageUID := userMessage.UUID.String()
-	run := &model.ChatRun{UUID: uuid.New(), SessionID: session.UUID.String(), UserMessageID: &userMessageUID, Status: model.ChatRunStatusPending}
+	userMessageUID := userMessage.ChatMessageID
+	run := &model.ChatRun{ChatRunID: uuid.New().String(), SessionID: session.ChatSessionID, UserMessageID: &userMessageUID, Status: model.ChatRunStatusPending}
 	if cerr := s.chat.CreateRun(ctx, run); cerr != nil {
 		emit("error", turnUnavailable())
 		return
 	}
 	// run 建行后事件切 runEmit:发言/收束事件携带 run_id(Task 14,设计 §10/§11)
-	runEmit := withRunID(emit, run.UUID.String())
+	runEmit := withRunID(emit, run.ChatRunID)
 	if rerr := s.chat.UpdateRunStatus(ctx, run, model.ChatRunStatusRunning); rerr != nil {
 		runEmit("error", turnUnavailable())
 		return
@@ -249,12 +249,16 @@ func (st *langGraphGroupState) consume(e orchestration.Event) error {
 			p.ReplyID = "assistant_final"
 		}
 		agentUID := pt.uid
-		saved, serr := st.svc.chat.SaveFinalReplyOnce(context.WithoutCancel(st.ctx), st.run.UUID, p.ReplyID, &model.ChatMessage{
-			UUID:      uuid.New(), // 显式生成:DAO 各实现/幂等返回均携带稳定 MessageID
-			SessionID: st.session.UUID.String(),
-			Role:      "assistant",
-			AgentID:   &agentUID,
-			Content:   p.Text,
+		runUID, perr := uuid.Parse(st.run.ChatRunID)
+		if perr != nil {
+			return fmt.Errorf("编排终稿落库失败: run 标识无效: %w", perr)
+		}
+		saved, serr := st.svc.chat.SaveFinalReplyOnce(context.WithoutCancel(st.ctx), runUID, p.ReplyID, &model.ChatMessage{
+			ChatMessageID: uuid.New().String(), // 显式生成:DAO 各实现/幂等返回均携带稳定 MessageID
+			SessionID:     st.session.ChatSessionID,
+			Role:          "assistant",
+			AgentID:       &agentUID,
+			Content:       p.Text,
 		})
 		if serr != nil {
 			return fmt.Errorf("编排终稿落库失败: %w", serr)
@@ -276,7 +280,7 @@ func (st *langGraphGroupState) consume(e orchestration.Event) error {
 		}
 		messageID := ""
 		if saved != nil {
-			messageID = saved.UUID.String()
+			messageID = saved.ChatMessageID
 		}
 		st.emit("speaker_done", GroupSpeakerPayload{AgentID: p.AgentID, AgentName: pt.name, AgentAvatar: pt.avatar, MessageID: messageID})
 	case "prompt_debug":
@@ -348,7 +352,7 @@ func (s *Chat) finishLangGraphGroupTurn(ctx context.Context, run *model.ChatRun,
 	}
 	if len(st.targets) > 0 {
 		s.EnqueueMemoryDistillation(saveCtx, service.DistillationSpec{
-			SessionUUID: st.session.UUID.String(),
+			SessionUUID: st.session.ChatSessionID,
 			Model:       st.firstModel,
 			UserMessage: st.userContent,
 			Targets:     st.targets,

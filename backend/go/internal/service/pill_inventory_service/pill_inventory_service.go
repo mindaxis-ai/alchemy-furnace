@@ -155,3 +155,23 @@ func parseUUIDList(v any) []uuid.UUID {
 	}
 	return out
 }
+
+// ---------- 模型 UUID 文本 → 接口契约 uuid.UUID 转换 ----------
+// 主键统一 uuid 文本后,模型字段为 string,而 service 接口契约(PillOperationResult 等)
+// 仍以 uuid.UUID 承载对外标识;以下两个 helper 只在边界做一次文本→UUID 回填。
+// 模型主键恒由 BeforeCreate 以 uuid.New().String() 生成,正常路径必可解析。
+
+// uuidVal UUID 文本 → uuid.UUID(解析失败返回 uuid.Nil,DTO 字段退化为零值)
+func uuidVal(s string) uuid.UUID {
+	u, _ := uuid.Parse(s)
+	return u
+}
+
+// uuidPtr UUID 文本 → *uuid.UUID(解析失败返回 nil,DTO 字段省略)
+func uuidPtr(s string) *uuid.UUID {
+	u, err := uuid.Parse(s)
+	if err != nil {
+		return nil
+	}
+	return &u
+}

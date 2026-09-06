@@ -45,7 +45,7 @@ func seedAgentForBindPill(t *testing.T, db *gorm.DB) (string, string) {
 	if err := db.Create(&p).Error; err != nil {
 		t.Fatalf("创建金丹失败: %v", err)
 	}
-	return agent.UUID.String(), p.UUID.String()
+	return agent.DaoAgentID, p.ElixirPillID
 }
 
 // TestBindPillLegacyRemoved 合法载荷也 410: 服用入口已下线,防绕过库存直接绑定

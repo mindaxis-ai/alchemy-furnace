@@ -32,19 +32,19 @@ func TestDeletePillCascadeRemovesAgentPillsByUUIDText(t *testing.T) {
 	DB = db
 	t.Cleanup(func() { DB = previousDB })
 
-	agent := &model.DaoAgent{UUID: uuid.New(), Name: "级联测试道人"}
+	agent := &model.DaoAgent{DaoAgentID: uuid.New().String(), Name: "级联测试道人"}
 	if err := db.Create(agent).Error; err != nil {
 		t.Fatalf("create agent: %v", err)
 	}
-	pill := &model.ElixirPill{UUID: uuid.New(), Name: "级联测试金丹", SkillSchema: model.JSONMap{}}
+	pill := &model.ElixirPill{ElixirPillID: uuid.New().String(), Name: "级联测试金丹", SkillSchema: model.JSONMap{}}
 	if err := db.Create(pill).Error; err != nil {
 		t.Fatalf("create pill: %v", err)
 	}
-	other := &model.ElixirPill{UUID: uuid.New(), Name: "无关金丹", SkillSchema: model.JSONMap{}}
+	other := &model.ElixirPill{ElixirPillID: uuid.New().String(), Name: "无关金丹", SkillSchema: model.JSONMap{}}
 	if err := db.Create(other).Error; err != nil {
 		t.Fatalf("create other pill: %v", err)
 	}
-	if err := db.Create(&model.AgentPill{AgentID: agent.UUID.String(), PillID: pill.UUID.String()}).Error; err != nil {
+	if err := db.Create(&model.AgentPill{AgentID: agent.DaoAgentID, PillID: pill.ElixirPillID}).Error; err != nil {
 		t.Fatalf("create agent_pill: %v", err)
 	}
 
@@ -54,7 +54,7 @@ func TestDeletePillCascadeRemovesAgentPillsByUUIDText(t *testing.T) {
 	}
 
 	var left int64
-	if err := db.Model(&model.AgentPill{}).Where("pill_id = ?", pill.UUID.String()).Count(&left).Error; err != nil {
+	if err := db.Model(&model.AgentPill{}).Where("pill_id = ?", pill.ElixirPillID).Count(&left).Error; err != nil {
 		t.Fatal(err)
 	}
 	if left != 0 {

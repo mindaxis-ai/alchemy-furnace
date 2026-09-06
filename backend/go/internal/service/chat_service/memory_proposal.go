@@ -53,11 +53,11 @@ func (s *Chat) persistMemoryProposal(ctx context.Context, session *model.ChatSes
 	if _, err := s.Memory.CreateMemory(ctx, participant.uid, service.MemoryInput{
 		Kind:            "episode",
 		Content:         content,
-		SourceSessionID: session.UUID.String(),
-		SourceMessageID: run.UUID.String(),
+		SourceSessionID: session.ChatSessionID,
+		SourceMessageID: run.ChatRunID,
 	}); err != nil {
 		zap.L().Warn("[炼丹炉] 记忆提案落库失败",
 			zap.String("proposal_id", p.ProposalID),
-			zap.String("run_id", run.UUID.String()))
+			zap.String("run_id", run.ChatRunID))
 	}
 }

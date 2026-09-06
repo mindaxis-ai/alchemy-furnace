@@ -116,7 +116,7 @@ func (s *Trial) resolveTrialPill(ctx context.Context, index int, in iservice.Tri
 		return synthesis.PillInput{}, aerr
 	}
 	return synthesis.PillInput{
-		ID:          rev.UUID.String(),
+		ID:          rev.PillRecipeRevisionID,
 		Name:        rev.Name,
 		SkillSchema: rev.SkillSchema,
 	}, nil

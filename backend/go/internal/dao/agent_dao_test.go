@@ -26,16 +26,16 @@ func newAgentDAOTestDB(t *testing.T) *AgentDao {
 // seedAgentWithPills 建一个道人与 n 枚金丹,返回道人与金丹(按创建顺序)
 func seedAgentWithPills(t *testing.T, pillCount int) (*model.DaoAgent, []*model.ElixirPill) {
 	t.Helper()
-	agent := &model.DaoAgent{UUID: uuid.New(), Name: "测试道人", Status: "active", ModelName: "test-model"}
+	agent := &model.DaoAgent{DaoAgentID: uuid.New().String(), Name: "测试道人", Status: "active", ModelName: "test-model"}
 	if err := DB.Create(agent).Error; err != nil {
 		t.Fatalf("create agent: %v", err)
 	}
 	pills := make([]*model.ElixirPill, 0, pillCount)
 	for i := 0; i < pillCount; i++ {
 		pill := &model.ElixirPill{
-			UUID:        uuid.New(),
-			Name:        uuid.NewString(),
-			SkillSchema: model.JSONMap{"identity_card": "x"},
+			ElixirPillID: uuid.New().String(),
+			Name:         uuid.NewString(),
+			SkillSchema:  model.JSONMap{"identity_card": "x"},
 		}
 		if err := DB.Create(pill).Error; err != nil {
 			t.Fatalf("create pill %d: %v", i, err)
@@ -50,7 +50,7 @@ func listAgentPillRows(t *testing.T, agentID string) []model.AgentPill {
 	t.Helper()
 	var rows []model.AgentPill
 	if err := DB.Where("agent_id = ?", agentID).
-		Order("sort_order ASC, id ASC").
+		Order("sort_order ASC, agent_pill_id ASC").
 		Find(&rows).Error; err != nil {
 		t.Fatalf("list agent_pills: %v", err)
 	}
@@ -63,26 +63,26 @@ func TestReplaceAgentPillsWritesOrderedWeightsAndInvalidatesCache(t *testing.T) 
 	agent, pills := seedAgentWithPills(t, 3)
 	// 预置有效语言模式缓存,成功后应同事务失效
 	if err := DB.Create(&model.LanguagePattern{
-		AgentID: agent.UUID.String(), SystemPrompt: "cached", SourceFingerprint: "sha256:x", IsValid: true,
+		AgentID: agent.DaoAgentID, SystemPrompt: "cached", SourceFingerprint: "sha256:x", IsValid: true,
 	}).Error; err != nil {
 		t.Fatalf("create language pattern: %v", err)
 	}
 
 	inputs := []idao.AgentPillInput{
-		{PillID: pills[2].UUID.String(), Weight: 2.5},
-		{PillID: pills[0].UUID.String(), Weight: 1.0},
-		{PillID: pills[1].UUID.String(), Weight: 0.5},
+		{PillID: pills[2].ElixirPillID, Weight: 2.5},
+		{PillID: pills[0].ElixirPillID, Weight: 1.0},
+		{PillID: pills[1].ElixirPillID, Weight: 0.5},
 	}
-	if err := dao.ReplaceAgentPills(context.Background(), agent.UUID.String(), inputs); err != nil {
+	if err := dao.ReplaceAgentPills(context.Background(), agent.DaoAgentID, inputs); err != nil {
 		t.Fatalf("ReplaceAgentPills error = %v", err)
 	}
 
-	rows := listAgentPillRows(t, agent.UUID.String())
+	rows := listAgentPillRows(t, agent.DaoAgentID)
 	if len(rows) != 3 {
 		t.Fatalf("rows = %d, want 3", len(rows))
 	}
 	// 请求顺序即 sort_order=1..n,权重随记录落库
-	wantPills := []string{pills[2].UUID.String(), pills[0].UUID.String(), pills[1].UUID.String()}
+	wantPills := []string{pills[2].ElixirPillID, pills[0].ElixirPillID, pills[1].ElixirPillID}
 	wantWeights := []float64{2.5, 1.0, 0.5}
 	for i, row := range rows {
 		if row.SortOrder != i+1 {
@@ -97,7 +97,7 @@ func TestReplaceAgentPillsWritesOrderedWeightsAndInvalidatesCache(t *testing.T) 
 	}
 
 	var pattern model.LanguagePattern
-	if err := DB.Where("agent_id = ?", agent.UUID).First(&pattern).Error; err != nil {
+	if err := DB.Where("agent_id = ?", agent.DaoAgentID).First(&pattern).Error; err != nil {
 		t.Fatalf("load language pattern: %v", err)
 	}
 	if pattern.IsValid {
@@ -110,26 +110,26 @@ func TestReplaceAgentPillsRemovesOldRelations(t *testing.T) {
 	newAgentDAOTestDB(t)
 	agent, pills := seedAgentWithPills(t, 3)
 
-	if err := dao.ReplaceAgentPills(context.Background(), agent.UUID.String(), []idao.AgentPillInput{
-		{PillID: pills[0].UUID.String(), Weight: 1},
-		{PillID: pills[1].UUID.String(), Weight: 1},
-		{PillID: pills[2].UUID.String(), Weight: 1},
+	if err := dao.ReplaceAgentPills(context.Background(), agent.DaoAgentID, []idao.AgentPillInput{
+		{PillID: pills[0].ElixirPillID, Weight: 1},
+		{PillID: pills[1].ElixirPillID, Weight: 1},
+		{PillID: pills[2].ElixirPillID, Weight: 1},
 	}); err != nil {
 		t.Fatalf("first ReplaceAgentPills error = %v", err)
 	}
 	// 用子集替换:仅保留 pills[1]
-	if err := dao.ReplaceAgentPills(context.Background(), agent.UUID.String(), []idao.AgentPillInput{
-		{PillID: pills[1].UUID.String(), Weight: 3},
+	if err := dao.ReplaceAgentPills(context.Background(), agent.DaoAgentID, []idao.AgentPillInput{
+		{PillID: pills[1].ElixirPillID, Weight: 3},
 	}); err != nil {
 		t.Fatalf("second ReplaceAgentPills error = %v", err)
 	}
 
-	rows := listAgentPillRows(t, agent.UUID.String())
+	rows := listAgentPillRows(t, agent.DaoAgentID)
 	if len(rows) != 1 {
 		t.Fatalf("rows = %d, want 1 after subset replace", len(rows))
 	}
-	if rows[0].PillID != pills[1].UUID.String() || rows[0].Weight != 3 || rows[0].SortOrder != 1 {
-		t.Fatalf("remaining row = %+v, want pill=%s weight=3 sort_order=1", rows[0], pills[1].UUID.String())
+	if rows[0].PillID != pills[1].ElixirPillID || rows[0].Weight != 3 || rows[0].SortOrder != 1 {
+		t.Fatalf("remaining row = %+v, want pill=%s weight=3 sort_order=1", rows[0], pills[1].ElixirPillID)
 	}
 }
 
@@ -138,16 +138,16 @@ func TestReplaceAgentPillsEmptyClearsRelations(t *testing.T) {
 	newAgentDAOTestDB(t)
 	agent, pills := seedAgentWithPills(t, 2)
 
-	if err := dao.ReplaceAgentPills(context.Background(), agent.UUID.String(), []idao.AgentPillInput{
-		{PillID: pills[0].UUID.String(), Weight: 1},
-		{PillID: pills[1].UUID.String(), Weight: 1},
+	if err := dao.ReplaceAgentPills(context.Background(), agent.DaoAgentID, []idao.AgentPillInput{
+		{PillID: pills[0].ElixirPillID, Weight: 1},
+		{PillID: pills[1].ElixirPillID, Weight: 1},
 	}); err != nil {
 		t.Fatalf("seed ReplaceAgentPills error = %v", err)
 	}
-	if err := dao.ReplaceAgentPills(context.Background(), agent.UUID.String(), nil); err != nil {
+	if err := dao.ReplaceAgentPills(context.Background(), agent.DaoAgentID, nil); err != nil {
 		t.Fatalf("empty ReplaceAgentPills error = %v", err)
 	}
-	if rows := listAgentPillRows(t, agent.UUID.String()); len(rows) != 0 {
+	if rows := listAgentPillRows(t, agent.DaoAgentID); len(rows) != 0 {
 		t.Fatalf("rows = %d, want 0 after empty replace", len(rows))
 	}
 }
@@ -157,25 +157,25 @@ func TestReplaceAgentPillsRollsBackWhenPillMissing(t *testing.T) {
 	newAgentDAOTestDB(t)
 	agent, pills := seedAgentWithPills(t, 2)
 	if err := DB.Create(&model.LanguagePattern{
-		AgentID: agent.UUID.String(), SystemPrompt: "cached", SourceFingerprint: "sha256:x", IsValid: true,
+		AgentID: agent.DaoAgentID, SystemPrompt: "cached", SourceFingerprint: "sha256:x", IsValid: true,
 	}).Error; err != nil {
 		t.Fatalf("create language pattern: %v", err)
 	}
 	// 旧关系: pills[0]
-	if err := dao.ReplaceAgentPills(context.Background(), agent.UUID.String(), []idao.AgentPillInput{
-		{PillID: pills[0].UUID.String(), Weight: 1},
+	if err := dao.ReplaceAgentPills(context.Background(), agent.DaoAgentID, []idao.AgentPillInput{
+		{PillID: pills[0].ElixirPillID, Weight: 1},
 	}); err != nil {
 		t.Fatalf("seed ReplaceAgentPills error = %v", err)
 	}
 	// 种子成功后缓存被失效;重建有效缓存以验证回滚时缓存不被误失效
-	if err := DB.Model(&model.LanguagePattern{}).Where("agent_id = ?", agent.UUID).Update("is_valid", true).Error; err != nil {
+	if err := DB.Model(&model.LanguagePattern{}).Where("agent_id = ?", agent.DaoAgentID).Update("is_valid", true).Error; err != nil {
 		t.Fatalf("re-validate pattern: %v", err)
 	}
 
 	// 含一个不存在的 pill id,整个事务应回滚
 	missingID := uuid.NewString()
-	err := dao.ReplaceAgentPills(context.Background(), agent.UUID.String(), []idao.AgentPillInput{
-		{PillID: pills[1].UUID.String(), Weight: 2},
+	err := dao.ReplaceAgentPills(context.Background(), agent.DaoAgentID, []idao.AgentPillInput{
+		{PillID: pills[1].ElixirPillID, Weight: 2},
 		{PillID: missingID, Weight: 1},
 	})
 	if err == nil {
@@ -183,13 +183,13 @@ func TestReplaceAgentPillsRollsBackWhenPillMissing(t *testing.T) {
 	}
 
 	// 旧关系保持 pills[0],新关系不写入
-	rows := listAgentPillRows(t, agent.UUID.String())
-	if len(rows) != 1 || rows[0].PillID != pills[0].UUID.String() {
-		t.Fatalf("rows after rollback = %+v, want only pill %s preserved", rows, pills[0].UUID.String())
+	rows := listAgentPillRows(t, agent.DaoAgentID)
+	if len(rows) != 1 || rows[0].PillID != pills[0].ElixirPillID {
+		t.Fatalf("rows after rollback = %+v, want only pill %s preserved", rows, pills[0].ElixirPillID)
 	}
 	// 缓存同事务:回滚后仍保持有效,不被误失效
 	var pattern model.LanguagePattern
-	if qerr := DB.Where("agent_id = ?", agent.UUID).First(&pattern).Error; qerr != nil {
+	if qerr := DB.Where("agent_id = ?", agent.DaoAgentID).First(&pattern).Error; qerr != nil {
 		t.Fatalf("load language pattern: %v", qerr)
 	}
 	if !pattern.IsValid {
@@ -202,25 +202,25 @@ func TestReplaceAgentPillsRejectsDuplicatePillWithoutPartialWrite(t *testing.T) 
 	newAgentDAOTestDB(t)
 	agent, pills := seedAgentWithPills(t, 2)
 	// 旧关系: pills[0]
-	if err := dao.ReplaceAgentPills(context.Background(), agent.UUID.String(), []idao.AgentPillInput{
-		{PillID: pills[0].UUID.String(), Weight: 1},
+	if err := dao.ReplaceAgentPills(context.Background(), agent.DaoAgentID, []idao.AgentPillInput{
+		{PillID: pills[0].ElixirPillID, Weight: 1},
 	}); err != nil {
 		t.Fatalf("seed ReplaceAgentPills error = %v", err)
 	}
 
 	// 重复 pill id:应被拒绝,且不产生部分写入
-	err := dao.ReplaceAgentPills(context.Background(), agent.UUID.String(), []idao.AgentPillInput{
-		{PillID: pills[1].UUID.String(), Weight: 1},
-		{PillID: pills[1].UUID.String(), Weight: 2},
+	err := dao.ReplaceAgentPills(context.Background(), agent.DaoAgentID, []idao.AgentPillInput{
+		{PillID: pills[1].ElixirPillID, Weight: 1},
+		{PillID: pills[1].ElixirPillID, Weight: 2},
 	})
 	if err == nil {
 		t.Fatal("ReplaceAgentPills with duplicate pill succeeded, want error")
 	}
 
 	// 旧关系保持 pills[0],未写入任何新关系
-	rows := listAgentPillRows(t, agent.UUID.String())
-	if len(rows) != 1 || rows[0].PillID != pills[0].UUID.String() {
-		t.Fatalf("rows after duplicate reject = %+v, want only pill %s preserved", rows, pills[0].UUID.String())
+	rows := listAgentPillRows(t, agent.DaoAgentID)
+	if len(rows) != 1 || rows[0].PillID != pills[0].ElixirPillID {
+		t.Fatalf("rows after duplicate reject = %+v, want only pill %s preserved", rows, pills[0].ElixirPillID)
 	}
 }
 
@@ -229,8 +229,8 @@ func TestReplaceAgentPillsRollsBackOnInsertFailure(t *testing.T) {
 	newAgentDAOTestDB(t)
 	agent, pills := seedAgentWithPills(t, 2)
 	// 旧关系: pills[0]
-	if err := dao.ReplaceAgentPills(context.Background(), agent.UUID.String(), []idao.AgentPillInput{
-		{PillID: pills[0].UUID.String(), Weight: 1},
+	if err := dao.ReplaceAgentPills(context.Background(), agent.DaoAgentID, []idao.AgentPillInput{
+		{PillID: pills[0].ElixirPillID, Weight: 1},
 	}); err != nil {
 		t.Fatalf("seed ReplaceAgentPills error = %v", err)
 	}
@@ -246,17 +246,17 @@ END`
 		t.Fatalf("create failure trigger: %v", err)
 	}
 
-	err := dao.ReplaceAgentPills(context.Background(), agent.UUID.String(), []idao.AgentPillInput{
-		{PillID: pills[1].UUID.String(), Weight: 2},
+	err := dao.ReplaceAgentPills(context.Background(), agent.DaoAgentID, []idao.AgentPillInput{
+		{PillID: pills[1].ElixirPillID, Weight: 2},
 	})
 	if err == nil {
 		t.Fatal("ReplaceAgentPills with failing insert succeeded, want error")
 	}
 
 	// 删除旧关系也随事务回滚,pills[0] 保留
-	rows := listAgentPillRows(t, agent.UUID.String())
-	if len(rows) != 1 || rows[0].PillID != pills[0].UUID.String() {
-		t.Fatalf("rows after insert-failure rollback = %+v, want only pill %s preserved", rows, pills[0].UUID.String())
+	rows := listAgentPillRows(t, agent.DaoAgentID)
+	if len(rows) != 1 || rows[0].PillID != pills[0].ElixirPillID {
+		t.Fatalf("rows after insert-failure rollback = %+v, want only pill %s preserved", rows, pills[0].ElixirPillID)
 	}
 }
 
@@ -275,41 +275,41 @@ func newAgentHistoryTestDB(t *testing.T) *AgentDao {
 
 func TestCountSessionsByAgentIDCountsSingleAndGroupDistinct(t *testing.T) {
 	dao := newAgentHistoryTestDB(t)
-	agent := &model.DaoAgent{UUID: uuid.New(), Name: "计数道人", Status: "active", ModelName: "m"}
+	agent := &model.DaoAgent{DaoAgentID: uuid.New().String(), Name: "计数道人", Status: "active", ModelName: "m"}
 	if err := DB.Create(agent).Error; err != nil {
 		t.Fatalf("create agent: %v", err)
 	}
-	other := &model.DaoAgent{UUID: uuid.New(), Name: "旁观道人", Status: "active", ModelName: "m"}
+	other := &model.DaoAgent{DaoAgentID: uuid.New().String(), Name: "旁观道人", Status: "active", ModelName: "m"}
 	if err := DB.Create(other).Error; err != nil {
 		t.Fatalf("create other agent: %v", err)
 	}
 
-	agentUUID := agent.UUID.String()
-	otherUUID := other.UUID.String()
+	agentUUID := agent.DaoAgentID
+	otherUUID := other.DaoAgentID
 	// 1 个单聊会话(agent_id 直挂)
-	single := &model.ChatSession{UUID: uuid.New(), Type: model.SessionTypeSingle, AgentID: &agentUUID}
+	single := &model.ChatSession{ChatSessionID: uuid.New().String(), Type: model.SessionTypeSingle, AgentID: &agentUUID}
 	if err := DB.Create(single).Error; err != nil {
 		t.Fatalf("create single session: %v", err)
 	}
 	// 2 个群聊会话(经 session_members 关联);其中一个群里 other 也在,确保按 session 去重
 	for i := 0; i < 2; i++ {
-		g := &model.ChatSession{UUID: uuid.New(), Type: model.SessionTypeGroup}
+		g := &model.ChatSession{ChatSessionID: uuid.New().String(), Type: model.SessionTypeGroup}
 		if err := DB.Create(g).Error; err != nil {
 			t.Fatalf("create group session %d: %v", i, err)
 		}
-		if err := DB.Create(&model.SessionMember{SessionID: g.UUID.String(), AgentID: agentUUID, SortOrder: 0}).Error; err != nil {
+		if err := DB.Create(&model.SessionMember{SessionID: g.ChatSessionID, AgentID: agentUUID, SortOrder: 0}).Error; err != nil {
 			t.Fatalf("add member: %v", err)
 		}
-		if err := DB.Create(&model.SessionMember{SessionID: g.UUID.String(), AgentID: otherUUID, SortOrder: 1}).Error; err != nil {
+		if err := DB.Create(&model.SessionMember{SessionID: g.ChatSessionID, AgentID: otherUUID, SortOrder: 1}).Error; err != nil {
 			t.Fatalf("add other member: %v", err)
 		}
 	}
 	// other 自己的一个单聊(不计入 agent)
-	if err := DB.Create(&model.ChatSession{UUID: uuid.New(), Type: model.SessionTypeSingle, AgentID: &otherUUID}).Error; err != nil {
+	if err := DB.Create(&model.ChatSession{ChatSessionID: uuid.New().String(), Type: model.SessionTypeSingle, AgentID: &otherUUID}).Error; err != nil {
 		t.Fatalf("create other single session: %v", err)
 	}
 
-	count, err := dao.CountSessionsByAgentID(context.Background(), agent.UUID.String())
+	count, err := dao.CountSessionsByAgentID(context.Background(), agent.DaoAgentID)
 	if err != nil {
 		t.Fatalf("CountSessionsByAgentID error = %v", err)
 	}

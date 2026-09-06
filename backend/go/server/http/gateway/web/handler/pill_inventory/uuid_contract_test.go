@@ -6,7 +6,7 @@
 // GET /api/v1/agents/:uuid/effects(011 Task 8 旧入口审计后,道人详情不再内嵌
 // 金丹/能力快照,该端点是能力快照的唯一 HTTP 出口,契约由本包锁定)。
 // 夹具: 复用同包既有 setupTestDB/setupRouter/doJSON/seedRecipeAndItem/minSchema,
-// 真实 sqlite 内存库,关系字段一律用父实体 .UUID.String()(禁用内部 .ID)。
+// 真实 sqlite 内存库,关系字段一律用父实体主键文本(主键统一为 uuid 文本)。
 package pill_inventory
 
 import (
@@ -32,7 +32,7 @@ func seedContractRecipeAndItem(t *testing.T, db *gorm.DB) (string, string, strin
 		t.Fatalf("建丹方失败: %v", err)
 	}
 	rev := model.PillRecipeRevision{
-		RecipeID:    recipe.UUID.String(),
+		RecipeID:    recipe.PillRecipeID,
 		Revision:    1,
 		Name:        "契约丹方",
 		SkillSchema: minSchema(),
@@ -40,8 +40,8 @@ func seedContractRecipeAndItem(t *testing.T, db *gorm.DB) (string, string, strin
 	if err := db.Create(&rev).Error; err != nil {
 		t.Fatalf("建丹方版本失败: %v", err)
 	}
-	if err := db.Model(&model.PillRecipe{}).Where("uuid = ?", recipe.UUID).
-		Update("current_revision_id", rev.UUID.String()).Error; err != nil {
+	if err := db.Model(&model.PillRecipe{}).Where("pill_recipe_id = ?", recipe.PillRecipeID).
+		Update("current_revision_id", rev.PillRecipeRevisionID).Error; err != nil {
 		t.Fatalf("回填当前版本失败: %v", err)
 	}
 	op := model.PillOperation{Kind: "craft", PayloadHash: "sha256:contract", ResultJSON: model.JSONMap{}}
@@ -49,14 +49,14 @@ func seedContractRecipeAndItem(t *testing.T, db *gorm.DB) (string, string, strin
 		t.Fatalf("建成功操作失败: %v", err)
 	}
 	item := model.PillItem{
-		RecipeRevisionID:  rev.UUID.String(),
+		RecipeRevisionID:  rev.PillRecipeRevisionID,
 		State:             model.PillAvailable,
-		OriginOperationID: op.UUID.String(),
+		OriginOperationID: op.PillOperationID,
 	}
 	if err := db.Create(&item).Error; err != nil {
 		t.Fatalf("建金丹实例失败: %v", err)
 	}
-	return recipe.UUID.String(), rev.UUID.String(), item.UUID.String()
+	return recipe.PillRecipeID, rev.PillRecipeRevisionID, item.PillItemID
 }
 
 // TestUUIDContractRecipeList 丹方列表: id/current_revision_id 为业务 UUID,

@@ -79,7 +79,7 @@ func seedConsumedPair(t *testing.T, db *gorm.DB) (string, string) {
 		t.Fatalf("创建测试丹方失败: %v", err)
 	}
 	rev := model.PillRecipeRevision{
-		RecipeID:    recipe.UUID.String(),
+		RecipeID:    recipe.PillRecipeID,
 		Revision:    1,
 		Name:        "测试丹方",
 		SkillSchema: model.JSONMap{"expression_dna": map[string]interface{}{"rhythm": "快"}},
@@ -87,14 +87,14 @@ func seedConsumedPair(t *testing.T, db *gorm.DB) (string, string) {
 	if err := db.Create(&rev).Error; err != nil {
 		t.Fatalf("创建测试丹方版本失败: %v", err)
 	}
-	item := model.PillItem{RecipeRevisionID: rev.UUID.String(), State: model.PillConsumedByAgent}
+	item := model.PillItem{RecipeRevisionID: rev.PillRecipeRevisionID, State: model.PillConsumedByAgent}
 	if err := db.Create(&item).Error; err != nil {
 		t.Fatalf("创建测试金丹实例失败: %v", err)
 	}
 	if err := db.Create(&model.AgentPillEffect{
-		AgentID:          agent.UUID.String(),
-		ItemID:           item.UUID.String(),
-		RecipeRevisionID: rev.UUID.String(),
+		AgentID:          agent.DaoAgentID,
+		ItemID:           item.PillItemID,
+		RecipeRevisionID: rev.PillRecipeRevisionID,
 		NameSnapshot:     "测试丹方",
 		SchemaSnapshot:   rev.SkillSchema,
 		Weight:           1.0,
@@ -102,7 +102,7 @@ func seedConsumedPair(t *testing.T, db *gorm.DB) (string, string) {
 	}).Error; err != nil {
 		t.Fatalf("创建测试能力失败: %v", err)
 	}
-	return agent.UUID.String(), item.UUID.String()
+	return agent.DaoAgentID, item.PillItemID
 }
 
 // putJSON 发送 PUT JSON 请求并解析响应包络

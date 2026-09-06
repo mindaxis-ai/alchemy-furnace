@@ -79,12 +79,21 @@ func (f *fakeAgentDao) UpdateActiveEffectsCAS(ctx context.Context, agentUID stri
 	panic("unused")
 }
 
+// mustUID 测试内把主键 uuid 文本转回 uuid.UUID(service 接口仍以 uuid.UUID 为公共标识)
+func mustUID(t *testing.T, s string) uuid.UUID {
+	t.Helper()
+	uid, err := uuid.Parse(s)
+	if err != nil {
+		t.Fatalf("parse uuid %q: %v", s, err)
+	}
+	return uid
+}
+
 type fakeChatDao struct {
 	sessions       map[string]*model.ChatSession
 	members        map[string][]*model.SessionMember
 	messages       []*model.ChatMessage
 	runs           []*model.ChatRun
-	nextID         uint
 	agentByID      map[string]*model.DaoAgent // 模拟 GORM Preload(键=道人 UUID 文本)
 	saveErr        errors.Error
 	groupSaveCalls int
@@ -110,16 +119,14 @@ func (f *fakeChatDao) FindSessions(ctx context.Context, agentID string, page, si
 	return int64(len(out)), out, nil
 }
 func (f *fakeChatDao) SaveSession(ctx context.Context, s *model.ChatSession) errors.Error {
-	f.nextID++
-	s.ID = f.nextID
-	if s.UUID == (uuid.UUID{}) {
-		s.UUID = uuid.New()
+	if s.ChatSessionID == "" {
+		s.ChatSessionID = uuid.New().String()
 	}
-	f.sessions[s.UUID.String()] = s
+	f.sessions[s.ChatSessionID] = s
 	return nil
 }
 func (f *fakeChatDao) UpdateSession(ctx context.Context, s *model.ChatSession, updates map[string]any) errors.Error {
-	if stored, ok := f.sessions[s.UUID.String()]; ok {
+	if stored, ok := f.sessions[s.ChatSessionID]; ok {
 		for k, v := range updates {
 			switch k {
 			case "title":
@@ -159,19 +166,15 @@ func (f *fakeChatDao) TakeLatestUserMessage(ctx context.Context, sessionID strin
 	return nil, errors.ErrorRecordNotFound("test.fake.latest_user")
 }
 func (f *fakeChatDao) DeleteSession(ctx context.Context, s *model.ChatSession) errors.Error {
-	delete(f.sessions, s.UUID.String())
+	delete(f.sessions, s.ChatSessionID)
 	return nil
 }
 func (f *fakeChatDao) SaveMessage(ctx context.Context, msg *model.ChatMessage) errors.Error {
 	if f.saveErr != nil {
 		return f.saveErr
 	}
-	if msg.ID == 0 {
-		f.nextID++
-		msg.ID = f.nextID
-	}
-	if msg.UUID == uuid.Nil {
-		msg.UUID = uuid.New()
+	if msg.ChatMessageID == "" {
+		msg.ChatMessageID = uuid.New().String()
 	}
 	f.messages = append(f.messages, msg)
 	return nil
@@ -190,8 +193,8 @@ func (f *fakeChatDao) SaveGroupSession(ctx context.Context, s *model.ChatSession
 		return err
 	}
 	for _, m := range ms {
-		m.SessionID = s.UUID.String()
-		f.members[s.UUID.String()] = append(f.members[s.UUID.String()], m)
+		m.SessionID = s.ChatSessionID
+		f.members[s.ChatSessionID] = append(f.members[s.ChatSessionID], m)
 	}
 	return nil
 }
@@ -245,7 +248,7 @@ func (f *fakeChatDao) UpdateRunStatus(ctx context.Context, run *model.ChatRun, s
 }
 func (f *fakeChatDao) TakeRunByUUID(ctx context.Context, uid uuid.UUID) (*model.ChatRun, errors.Error) {
 	for _, r := range f.runs {
-		if r.UUID == uid {
+		if r.ChatRunID == uid.String() {
 			// 返回存储指针:续跑经 UpdateRunStatus 的状态迁移须透传到 f.runs
 			// (GORM 真实现按 id 更新行并回填,指针语义与之对齐)
 			return r, nil
@@ -272,9 +275,9 @@ func (f *fakeChatDao) SaveFinalReplyOnce(ctx context.Context, runUUID uuid.UUID,
 func newGroupTestSvc() (*Chat, *fakeChatDao, uuid.UUID, uuid.UUID, uuid.UUID) {
 	u1, u2, u3 := uuid.New(), uuid.New(), uuid.New()
 	agents := &fakeAgentDao{agents: map[string]*model.DaoAgent{
-		u1.String(): {ID: 1, UUID: u1, Name: "太上老君", Status: "active", ModelName: "test-model"},
-		u2.String(): {ID: 2, UUID: u2, Name: "孙悟空", Status: "active", ModelName: "test-model"},
-		u3.String(): {ID: 3, UUID: u3, Name: "睡道人", Status: "inactive", ModelName: "test-model"},
+		u1.String(): {DaoAgentID: u1.String(), Name: "太上老君", Status: "active", ModelName: "test-model"},
+		u2.String(): {DaoAgentID: u2.String(), Name: "孙悟空", Status: "active", ModelName: "test-model"},
+		u3.String(): {DaoAgentID: u3.String(), Name: "睡道人", Status: "inactive", ModelName: "test-model"},
 	}}
 	agentByID := map[string]*model.DaoAgent{
 		u1.String(): agents.agents[u1.String()],
@@ -310,19 +313,19 @@ func TestCreateGroupSession(t *testing.T) {
 	if chats.groupSaveCalls != 1 {
 		t.Fatalf("建群应只调用一次原子保存, 实际 %d 次", chats.groupSaveCalls)
 	}
-	if len(chats.members[s.UUID.String()]) != 2 {
-		t.Fatalf("成员未去重: %d", len(chats.members[s.UUID.String()]))
+	if len(chats.members[s.ChatSessionID]) != 2 {
+		t.Fatalf("成员未去重: %d", len(chats.members[s.ChatSessionID]))
 	}
-	if chats.members[s.UUID.String()][0].SortOrder != 0 || chats.members[s.UUID.String()][1].SortOrder != 1 {
-		t.Fatalf("SortOrder 未按邀请顺序赋值: %+v", chats.members[s.UUID.String()])
+	if chats.members[s.ChatSessionID][0].SortOrder != 0 || chats.members[s.ChatSessionID][1].SortOrder != 1 {
+		t.Fatalf("SortOrder 未按邀请顺序赋值: %+v", chats.members[s.ChatSessionID])
 	}
 	// 返回的会话直接携带去重后的成员(含已验证道人),响应无需二次查询
 	if len(s.Members) != 2 {
 		t.Fatalf("session.Members = %+v, want 2 members", s.Members)
 	}
-	if s.Members[0].Agent.UUID != u1 || s.Members[1].Agent.UUID != u2 {
+	if s.Members[0].Agent.DaoAgentID != u1.String() || s.Members[1].Agent.DaoAgentID != u2.String() {
 		t.Fatalf("成员 UUID 顺序 = [%s %s], want [%s %s]",
-			s.Members[0].Agent.UUID, s.Members[1].Agent.UUID, u1, u2)
+			s.Members[0].Agent.DaoAgentID, s.Members[1].Agent.DaoAgentID, u1, u2)
 	}
 	if s.Members[0].Agent.Name != "太上老君" || s.Members[1].Agent.Name != "孙悟空" {
 		t.Fatalf("成员未携带已验证道人: %+v", s.Members)
@@ -333,8 +336,8 @@ func TestListSessionsBatchesMemberLoading(t *testing.T) {
 	ctx := context.Background()
 	u1, u2 := uuid.New(), uuid.New()
 	agents := &fakeAgentDao{agents: map[string]*model.DaoAgent{
-		u1.String(): {ID: 1, UUID: u1, Name: "太上老君", Status: "active", ModelName: "test-model"},
-		u2.String(): {ID: 2, UUID: u2, Name: "孙悟空", Status: "active", ModelName: "test-model"},
+		u1.String(): {DaoAgentID: u1.String(), Name: "太上老君", Status: "active", ModelName: "test-model"},
+		u2.String(): {DaoAgentID: u2.String(), Name: "孙悟空", Status: "active", ModelName: "test-model"},
 	}}
 	chats := &fakeChatDao{
 		sessions:  map[string]*model.ChatSession{},
@@ -347,9 +350,9 @@ func TestListSessionsBatchesMemberLoading(t *testing.T) {
 		if err := chats.SaveSession(ctx, session); err != nil {
 			t.Fatalf("seed session %d: %v", i, err)
 		}
-		chats.members[session.UUID.String()] = []*model.SessionMember{
-			{SessionID: session.UUID.String(), AgentID: u1.String(), SortOrder: 0},
-			{SessionID: session.UUID.String(), AgentID: u2.String(), SortOrder: 1},
+		chats.members[session.ChatSessionID] = []*model.SessionMember{
+			{SessionID: session.ChatSessionID, AgentID: u1.String(), SortOrder: 0},
+			{SessionID: session.ChatSessionID, AgentID: u2.String(), SortOrder: 1},
 		}
 	}
 	svc := New(chats, agents, nil, availableCredentialResolver("test-model"), "http://unused")
@@ -366,10 +369,10 @@ func TestListSessionsBatchesMemberLoading(t *testing.T) {
 	}
 	for _, session := range sessions {
 		if len(session.Members) != 2 {
-			t.Fatalf("session %s members = %+v, want 2", session.UUID, session.Members)
+			t.Fatalf("session %s members = %+v, want 2", session.ChatSessionID, session.Members)
 		}
 		if session.Members[0].Agent.Name != "太上老君" || session.Members[1].Agent.Name != "孙悟空" {
-			t.Fatalf("session %s member order/preload wrong: %+v", session.UUID, session.Members)
+			t.Fatalf("session %s member order/preload wrong: %+v", session.ChatSessionID, session.Members)
 		}
 	}
 }
@@ -386,7 +389,7 @@ func TestListSessionsLoadsCurrentGroupMembers(t *testing.T) {
 	if listErr != nil {
 		t.Fatalf("ListSessions() error = %v", listErr)
 	}
-	if len(sessions) != 1 || sessions[0].UUID != session.UUID {
+	if len(sessions) != 1 || sessions[0].ChatSessionID != session.ChatSessionID {
 		t.Fatalf("ListSessions() = %+v, want created group", sessions)
 	}
 	if len(sessions[0].Members) != 2 {
@@ -403,13 +406,13 @@ func TestCreateGroupSessionRejectsInvalidMemberBeforePersistence(t *testing.T) {
 	unavailableUID := uuid.New()
 	agents := &fakeAgentDao{agents: map[string]*model.DaoAgent{
 		activeUID.String(): {
-			ID: 1, UUID: activeUID, Name: "太上老君", Status: "active", ModelName: "available-model",
+			DaoAgentID: activeUID.String(), Name: "太上老君", Status: "active", ModelName: "available-model",
 		},
 		inactiveUID.String(): {
-			ID: 2, UUID: inactiveUID, Name: "睡道人", Status: "inactive", ModelName: "available-model",
+			DaoAgentID: inactiveUID.String(), Name: "睡道人", Status: "inactive", ModelName: "available-model",
 		},
 		unavailableUID.String(): {
-			ID: 3, UUID: unavailableUID, Name: "无凭道人", Status: "active", ModelName: "unavailable-model",
+			DaoAgentID: unavailableUID.String(), Name: "无凭道人", Status: "active", ModelName: "unavailable-model",
 		},
 	}}
 
@@ -472,18 +475,18 @@ func TestAddAndRemoveMember(t *testing.T) {
 	s, _ := svc.CreateGroupSession(ctx, []uuid.UUID{u1, u2}, "")
 
 	// 重复邀请静默跳过
-	if err := svc.AddMembers(ctx, s.UUID, []uuid.UUID{u1}); err != nil {
+	if err := svc.AddMembers(ctx, mustUID(t, s.ChatSessionID), []uuid.UUID{u1}); err != nil {
 		t.Fatalf("AddMembers 重复邀请: %v", err)
 	}
-	if len(chats.members[s.UUID.String()]) != 2 {
+	if len(chats.members[s.ChatSessionID]) != 2 {
 		t.Fatal("重复邀请产生了重复成员")
 	}
 
 	// 踢人 + 通知消息
-	if err := svc.RemoveMember(ctx, s.UUID, u1); err != nil {
+	if err := svc.RemoveMember(ctx, mustUID(t, s.ChatSessionID), u1); err != nil {
 		t.Fatalf("RemoveMember: %v", err)
 	}
-	if len(chats.members[s.UUID.String()]) != 1 {
+	if len(chats.members[s.ChatSessionID]) != 1 {
 		t.Fatal("踢人失败")
 	}
 	var notice *model.ChatMessage
@@ -497,7 +500,7 @@ func TestAddAndRemoveMember(t *testing.T) {
 	}
 
 	// 踢不存在成员 → 错误
-	if err := svc.RemoveMember(ctx, s.UUID, u1); err == nil {
+	if err := svc.RemoveMember(ctx, mustUID(t, s.ChatSessionID), u1); err == nil {
 		t.Fatal("踢不存在成员应报错")
 	}
 }
@@ -509,16 +512,16 @@ func TestUpdateSessionTitleValidation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
-	if err := svc.UpdateSessionTitle(ctx, s.UUID, "   "); err == nil {
+	if err := svc.UpdateSessionTitle(ctx, mustUID(t, s.ChatSessionID), "   "); err == nil {
 		t.Fatal("空白标题应报错")
 	}
-	if err := svc.UpdateSessionTitle(ctx, s.UUID, strings.Repeat("长", 201)); err == nil {
+	if err := svc.UpdateSessionTitle(ctx, mustUID(t, s.ChatSessionID), strings.Repeat("长", 201)); err == nil {
 		t.Fatal("超200字标题应报错")
 	}
-	if err := svc.UpdateSessionTitle(ctx, s.UUID, strings.Repeat("丹", 200)); err != nil {
+	if err := svc.UpdateSessionTitle(ctx, mustUID(t, s.ChatSessionID), strings.Repeat("丹", 200)); err != nil {
 		t.Fatalf("200 字标题应成功: %v", err)
 	}
-	if err := svc.UpdateSessionTitle(ctx, s.UUID, "丹道夜话"); err != nil {
+	if err := svc.UpdateSessionTitle(ctx, mustUID(t, s.ChatSessionID), "丹道夜话"); err != nil {
 		t.Fatalf("合法标题: %v", err)
 	}
 }
@@ -529,7 +532,7 @@ func TestCreateGroupSessionPersistsOptionalTitleAtomically(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if session.Title != "丹道夜话" || chats.sessions[session.UUID.String()].Title != "丹道夜话" {
+	if session.Title != "丹道夜话" || chats.sessions[session.ChatSessionID].Title != "丹道夜话" {
 		t.Fatalf("title not persisted atomically: %+v", session)
 	}
 }

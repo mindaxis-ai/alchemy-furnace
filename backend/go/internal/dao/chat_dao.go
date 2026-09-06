@@ -1,4 +1,4 @@
-// Package dao 对话域数据访问实现(新架构 internal 分层;UUID 边界在此解析,内部联结仍用自增 ID)
+// Package dao 对话域数据访问实现(新架构 internal 分层;主键统一 uuid 文本,对外 UUID 边界在此解析)
 package dao
 
 import (
@@ -25,7 +25,7 @@ func (d *ChatDao) TakeSessionByUUID(ctx context.Context, uid uuid.UUID) (*model.
 	var session model.ChatSession
 	if err := GetDB().WithContext(ctx).
 		Preload("Agent").
-		Where("uuid = ?", uid.String()).
+		Where("chat_session_id = ?", uid.String()).
 		First(&session).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, errors.ErrorRecordNotFound("dao.chat.take_session_by_uuid")
@@ -75,7 +75,7 @@ func (d *ChatDao) SaveGroupSession(ctx context.Context, session *model.ChatSessi
 			return err
 		}
 		for _, member := range members {
-			member.SessionID = session.UUID.String()
+			member.SessionID = session.ChatSessionID
 		}
 		if len(members) == 0 {
 			return nil
@@ -129,7 +129,7 @@ func (d *ChatDao) FindMessages(ctx context.Context, sessionID string, page int, 
 
 	var messages []*model.ChatMessage
 	if err := db.Preload("Agent").
-		Order("created_at ASC").Order("id ASC").
+		Order("created_at ASC").Order("chat_message_id ASC").
 		Offset(int(pageStart)).Limit(int(pageEnd - pageStart)).
 		Find(&messages).Error; err != nil {
 		return 0, nil, errors.ErrorServerInternalError("dao.chat.find_messages")
@@ -137,13 +137,13 @@ func (d *ChatDao) FindMessages(ctx context.Context, sessionID string, page int, 
 	return total, messages, nil
 }
 
-// TakeLatestUserMessage 查询会话最新用户消息；ID 作为同时间戳下的稳定次序。
+// TakeLatestUserMessage 查询会话最新用户消息；主键作为同时间戳下的稳定次序。
 func (d *ChatDao) TakeLatestUserMessage(ctx context.Context, sessionID string) (*model.ChatMessage, errors.Error) {
 	var message model.ChatMessage
 	if err := GetDB().WithContext(ctx).
 		Where("session_id = ? AND role = ?", sessionID, "user").
 		Order("created_at DESC").
-		Order("id DESC").
+		Order("chat_message_id DESC").
 		First(&message).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, errors.ErrorRecordNotFound("dao.chat.take_latest_user_message")
@@ -162,7 +162,7 @@ func (d *ChatDao) SaveMessage(ctx context.Context, message *model.ChatMessage) e
 		}
 		failureCode = "dao.chat.save_message_touch"
 		return tx.Model(&model.ChatSession{}).
-			Where("uuid = ?", message.SessionID).
+			Where("chat_session_id = ?", message.SessionID).
 			Update("updated_at", time.Now()).Error
 	}); err != nil {
 		return errors.ErrorServerInternalError(failureCode)
@@ -204,7 +204,7 @@ func (d *ChatDao) FindMembersBySessionIDs(ctx context.Context, sessionIDs []stri
 	if err := GetDB().WithContext(ctx).
 		Preload("Agent").
 		Where("session_id IN ?", sessionIDs).
-		Order("session_id ASC, sort_order ASC, id ASC").
+		Order("session_id ASC, sort_order ASC, session_member_id ASC").
 		Find(&members).Error; err != nil {
 		return nil, errors.ErrorServerInternalError("dao.chat.find_members_by_session_ids")
 	}
@@ -257,7 +257,7 @@ func (d *ChatDao) UpdateRunStatus(ctx context.Context, run *model.ChatRun, statu
 		return errors.ErrorInvalidRequest("dao.chat.update_run_status")
 	}
 	if err := GetDB().WithContext(ctx).Model(&model.ChatRun{}).
-		Where("id = ?", run.ID).
+		Where("chat_run_id = ?", run.ChatRunID).
 		Update("status", status).Error; err != nil {
 		return errors.ErrorServerInternalError("dao.chat.update_run_status")
 	}
@@ -269,7 +269,7 @@ func (d *ChatDao) UpdateRunStatus(ctx context.Context, run *model.ChatRun, statu
 func (d *ChatDao) TakeRunByUUID(ctx context.Context, uid uuid.UUID) (*model.ChatRun, errors.Error) {
 	var run model.ChatRun
 	if err := GetDB().WithContext(ctx).
-		Where("uuid = ?", uid.String()).
+		Where("chat_run_id = ?", uid.String()).
 		First(&run).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, errors.ErrorRecordNotFound("dao.chat.take_run_by_uuid")
@@ -297,7 +297,7 @@ func (d *ChatDao) SaveFinalReplyOnce(ctx context.Context, runUUID uuid.UUID, rep
 
 	var run model.ChatRun
 	if err := GetDB().WithContext(ctx).
-		Where("uuid = ?", runUUID.String()).
+		Where("chat_run_id = ?", runUUID.String()).
 		First(&run).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, errors.ErrorRecordNotFound(code)
@@ -305,7 +305,7 @@ func (d *ChatDao) SaveFinalReplyOnce(ctx context.Context, runUUID uuid.UUID, rep
 		return nil, errors.ErrorServerInternalError(code)
 	}
 
-	runUID := run.UUID.String()
+	runUID := run.ChatRunID
 	message.RunID = &runUID
 	message.ReplyID = &replyID
 	if err := GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -313,7 +313,7 @@ func (d *ChatDao) SaveFinalReplyOnce(ctx context.Context, runUUID uuid.UUID, rep
 			return err
 		}
 		return tx.Model(&model.ChatSession{}).
-			Where("uuid = ?", message.SessionID).
+			Where("chat_session_id = ?", message.SessionID).
 			Update("updated_at", time.Now()).Error
 	}); err != nil {
 		// 并发下另一请求已落同一 (run_id, reply_id) → 返回已有行

@@ -67,13 +67,13 @@ func (s *stubMemory) CreateMemory(_ context.Context, agentUID string, in service
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	m := &model.AgentMemory{
-		UUID:       uuid.New(),
-		AgentID:    agentUID,
-		Kind:       in.Kind,
-		Content:    in.Content,
-		Importance: 3,
-		Confidence: 0.8,
-		Status:     "active",
+		AgentMemoryID: uuid.New().String(),
+		AgentID:       agentUID,
+		Kind:          in.Kind,
+		Content:       in.Content,
+		Importance:    3,
+		Confidence:    0.8,
+		Status:        "active",
 	}
 	if in.Importance != nil {
 		m.Importance = *in.Importance
@@ -87,7 +87,7 @@ func (s *stubMemory) CreateMemory(_ context.Context, agentUID string, in service
 	for _, kw := range in.Keywords {
 		m.Keywords = append(m.Keywords, kw)
 	}
-	s.memories[m.UUID.String()] = m
+	s.memories[m.AgentMemoryID] = m
 	return m, nil
 }
 
@@ -169,7 +169,7 @@ func seedMemoryAgent(t *testing.T, db *gorm.DB) string {
 	if err := db.Create(&agent).Error; err != nil {
 		t.Fatalf("创建测试道人失败: %v", err)
 	}
-	return agent.UUID.String()
+	return agent.DaoAgentID
 }
 
 // doJSON 发送任意方法 JSON 请求并解析响应包络
@@ -209,9 +209,9 @@ func TestListMemories(t *testing.T) {
 	r := setupMemoryRouter(stub)
 	agentUUID := seedMemoryAgent(t, db)
 
-	m := &model.AgentMemory{UUID: uuid.New(), Kind: "user_fact", Content: "用户喜欢围棋", Status: "active"}
+	m := &model.AgentMemory{AgentMemoryID: uuid.New().String(), Kind: "user_fact", Content: "用户喜欢围棋", Status: "active"}
 	stub.mu.Lock()
-	stub.memories[m.UUID.String()] = m
+	stub.memories[m.AgentMemoryID] = m
 	stub.mu.Unlock()
 
 	status, envelope := doJSON(t, r, http.MethodGet, "/api/v1/agents/"+agentUUID+"/memories", "")
@@ -223,7 +223,7 @@ func TestListMemories(t *testing.T) {
 		t.Fatalf("data 应为 1 条记忆数组: %v", envelope["data"])
 	}
 	item := list[0].(map[string]interface{})
-	if item["id"] != m.UUID.String() || item["kind"] != "user_fact" || item["content"] != "用户喜欢围棋" {
+	if item["id"] != m.AgentMemoryID || item["kind"] != "user_fact" || item["content"] != "用户喜欢围棋" {
 		t.Fatalf("列表字段缺失: %v", item)
 	}
 	if _, ok := item["importance"]; !ok {
@@ -395,7 +395,7 @@ func TestUpdateAgentMemoryEnabled(t *testing.T) {
 
 	// 落库验证
 	var agent model.DaoAgent
-	if err := dao.DB.Where("uuid = ?", uid).First(&agent).Error; err != nil {
+	if err := dao.DB.Where("dao_agent_id = ?", uid).First(&agent).Error; err != nil {
 		t.Fatalf("查询道人失败: %v", err)
 	}
 	if agent.MemoryEnabled {

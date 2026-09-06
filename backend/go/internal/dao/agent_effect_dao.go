@@ -16,17 +16,18 @@ import (
 // AgentByUUID 事务内按对外 UUID 查道人
 func AgentByUUID(tx *gorm.DB, uid uuid.UUID) (*model.DaoAgent, error) {
 	var agent model.DaoAgent
-	if err := tx.Where("uuid = ?", uid).First(&agent).Error; err != nil {
+	if err := tx.Where("dao_agent_id = ?", uid.String()).First(&agent).Error; err != nil {
 		return nil, err
 	}
 	return &agent, nil
 }
 
 // ConsumePillItemCAS 消耗实例：available→consumed_by_agent 并写消耗去向；
+// itemUID 为金丹实例业务主键(uuid 文本)；
 // RowsAffected==1 才返回 true（竞争/重复/已消耗均 false）
-func ConsumePillItemCAS(tx *gorm.DB, itemID uint, now time.Time, opUID string) (bool, error) {
+func ConsumePillItemCAS(tx *gorm.DB, itemUID string, now time.Time, opUID string) (bool, error) {
 	res := tx.Model(&model.PillItem{}).
-		Where("id = ? AND state = ?", itemID, model.PillAvailable).
+		Where("pill_item_id = ? AND state = ?", itemUID, model.PillAvailable).
 		Updates(map[string]any{
 			"state":                model.PillConsumedByAgent,
 			"consumed_at":          now,
@@ -66,10 +67,10 @@ func CreateAgentPillEffect(tx *gorm.DB, ef *model.AgentPillEffect) error {
 }
 
 // IncrementEffectsRevision 单调递增能力编排版本（服用/移除/调权重顺序时同事务调用）
-// agentUID 为道人 UUID 文本（011 业务键；行定位绑 dao_agents.uuid）
+// agentUID 为道人 UUID 文本（011 业务键；行定位绑 dao_agents.dao_agent_id）
 func IncrementEffectsRevision(tx *gorm.DB, agentUID string) error {
 	return tx.Model(&model.DaoAgent{}).
-		Where("uuid = ?", agentUID).
+		Where("dao_agent_id = ?", agentUID).
 		Update("effects_revision", gorm.Expr("effects_revision + 1")).Error
 }
 
@@ -86,8 +87,8 @@ func InvalidateLanguagePatternTx(tx *gorm.DB, agentUID string) error {
 // 无活跃能力返回 false；原实例保持 consumed_by_agent 不返还（§产品规则 移除不返还）。
 func RemoveActiveEffectByItemUUID(tx *gorm.DB, agentUID string, itemUUID uuid.UUID, now time.Time) (bool, error) {
 	res := tx.Model(&model.AgentPillEffect{}).
-		Where("agent_id = ? AND removed_at IS NULL AND item_id IN (SELECT uuid FROM pill_items WHERE uuid = ?)",
-			agentUID, itemUUID).
+		Where("agent_id = ? AND removed_at IS NULL AND item_id IN (SELECT pill_item_id FROM pill_items WHERE pill_item_id = ?)",
+			agentUID, itemUUID.String()).
 		Update("removed_at", now)
 	if res.Error != nil {
 		return false, res.Error
@@ -107,8 +108,8 @@ func UpdateActiveEffectByItemUUID(tx *gorm.DB, agentUID string, itemUUID uuid.UU
 		updates["sort_order"] = *sortOrder
 	}
 	query := tx.Model(&model.AgentPillEffect{}).
-		Where("agent_id = ? AND removed_at IS NULL AND item_id IN (SELECT uuid FROM pill_items WHERE uuid = ?)",
-			agentUID, itemUUID)
+		Where("agent_id = ? AND removed_at IS NULL AND item_id IN (SELECT pill_item_id FROM pill_items WHERE pill_item_id = ?)",
+			agentUID, itemUUID.String())
 	if len(updates) == 0 {
 		var n int64
 		if err := query.Count(&n).Error; err != nil {
@@ -123,12 +124,12 @@ func UpdateActiveEffectByItemUUID(tx *gorm.DB, agentUID string, itemUUID uuid.UU
 	return res.RowsAffected == 1, nil
 }
 
-// ActiveEffectsByAgent 事务内读道人活跃能力（按 sort_order,id 升序；任务 5 全量编排读取）
+// ActiveEffectsByAgent 事务内读道人活跃能力（按 sort_order,agent_pill_effect_id 升序；任务 5 全量编排读取）
 // agentUID 为道人 UUID 文本
 func ActiveEffectsByAgent(tx *gorm.DB, agentUID string) ([]model.AgentPillEffect, error) {
 	var effects []model.AgentPillEffect
 	err := tx.Where("agent_id = ? AND removed_at IS NULL", agentUID).
-		Order("sort_order ASC, id ASC").Find(&effects).Error
+		Order("sort_order ASC, agent_pill_effect_id ASC").Find(&effects).Error
 	return effects, err
 }
 
@@ -136,7 +137,7 @@ func ActiveEffectsByAgent(tx *gorm.DB, agentUID string) ([]model.AgentPillEffect
 // 无活跃能力返回 false；原实例保持 consumed_by_agent 不返还（任务 5）
 func RemoveActiveEffectByUUID(tx *gorm.DB, agentUID string, effectUUID uuid.UUID, now time.Time) (bool, error) {
 	res := tx.Model(&model.AgentPillEffect{}).
-		Where("agent_id = ? AND removed_at IS NULL AND uuid = ?", agentUID, effectUUID).
+		Where("agent_id = ? AND removed_at IS NULL AND agent_pill_effect_id = ?", agentUID, effectUUID.String()).
 		Update("removed_at", now)
 	if res.Error != nil {
 		return false, res.Error
@@ -150,7 +151,7 @@ func RemoveActiveEffectByUUID(tx *gorm.DB, agentUID string, effectUUID uuid.UUID
 // 逐条更新 0 行（理论不可达，调用方已校验集合）视为内部错误回滚。
 func UpdateActiveEffectsCASCAS(tx *gorm.DB, agentUID string, expectedEffectsRevision int, writes []idao.EffectWrite) (bool, error) {
 	res := tx.Model(&model.DaoAgent{}).
-		Where("uuid = ? AND effects_revision = ?", agentUID, expectedEffectsRevision).
+		Where("dao_agent_id = ? AND effects_revision = ?", agentUID, expectedEffectsRevision).
 		Update("effects_revision", gorm.Expr("effects_revision + 1"))
 	if res.Error != nil {
 		return false, res.Error
@@ -160,7 +161,7 @@ func UpdateActiveEffectsCASCAS(tx *gorm.DB, agentUID string, expectedEffectsRevi
 	}
 	for _, w := range writes {
 		upd := tx.Model(&model.AgentPillEffect{}).
-			Where("uuid = ? AND agent_id = ? AND removed_at IS NULL", w.EffectUUID, agentUID).
+			Where("agent_pill_effect_id = ? AND agent_id = ? AND removed_at IS NULL", w.EffectUUID, agentUID).
 			Updates(map[string]any{"weight": w.Weight, "sort_order": w.SortOrder})
 		if upd.Error != nil {
 			return false, upd.Error

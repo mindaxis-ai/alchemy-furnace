@@ -158,7 +158,7 @@ func seedTrialRecipe(t *testing.T, db *gorm.DB, n int) (model.PillRecipe, []mode
 	revs := make([]model.PillRecipeRevision, 0, n)
 	for i := 1; i <= n; i++ {
 		rev := model.PillRecipeRevision{
-			RecipeID:    recipe.UUID.String(),
+			RecipeID:    recipe.PillRecipeID,
 			Revision:    i,
 			Name:        fmt.Sprintf("丹方 v%d", i),
 			Description: fmt.Sprintf("第 %d 版简介", i),
@@ -171,7 +171,7 @@ func seedTrialRecipe(t *testing.T, db *gorm.DB, n int) (model.PillRecipe, []mode
 		revs = append(revs, rev)
 	}
 	latest := revs[len(revs)-1]
-	if err := db.Model(&recipe).Update("current_revision_id", latest.UUID.String()).Error; err != nil {
+	if err := db.Model(&recipe).Update("current_revision_id", latest.PillRecipeRevisionID).Error; err != nil {
 		t.Fatalf("指向当前版本失败: %v", err)
 	}
 	return recipe, revs
@@ -192,7 +192,7 @@ func TestSynthesizeRoute_RecipeMode(t *testing.T) {
 	recipe, revs := seedTrialRecipe(t, db, 2)
 	r, fake := setupTrialRouter(db, &fakeTrialSynth{})
 
-	body := fmt.Sprintf(`{"personality":"沉稳内敛","pills":[{"recipe_id":%q}]}`, recipe.UUID.String())
+	body := fmt.Sprintf(`{"personality":"沉稳内敛","pills":[{"recipe_id":%q}]}`, recipe.PillRecipeID)
 	status, raw := postTrialSynthesis(t, r, body)
 
 	if status != http.StatusOK {
@@ -209,7 +209,7 @@ func TestSynthesizeRoute_RecipeMode(t *testing.T) {
 	if !bytes.Contains([]byte(envelope.Data.SystemPrompt), []byte("我是v2")) {
 		t.Errorf("应取当前版本 v2: %q", envelope.Data.SystemPrompt)
 	}
-	if len(fake.received) != 1 || fake.received[0].ID != revs[1].UUID.String() {
+	if len(fake.received) != 1 || fake.received[0].ID != revs[1].PillRecipeRevisionID {
 		t.Fatalf("透传给合成引擎的输入错误: %+v", fake.received)
 	}
 }
@@ -221,13 +221,13 @@ func TestSynthesizeRoute_RevisionMode(t *testing.T) {
 	r, fake := setupTrialRouter(db, &fakeTrialSynth{})
 
 	body := fmt.Sprintf(`{"personality":"沉稳内敛","pills":[{"recipe_id":%q,"revision_id":%q}]}`,
-		recipe.UUID.String(), revs[0].UUID.String())
+		recipe.PillRecipeID, revs[0].PillRecipeRevisionID)
 	status, raw := postTrialSynthesis(t, r, body)
 
 	if status != http.StatusOK {
 		t.Fatalf("期望 200, 实际 %d, body=%s", status, raw)
 	}
-	if fake.received[0].ID != revs[0].UUID.String() {
+	if fake.received[0].ID != revs[0].PillRecipeRevisionID {
 		t.Fatalf("应引用指定版本 v1: %+v", fake.received)
 	}
 }
@@ -279,7 +279,7 @@ func TestSynthesizeRoute_DoesNotConsume(t *testing.T) {
 	r, _ := setupTrialRouter(db, &fakeTrialSynth{})
 
 	bodies := []string{
-		fmt.Sprintf(`{"personality":"沉稳内敛","pills":[{"recipe_id":%q}]}`, recipe.UUID.String()),
+		fmt.Sprintf(`{"personality":"沉稳内敛","pills":[{"recipe_id":%q}]}`, recipe.PillRecipeID),
 		`{"personality":"沉稳内敛","pills":[{"name":"草稿","skill_schema":{"identity_card":"x"}}]}`,
 	}
 	for _, body := range bodies {

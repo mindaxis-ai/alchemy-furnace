@@ -114,9 +114,9 @@ func newTurnFixture(t *testing.T) (*Chat, *fakeChatDao, *turnMemory, *model.Chat
 	t.Helper()
 	svc, chats, byName, _, _ := buildSnapshotFixture(t)
 	agent := *byName["zhang"]
-	agentUID := agent.UUID.String()
-	session := &model.ChatSession{ID: 2, UUID: uuid.New(), Type: model.SessionTypeSingle, AgentID: &agentUID, Agent: agent}
-	chats.sessions[session.UUID.String()] = session
+	agentUID := agent.DaoAgentID
+	session := &model.ChatSession{ChatSessionID: uuid.New().String(), Type: model.SessionTypeSingle, AgentID: &agentUID, Agent: agent}
+	chats.sessions[session.ChatSessionID] = session
 	mem := &turnMemory{byAgent: map[string][]service.MemorySnippet{}}
 	svc.Memory = mem
 	return svc, chats, mem, session
@@ -139,7 +139,7 @@ func runLangGraphSingleCmd(t *testing.T, stream []turnEvent, cmd service.Convers
 	if prepare != nil {
 		prepare(svc, chats, session)
 	}
-	cmd.SessionUID = session.UUID
+	cmd.SessionUID = mustUID(t, session.ChatSessionID)
 	rec := newTurnEventRecorder()
 	svc.RunConversation(context.Background(), cmd, rec.emit)
 
@@ -322,7 +322,7 @@ func TestLangGraphSingleRetryReusesPersistedUserMessage(t *testing.T) {
 	}
 	result := runLangGraphSingleCmd(t, stream, service.ConversationCommand{Content: "请回答", Retry: true},
 		func(_ *Chat, chats *fakeChatDao, session *model.ChatSession) {
-			existing = &model.ChatMessage{SessionID: session.UUID.String(), Role: "user", Content: "请回答"}
+			existing = &model.ChatMessage{SessionID: session.ChatSessionID, Role: "user", Content: "请回答"}
 			if err := chats.SaveMessage(context.Background(), existing); err != nil {
 				t.Fatalf("seed user message: %v", err)
 			}
@@ -330,8 +330,8 @@ func TestLangGraphSingleRetryReusesPersistedUserMessage(t *testing.T) {
 	if result.UserMessageCount != 1 {
 		t.Fatalf("user messages = %d, want 1 (reused, not duplicated)", result.UserMessageCount)
 	}
-	if result.UserTurnMessageID != existing.UUID.String() {
-		t.Fatalf("user_turn.message_id = %q, want %q", result.UserTurnMessageID, existing.UUID.String())
+	if result.UserTurnMessageID != existing.ChatMessageID {
+		t.Fatalf("user_turn.message_id = %q, want %q", result.UserTurnMessageID, existing.ChatMessageID)
 	}
 	if result.RunStatus != model.ChatRunStatusCompleted {
 		t.Fatalf("run status = %q, want completed", result.RunStatus)
@@ -343,7 +343,7 @@ func TestLangGraphSingleRetryMismatchFailsFast(t *testing.T) {
 	stream := []turnEvent{{"run_completed", `{}`}}
 	result := runLangGraphSingleCmd(t, stream, service.ConversationCommand{Content: "别的内容", Retry: true},
 		func(_ *Chat, chats *fakeChatDao, session *model.ChatSession) {
-			_ = chats.SaveMessage(context.Background(), &model.ChatMessage{SessionID: session.UUID.String(), Role: "user", Content: "请回答"})
+			_ = chats.SaveMessage(context.Background(), &model.ChatMessage{SessionID: session.ChatSessionID, Role: "user", Content: "请回答"})
 		})
 	if n := len(result.Events); n == 0 || result.Events[n-1] != "error" {
 		t.Fatalf("events = %v, want error", result.Events)
@@ -425,12 +425,12 @@ func TestLangGraphSingleCarriesRunIDOnControlEvents(t *testing.T) {
 	session.Title = "已有标题" // 命名短路:聚焦 run_id 断言,不引入补全调用
 
 	rec := newTurnEventRecorder()
-	svc.RunConversation(context.Background(), service.ConversationCommand{SessionUID: session.UUID, Content: "请回答"}, rec.emit)
+	svc.RunConversation(context.Background(), service.ConversationCommand{SessionUID: mustUID(t, session.ChatSessionID), Content: "请回答"}, rec.emit)
 
 	if len(chats.runs) != 1 {
 		t.Fatalf("runs = %d, want 1", len(chats.runs))
 	}
-	runID := chats.runs[0].UUID.String()
+	runID := chats.runs[0].ChatRunID
 	if len(rec.data["accepted"]) != 1 {
 		t.Fatalf("accepted events = %d, want 1", len(rec.data["accepted"]))
 	}
@@ -469,7 +469,7 @@ func TestResumeSingleInterruptedRunReplaysWithoutNewUserMessage(t *testing.T) {
 	})
 	svc, chats, session := rawSingleFixture(t, interruptedServer)
 	rec := newTurnEventRecorder()
-	svc.RunConversation(context.Background(), service.ConversationCommand{SessionUID: session.UUID, Content: "请回答"}, rec.emit)
+	svc.RunConversation(context.Background(), service.ConversationCommand{SessionUID: mustUID(t, session.ChatSessionID), Content: "请回答"}, rec.emit)
 	if len(chats.runs) != 1 || chats.runs[0].Status != model.ChatRunStatusInterrupted {
 		t.Fatalf("首轮 run 状态 = %v/%q, want 1 个 interrupted run", len(chats.runs), func() string {
 			if len(chats.runs) == 1 {
@@ -478,7 +478,7 @@ func TestResumeSingleInterruptedRunReplaysWithoutNewUserMessage(t *testing.T) {
 			return ""
 		}())
 	}
-	runID := chats.runs[0].UUID
+	runID := chats.runs[0].ChatRunID
 	if n := singleUserCount(chats); n != 1 {
 		t.Fatalf("首轮用户消息数 = %d, want 1", n)
 	}
@@ -491,7 +491,7 @@ func TestResumeSingleInterruptedRunReplaysWithoutNewUserMessage(t *testing.T) {
 	svc.engineBaseURL = engineendpoint.Static(resumeServer.URL)
 	session.Title = "已有标题" // 命名短路:续跑收尾零补全调用
 	rec2 := newTurnEventRecorder()
-	svc.RunConversationResume(context.Background(), runID, rec2.emit)
+	svc.RunConversationResume(context.Background(), mustUID(t, runID), rec2.emit)
 
 	for _, e := range rec2.events {
 		if e == "accepted" {
@@ -506,7 +506,7 @@ func TestResumeSingleInterruptedRunReplaysWithoutNewUserMessage(t *testing.T) {
 	}
 	var done ConversationEventPayload
 	_ = json.Unmarshal([]byte(rec2.data["done"][0]), &done)
-	if done.RunID != runID.String() {
+	if done.RunID != runID {
 		t.Fatalf("resume done run_id = %q, want %q", done.RunID, runID)
 	}
 	if n := singleUserCount(chats); n != 1 {
@@ -542,13 +542,13 @@ func TestResumeRejectsCompletedRun(t *testing.T) {
 	svc, chats, session := rawSingleFixture(t, server)
 	session.Title = "已有标题"
 	rec := newTurnEventRecorder()
-	svc.RunConversation(context.Background(), service.ConversationCommand{SessionUID: session.UUID, Content: "请回答"}, rec.emit)
+	svc.RunConversation(context.Background(), service.ConversationCommand{SessionUID: mustUID(t, session.ChatSessionID), Content: "请回答"}, rec.emit)
 	if chats.runs[0].Status != model.ChatRunStatusCompleted {
 		t.Fatalf("run 状态 = %q, want completed", chats.runs[0].Status)
 	}
 
 	rec2 := newTurnEventRecorder()
-	svc.RunConversationResume(context.Background(), chats.runs[0].UUID, rec2.emit)
+	svc.RunConversationResume(context.Background(), mustUID(t, chats.runs[0].ChatRunID), rec2.emit)
 	if len(paths) != 1 { // 仅首轮编排流,resume 未触达引擎
 		t.Fatalf("引擎调用 = %d, want 1(首轮)", len(paths))
 	}
@@ -570,15 +570,15 @@ func TestResumeRejectsStaleRun(t *testing.T) {
 	})
 	svc, chats, session := rawSingleFixture(t, server)
 	rec := newTurnEventRecorder()
-	svc.RunConversation(context.Background(), service.ConversationCommand{SessionUID: session.UUID, Content: "请回答"}, rec.emit)
-	runID := chats.runs[0].UUID
+	svc.RunConversation(context.Background(), service.ConversationCommand{SessionUID: mustUID(t, session.ChatSessionID), Content: "请回答"}, rec.emit)
+	runID := chats.runs[0].ChatRunID
 
-	if err := chats.SaveMessage(context.Background(), &model.ChatMessage{SessionID: session.UUID.String(), Role: "user", Content: "新消息作废旧回合"}); err != nil {
+	if err := chats.SaveMessage(context.Background(), &model.ChatMessage{SessionID: session.ChatSessionID, Role: "user", Content: "新消息作废旧回合"}); err != nil {
 		t.Fatalf("落新用户消息: %v", err)
 	}
 
 	rec2 := newTurnEventRecorder()
-	svc.RunConversationResume(context.Background(), runID, rec2.emit)
+	svc.RunConversationResume(context.Background(), mustUID(t, runID), rec2.emit)
 	if len(paths) != 1 {
 		t.Fatalf("引擎调用 = %d, want 1(首轮)", len(paths))
 	}

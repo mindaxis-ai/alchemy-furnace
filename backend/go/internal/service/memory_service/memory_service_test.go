@@ -32,8 +32,8 @@ func newTestService(t *testing.T) (*MemoryService, *dao.MemoryDao) {
 func seed(t *testing.T, d *dao.MemoryDao, agentID string, m *model.AgentMemory) {
 	t.Helper()
 	m.AgentID = agentID
-	if m.UUID == uuid.Nil {
-		m.UUID = uuid.New()
+	if m.AgentMemoryID == "" {
+		m.AgentMemoryID = uuid.New().String()
 	}
 	if err := d.SaveMemory(context.Background(), m); err != nil {
 		t.Fatalf("seed: %v", err)
@@ -79,8 +79,8 @@ func TestCreateMemorySameHashMergesImportance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("同哈希再创建: %v", err)
 	}
-	if m2.ID != m1.ID {
-		t.Fatalf("同哈希应合并到同一记录: id1=%d id2=%d", m1.ID, m2.ID)
+	if m2.AgentMemoryID != m1.AgentMemoryID {
+		t.Fatalf("同哈希应合并到同一记录: id1=%s id2=%s", m1.AgentMemoryID, m2.AgentMemoryID)
 	}
 	if m2.Importance != 4 || m2.Confidence != 0.9 {
 		t.Fatalf("合并后 importance/confidence 应取新值: %+v", m2)
@@ -190,11 +190,11 @@ func TestMemoryCRUDAndClear(t *testing.T) {
 	ctx := context.Background()
 	m, _ := svc.CreateMemory(ctx, testAgentUID, service.MemoryInput{Kind: "episode", Content: "一次对话"})
 	pinned := true
-	updated, err := svc.UpdateMemory(ctx, testAgentUID, m.UUID, service.MemoryInput{Content: "一次重要对话", Pinned: &pinned})
+	updated, err := svc.UpdateMemory(ctx, testAgentUID, uuid.MustParse(m.AgentMemoryID), service.MemoryInput{Content: "一次重要对话", Pinned: &pinned})
 	if err != nil || !updated.Pinned || updated.Content != "一次重要对话" {
 		t.Fatalf("update: %+v err=%v", updated, err)
 	}
-	if err := svc.DeleteMemory(ctx, testAgentUID, m.UUID); err != nil {
+	if err := svc.DeleteMemory(ctx, testAgentUID, uuid.MustParse(m.AgentMemoryID)); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	left, _ := svc.ListMemories(ctx, testAgentUID, "", false)

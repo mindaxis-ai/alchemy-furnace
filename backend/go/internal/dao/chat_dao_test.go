@@ -21,11 +21,21 @@ func newChatDAOTestSession(t *testing.T) (*ChatDao, *model.ChatSession) {
 	DB = db
 	t.Cleanup(func() { DB = previousDB })
 
-	session := &model.ChatSession{UUID: uuid.New(), Type: model.SessionTypeGroup, Title: "transaction test"}
+	session := &model.ChatSession{ChatSessionID: uuid.New().String(), Type: model.SessionTypeGroup, Title: "transaction test"}
 	if err := db.Create(session).Error; err != nil {
 		t.Fatalf("create session: %v", err)
 	}
 	return NewChatDao(), session
+}
+
+// mustParseUUID 测试内把主键 uuid 文本转回 uuid.UUID(Take*ByUUID 仍以 uuid.UUID 为入参)
+func mustParseUUID(t *testing.T, s string) uuid.UUID {
+	t.Helper()
+	uid, err := uuid.Parse(s)
+	if err != nil {
+		t.Fatalf("parse uuid %q: %v", s, err)
+	}
+	return uid
 }
 
 func TestChatDaoSaveMessageRollsBackInsertWhenSessionTouchFails(t *testing.T) {
@@ -33,16 +43,16 @@ func TestChatDaoSaveMessageRollsBackInsertWhenSessionTouchFails(t *testing.T) {
 	trigger := fmt.Sprintf(`
 CREATE TRIGGER fail_chat_session_touch
 BEFORE UPDATE OF updated_at ON chat_sessions
-WHEN OLD.id = %d
+WHEN OLD.chat_session_id = '%s'
 BEGIN
   SELECT RAISE(ABORT, 'forced session touch failure');
-END`, session.ID)
+END`, session.ChatSessionID)
 	if err := DB.Exec(trigger).Error; err != nil {
 		t.Fatalf("create failure trigger: %v", err)
 	}
 
 	message := &model.ChatMessage{
-		UUID: uuid.New(), SessionID: session.UUID.String(), Role: "user", Content: "must roll back",
+		ChatMessageID: uuid.New().String(), SessionID: session.ChatSessionID, Role: "user", Content: "must roll back",
 	}
 	err := dao.SaveMessage(context.Background(), message)
 	if err == nil || err.GetCode() != "dao.chat.save_message_touch" {
@@ -51,7 +61,7 @@ END`, session.ID)
 
 	var count int64
 	if queryErr := DB.Model(&model.ChatMessage{}).
-		Where("session_id = ? AND content = ?", session.UUID.String(), message.Content).
+		Where("session_id = ? AND content = ?", session.ChatSessionID, message.Content).
 		Count(&count).Error; queryErr != nil {
 		t.Fatalf("count rolled-back messages: %v", queryErr)
 	}
@@ -64,13 +74,13 @@ func TestChatDaoSaveMessagePersistsAndTouchesSession(t *testing.T) {
 	dao, session := newChatDAOTestSession(t)
 	oldUpdatedAt := time.Now().Add(-time.Hour).UTC().Truncate(time.Second)
 	if err := DB.Model(&model.ChatSession{}).
-		Where("uuid = ?", session.UUID.String()).
+		Where("chat_session_id = ?", session.ChatSessionID).
 		UpdateColumn("updated_at", oldUpdatedAt).Error; err != nil {
 		t.Fatalf("backdate session: %v", err)
 	}
 
 	message := &model.ChatMessage{
-		UUID: uuid.New(), SessionID: session.UUID.String(), Role: "user", Content: "persist atomically",
+		ChatMessageID: uuid.New().String(), SessionID: session.ChatSessionID, Role: "user", Content: "persist atomically",
 	}
 	if err := dao.SaveMessage(context.Background(), message); err != nil {
 		t.Fatalf("SaveMessage error = %v", err)
@@ -78,7 +88,7 @@ func TestChatDaoSaveMessagePersistsAndTouchesSession(t *testing.T) {
 
 	var count int64
 	if err := DB.Model(&model.ChatMessage{}).
-		Where("session_id = ? AND content = ?", session.UUID.String(), message.Content).
+		Where("session_id = ? AND content = ?", session.ChatSessionID, message.Content).
 		Count(&count).Error; err != nil {
 		t.Fatalf("count persisted messages: %v", err)
 	}
@@ -86,7 +96,7 @@ func TestChatDaoSaveMessagePersistsAndTouchesSession(t *testing.T) {
 		t.Fatalf("persisted messages = %d, want 1", count)
 	}
 	var storedSession model.ChatSession
-	if err := DB.First(&storedSession, session.ID).Error; err != nil {
+	if err := DB.Where("chat_session_id = ?", session.ChatSessionID).First(&storedSession).Error; err != nil {
 		t.Fatalf("reload session: %v", err)
 	}
 	if !storedSession.UpdatedAt.After(oldUpdatedAt) {
@@ -96,15 +106,17 @@ func TestChatDaoSaveMessagePersistsAndTouchesSession(t *testing.T) {
 
 func TestChatDaoFindMessagesPagesBackwardFromNewestAndPresentsAscending(t *testing.T) {
 	dao, session := newChatDAOTestSession(t)
-	createdAt := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
+	// 每条消息错开 1 秒:主键(uuid 文本)不再随插入递增,同时间戳的次序无业务含义,
+	// 测试断言以 created_at 为权威序
+	base := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
 	messages := make([]model.ChatMessage, 0, 25)
 	for i := 1; i <= 25; i++ {
 		messages = append(messages, model.ChatMessage{
-			UUID:      uuid.New(),
-			SessionID: session.UUID.String(),
-			Role:      "assistant",
-			Content:   fmt.Sprintf("message-%02d", i),
-			CreatedAt: createdAt,
+			ChatMessageID: uuid.New().String(),
+			SessionID:     session.ChatSessionID,
+			Role:          "assistant",
+			Content:       fmt.Sprintf("message-%02d", i),
+			CreatedAt:     base.Add(time.Duration(i) * time.Second),
 		})
 	}
 	if err := DB.Create(&messages).Error; err != nil {
@@ -122,7 +134,7 @@ func TestChatDaoFindMessagesPagesBackwardFromNewestAndPresentsAscending(t *testi
 	}
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("page_%d", tt.page), func(t *testing.T) {
-			total, got, err := dao.FindMessages(context.Background(), session.UUID.String(), tt.page, 10)
+			total, got, err := dao.FindMessages(context.Background(), session.ChatSessionID, tt.page, 10)
 			if err != nil {
 				t.Fatalf("FindMessages() error = %v", err)
 			}
@@ -157,8 +169,8 @@ func newChatDAOTestGroupDB(t *testing.T) *ChatDao {
 func TestChatDaoFindMembersBySessionIDsGroupsOrdersAndSkipsEmptyInput(t *testing.T) {
 	dao := newChatDAOTestGroupDB(t)
 	agents := []*model.DaoAgent{
-		{UUID: uuid.New(), Name: "太上老君", Status: "active", ModelName: "test-model"},
-		{UUID: uuid.New(), Name: "孙悟空", Status: "active", ModelName: "test-model"},
+		{DaoAgentID: uuid.New().String(), Name: "太上老君", Status: "active", ModelName: "test-model"},
+		{DaoAgentID: uuid.New().String(), Name: "孙悟空", Status: "active", ModelName: "test-model"},
 	}
 	for _, agent := range agents {
 		if err := DB.Create(agent).Error; err != nil {
@@ -166,8 +178,8 @@ func TestChatDaoFindMembersBySessionIDsGroupsOrdersAndSkipsEmptyInput(t *testing
 		}
 	}
 	sessions := []*model.ChatSession{
-		{UUID: uuid.New(), Type: model.SessionTypeGroup},
-		{UUID: uuid.New(), Type: model.SessionTypeGroup},
+		{ChatSessionID: uuid.New().String(), Type: model.SessionTypeGroup},
+		{ChatSessionID: uuid.New().String(), Type: model.SessionTypeGroup},
 	}
 	for _, session := range sessions {
 		if err := DB.Create(session).Error; err != nil {
@@ -176,9 +188,9 @@ func TestChatDaoFindMembersBySessionIDsGroupsOrdersAndSkipsEmptyInput(t *testing
 	}
 	// 故意逆序写入,证明结果按 sort_order 排序而非插入顺序
 	seed := []*model.SessionMember{
-		{SessionID: sessions[0].UUID.String(), AgentID: agents[1].UUID.String(), SortOrder: 1},
-		{SessionID: sessions[0].UUID.String(), AgentID: agents[0].UUID.String(), SortOrder: 0},
-		{SessionID: sessions[1].UUID.String(), AgentID: agents[1].UUID.String(), SortOrder: 0},
+		{SessionID: sessions[0].ChatSessionID, AgentID: agents[1].DaoAgentID, SortOrder: 1},
+		{SessionID: sessions[0].ChatSessionID, AgentID: agents[0].DaoAgentID, SortOrder: 0},
+		{SessionID: sessions[1].ChatSessionID, AgentID: agents[1].DaoAgentID, SortOrder: 0},
 	}
 	for _, member := range seed {
 		if err := DB.Create(member).Error; err != nil {
@@ -186,22 +198,22 @@ func TestChatDaoFindMembersBySessionIDsGroupsOrdersAndSkipsEmptyInput(t *testing
 		}
 	}
 
-	grouped, err := dao.FindMembersBySessionIDs(context.Background(), []string{sessions[0].UUID.String(), sessions[1].UUID.String()})
+	grouped, err := dao.FindMembersBySessionIDs(context.Background(), []string{sessions[0].ChatSessionID, sessions[1].ChatSessionID})
 	if err != nil {
 		t.Fatalf("FindMembersBySessionIDs error = %v", err)
 	}
 	if len(grouped) != 2 {
 		t.Fatalf("grouped sessions = %d, want 2", len(grouped))
 	}
-	first := grouped[sessions[0].UUID.String()]
-	if len(first) != 2 || first[0].AgentID != agents[0].UUID.String() || first[1].AgentID != agents[1].UUID.String() {
+	first := grouped[sessions[0].ChatSessionID]
+	if len(first) != 2 || first[0].AgentID != agents[0].DaoAgentID || first[1].AgentID != agents[1].DaoAgentID {
 		t.Fatalf("session[0] members = %+v, want sorted by sort_order", first)
 	}
 	if first[0].Agent.Name != "太上老君" {
 		t.Fatalf("Agent 未预加载: %+v", first[0].Agent)
 	}
-	second := grouped[sessions[1].UUID.String()]
-	if len(second) != 1 || second[0].AgentID != agents[1].UUID.String() {
+	second := grouped[sessions[1].ChatSessionID]
+	if len(second) != 1 || second[0].AgentID != agents[1].DaoAgentID {
 		t.Fatalf("session[1] members = %+v, want single member", second)
 	}
 
@@ -225,7 +237,7 @@ END`
 		t.Fatalf("create failure trigger: %v", err)
 	}
 
-	session := &model.ChatSession{UUID: uuid.New(), Type: model.SessionTypeGroup, Title: ""}
+	session := &model.ChatSession{ChatSessionID: uuid.New().String(), Type: model.SessionTypeGroup, Title: ""}
 	members := []*model.SessionMember{
 		{AgentID: uuid.NewString(), SortOrder: 0},
 		{AgentID: uuid.NewString(), SortOrder: 1},
@@ -250,8 +262,8 @@ END`
 func TestChatDaoSaveGroupSessionPersistsSessionAndMembersInOrder(t *testing.T) {
 	dao := newChatDAOTestGroupDB(t)
 	agents := []*model.DaoAgent{
-		{UUID: uuid.New(), Name: "太上老君", Status: "active", ModelName: "test-model"},
-		{UUID: uuid.New(), Name: "孙悟空", Status: "active", ModelName: "test-model"},
+		{DaoAgentID: uuid.New().String(), Name: "太上老君", Status: "active", ModelName: "test-model"},
+		{DaoAgentID: uuid.New().String(), Name: "孙悟空", Status: "active", ModelName: "test-model"},
 	}
 	for _, agent := range agents {
 		if err := DB.Create(agent).Error; err != nil {
@@ -259,38 +271,38 @@ func TestChatDaoSaveGroupSessionPersistsSessionAndMembersInOrder(t *testing.T) {
 		}
 	}
 
-	session := &model.ChatSession{UUID: uuid.New(), Type: model.SessionTypeGroup, Title: ""}
+	session := &model.ChatSession{ChatSessionID: uuid.New().String(), Type: model.SessionTypeGroup, Title: ""}
 	members := []*model.SessionMember{
-		{AgentID: agents[0].UUID.String(), SortOrder: 0},
-		{AgentID: agents[1].UUID.String(), SortOrder: 1},
+		{AgentID: agents[0].DaoAgentID, SortOrder: 0},
+		{AgentID: agents[1].DaoAgentID, SortOrder: 1},
 	}
 	if err := dao.SaveGroupSession(context.Background(), session, members); err != nil {
 		t.Fatalf("SaveGroupSession error = %v", err)
 	}
 
-	if session.ID == 0 {
+	if session.ChatSessionID == "" {
 		t.Fatal("SaveGroupSession did not assign session ID")
 	}
 	for i, member := range members {
-		if member.SessionID != session.UUID.String() {
-			t.Fatalf("members[%d].SessionID = %s, want session UUID %s", i, member.SessionID, session.UUID.String())
+		if member.SessionID != session.ChatSessionID {
+			t.Fatalf("members[%d].SessionID = %s, want session UUID %s", i, member.SessionID, session.ChatSessionID)
 		}
 	}
 
 	var persisted model.ChatSession
-	if err := DB.Where("uuid = ?", session.UUID.String()).First(&persisted).Error; err != nil {
+	if err := DB.Where("chat_session_id = ?", session.ChatSessionID).First(&persisted).Error; err != nil {
 		t.Fatalf("session not persisted: %v", err)
 	}
 	var persistedMembers []*model.SessionMember
-	if err := DB.Where("session_id = ?", session.UUID.String()).
-		Order("sort_order ASC, id ASC").
+	if err := DB.Where("session_id = ?", session.ChatSessionID).
+		Order("sort_order ASC, session_member_id ASC").
 		Find(&persistedMembers).Error; err != nil {
 		t.Fatalf("query members: %v", err)
 	}
 	if len(persistedMembers) != 2 {
 		t.Fatalf("persisted members = %d, want 2", len(persistedMembers))
 	}
-	if persistedMembers[0].AgentID != agents[0].UUID.String() || persistedMembers[1].AgentID != agents[1].UUID.String() {
+	if persistedMembers[0].AgentID != agents[0].DaoAgentID || persistedMembers[1].AgentID != agents[1].DaoAgentID {
 		t.Fatalf("member order/association wrong: %+v", persistedMembers)
 	}
 }
@@ -302,24 +314,24 @@ func TestChatRunLifecyclePersistsAndTransitionsLegally(t *testing.T) {
 	ctx := context.Background()
 
 	run := &model.ChatRun{
-		UUID:      uuid.New(),
-		SessionID: session.UUID.String(),
+		ChatRunID: uuid.New().String(),
+		SessionID: session.ChatSessionID,
 		Status:    model.ChatRunStatusPending,
 		Engine:    "langgraph",
 	}
 	if err := dao.CreateRun(ctx, run); err != nil {
 		t.Fatalf("CreateRun error = %v", err)
 	}
-	if run.ID == 0 {
+	if run.ChatRunID == "" {
 		t.Fatal("CreateRun did not assign run ID")
 	}
 
-	taken, err := dao.TakeRunByUUID(ctx, run.UUID)
+	taken, err := dao.TakeRunByUUID(ctx, mustParseUUID(t, run.ChatRunID))
 	if err != nil {
 		t.Fatalf("TakeRunByUUID error = %v", err)
 	}
-	if taken.UUID != run.UUID || taken.SessionID != session.UUID.String() {
-		t.Fatalf("TakeRunByUUID identity = %+v, want run %s session %s", taken, run.UUID, session.UUID.String())
+	if taken.ChatRunID != run.ChatRunID || taken.SessionID != session.ChatSessionID {
+		t.Fatalf("TakeRunByUUID identity = %+v, want run %s session %s", taken, run.ChatRunID, session.ChatSessionID)
 	}
 	if taken.Status != model.ChatRunStatusPending || taken.Engine != "langgraph" {
 		t.Fatalf("TakeRunByUUID status/engine = %s/%s, want pending/langgraph", taken.Status, taken.Engine)
@@ -349,7 +361,7 @@ func TestChatRunLifecyclePersistsAndTransitionsLegally(t *testing.T) {
 	}
 
 	var stored model.ChatRun
-	if err := DB.Where("uuid = ?", run.UUID.String()).First(&stored).Error; err != nil {
+	if err := DB.Where("chat_run_id = ?", run.ChatRunID).First(&stored).Error; err != nil {
 		t.Fatalf("reload run: %v", err)
 	}
 	if stored.Status != model.ChatRunStatusCompleted {
@@ -363,8 +375,8 @@ func TestChatRunStatusRejectsIllegalTransitions(t *testing.T) {
 
 	newRun := func() *model.ChatRun {
 		run := &model.ChatRun{
-			UUID:      uuid.New(),
-			SessionID: session.UUID.String(),
+			ChatRunID: uuid.New().String(),
+			SessionID: session.ChatSessionID,
 			Status:    model.ChatRunStatusPending,
 			Engine:    "langgraph",
 		}
@@ -398,7 +410,7 @@ func TestChatRunStatusRejectsIllegalTransitions(t *testing.T) {
 
 	// 拒绝必须落库为未变更：pending->completed 被拒后 DB 状态仍是 pending
 	var stored model.ChatRun
-	if err := DB.Where("uuid = ?", pending.UUID.String()).First(&stored).Error; err != nil {
+	if err := DB.Where("chat_run_id = ?", pending.ChatRunID).First(&stored).Error; err != nil {
 		t.Fatalf("reload rejected run: %v", err)
 	}
 	if stored.Status != model.ChatRunStatusPending {
@@ -410,39 +422,39 @@ func TestSaveFinalReplyOnceIsIdempotent(t *testing.T) {
 	dao, session := newChatDAOTestSession(t)
 	ctx := context.Background()
 
-	run := &model.ChatRun{UUID: uuid.New(), SessionID: session.UUID.String(), Status: model.ChatRunStatusRunning, Engine: "langgraph"}
+	run := &model.ChatRun{ChatRunID: uuid.New().String(), SessionID: session.ChatSessionID, Status: model.ChatRunStatusRunning, Engine: "langgraph"}
 	if err := dao.CreateRun(ctx, run); err != nil {
 		t.Fatalf("CreateRun error = %v", err)
 	}
 
 	message := &model.ChatMessage{
-		UUID: uuid.New(), SessionID: session.UUID.String(), Role: "assistant", Content: "第一份终稿",
+		ChatMessageID: uuid.New().String(), SessionID: session.ChatSessionID, Role: "assistant", Content: "第一份终稿",
 	}
-	first, err := dao.SaveFinalReplyOnce(ctx, run.UUID, "reply-1", message)
+	first, err := dao.SaveFinalReplyOnce(ctx, mustParseUUID(t, run.ChatRunID), "reply-1", message)
 	if err != nil {
 		t.Fatalf("SaveFinalReplyOnce error = %v", err)
 	}
-	if first.ID == 0 || first.RunID == nil || *first.RunID != run.UUID.String() || first.ReplyID == nil || *first.ReplyID != "reply-1" {
+	if first.ChatMessageID == "" || first.RunID == nil || *first.RunID != run.ChatRunID || first.ReplyID == nil || *first.ReplyID != "reply-1" {
 		t.Fatalf("first reply identity = %+v, want backfilled run/reply ids", first)
 	}
 
 	// 重复投递（重试）：不同内容也必须返回已有行，不产生第二条
 	duplicate := &model.ChatMessage{
-		UUID: uuid.New(), SessionID: session.UUID.String(), Role: "assistant", Content: "重试的第二份终稿",
+		ChatMessageID: uuid.New().String(), SessionID: session.ChatSessionID, Role: "assistant", Content: "重试的第二份终稿",
 	}
-	second, err := dao.SaveFinalReplyOnce(ctx, run.UUID, "reply-1", duplicate)
+	second, err := dao.SaveFinalReplyOnce(ctx, mustParseUUID(t, run.ChatRunID), "reply-1", duplicate)
 	if err != nil {
 		t.Fatalf("duplicate SaveFinalReplyOnce error = %v", err)
 	}
-	if first.ID != second.ID {
-		t.Fatalf("duplicate returned ID = %d, want original %d", second.ID, first.ID)
+	if first.ChatMessageID != second.ChatMessageID {
+		t.Fatalf("duplicate returned ID = %s, want original %s", second.ChatMessageID, first.ChatMessageID)
 	}
 	if second.Content != "第一份终稿" {
 		t.Fatalf("duplicate returned content = %q, want original %q", second.Content, "第一份终稿")
 	}
 
 	var count int64
-	if err := DB.Model(&model.ChatMessage{}).Where("session_id = ?", session.UUID.String()).Count(&count).Error; err != nil {
+	if err := DB.Model(&model.ChatMessage{}).Where("session_id = ?", session.ChatSessionID).Count(&count).Error; err != nil {
 		t.Fatalf("count messages: %v", err)
 	}
 	if count != 1 {
@@ -454,38 +466,38 @@ func TestSaveFinalReplyOnceUniqueKeyIsRunAndReply(t *testing.T) {
 	dao, session := newChatDAOTestSession(t)
 	ctx := context.Background()
 
-	runA := &model.ChatRun{UUID: uuid.New(), SessionID: session.UUID.String(), Status: model.ChatRunStatusRunning, Engine: "langgraph"}
-	runB := &model.ChatRun{UUID: uuid.New(), SessionID: session.UUID.String(), Status: model.ChatRunStatusRunning, Engine: "langgraph"}
+	runA := &model.ChatRun{ChatRunID: uuid.New().String(), SessionID: session.ChatSessionID, Status: model.ChatRunStatusRunning, Engine: "langgraph"}
+	runB := &model.ChatRun{ChatRunID: uuid.New().String(), SessionID: session.ChatSessionID, Status: model.ChatRunStatusRunning, Engine: "langgraph"}
 	for _, run := range []*model.ChatRun{runA, runB} {
 		if err := dao.CreateRun(ctx, run); err != nil {
-			t.Fatalf("CreateRun(%s) error = %v", run.UUID, err)
+			t.Fatalf("CreateRun(%s) error = %v", run.ChatRunID, err)
 		}
 	}
 
 	// 同 run 不同 reply -> 两行
-	first, err := dao.SaveFinalReplyOnce(ctx, runA.UUID, "reply-1", &model.ChatMessage{UUID: uuid.New(), SessionID: session.UUID.String(), Role: "assistant", Content: "runA-reply1"})
+	first, err := dao.SaveFinalReplyOnce(ctx, mustParseUUID(t, runA.ChatRunID), "reply-1", &model.ChatMessage{ChatMessageID: uuid.New().String(), SessionID: session.ChatSessionID, Role: "assistant", Content: "runA-reply1"})
 	if err != nil {
 		t.Fatalf("SaveFinalReplyOnce runA/reply-1 error = %v", err)
 	}
-	second, err := dao.SaveFinalReplyOnce(ctx, runA.UUID, "reply-2", &model.ChatMessage{UUID: uuid.New(), SessionID: session.UUID.String(), Role: "assistant", Content: "runA-reply2"})
+	second, err := dao.SaveFinalReplyOnce(ctx, mustParseUUID(t, runA.ChatRunID), "reply-2", &model.ChatMessage{ChatMessageID: uuid.New().String(), SessionID: session.ChatSessionID, Role: "assistant", Content: "runA-reply2"})
 	if err != nil {
 		t.Fatalf("SaveFinalReplyOnce runA/reply-2 error = %v", err)
 	}
-	if first.ID == second.ID {
-		t.Fatalf("distinct reply ids collided on message ID %d, want two rows", first.ID)
+	if first.ChatMessageID == second.ChatMessageID {
+		t.Fatalf("distinct reply ids collided on message ID %s, want two rows", first.ChatMessageID)
 	}
 
 	// 不同 run 同 reply -> 两行（唯一键是 (run_id, reply_id) 组合，不是 reply_id 单列）
-	third, err := dao.SaveFinalReplyOnce(ctx, runB.UUID, "reply-1", &model.ChatMessage{UUID: uuid.New(), SessionID: session.UUID.String(), Role: "assistant", Content: "runB-reply1"})
+	third, err := dao.SaveFinalReplyOnce(ctx, mustParseUUID(t, runB.ChatRunID), "reply-1", &model.ChatMessage{ChatMessageID: uuid.New().String(), SessionID: session.ChatSessionID, Role: "assistant", Content: "runB-reply1"})
 	if err != nil {
 		t.Fatalf("SaveFinalReplyOnce runB/reply-1 error = %v", err)
 	}
-	if third.ID == first.ID || third.ID == second.ID {
-		t.Fatalf("different run same reply collided on message ID %d, want a third row", third.ID)
+	if third.ChatMessageID == first.ChatMessageID || third.ChatMessageID == second.ChatMessageID {
+		t.Fatalf("different run same reply collided on message ID %s, want a third row", third.ChatMessageID)
 	}
 
 	var count int64
-	if err := DB.Model(&model.ChatMessage{}).Where("session_id = ?", session.UUID.String()).Count(&count).Error; err != nil {
+	if err := DB.Model(&model.ChatMessage{}).Where("session_id = ?", session.ChatSessionID).Count(&count).Error; err != nil {
 		t.Fatalf("count messages: %v", err)
 	}
 	if count != 3 {
@@ -493,7 +505,7 @@ func TestSaveFinalReplyOnceUniqueKeyIsRunAndReply(t *testing.T) {
 	}
 
 	// 未知 run -> 稳定错误码
-	_, err = dao.SaveFinalReplyOnce(ctx, uuid.New(), "reply-x", &model.ChatMessage{UUID: uuid.New(), SessionID: session.UUID.String(), Role: "assistant", Content: "orphan"})
+	_, err = dao.SaveFinalReplyOnce(ctx, uuid.New(), "reply-x", &model.ChatMessage{ChatMessageID: uuid.New().String(), SessionID: session.ChatSessionID, Role: "assistant", Content: "orphan"})
 	if err == nil || err.GetCode() != "dao.chat.save_final_reply_once" {
 		t.Fatalf("unknown run error = %#v, want dao.chat.save_final_reply_once", err)
 	}
@@ -508,24 +520,24 @@ func TestChatDaoTakeSessionByUUIDPreloadsAgentAndReportsMissing(t *testing.T) {
 	dao, groupSession := newChatDAOTestSession(t)
 	ctx := context.Background()
 
-	got, err := dao.TakeSessionByUUID(ctx, groupSession.UUID)
+	got, err := dao.TakeSessionByUUID(ctx, mustParseUUID(t, groupSession.ChatSessionID))
 	if err != nil {
 		t.Fatalf("TakeSessionByUUID error = %v", err)
 	}
-	if got.UUID != groupSession.UUID || got.Title != "transaction test" {
-		t.Fatalf("TakeSessionByUUID = %+v, want session %s(transaction test)", got, groupSession.UUID)
+	if got.ChatSessionID != groupSession.ChatSessionID || got.Title != "transaction test" {
+		t.Fatalf("TakeSessionByUUID = %+v, want session %s(transaction test)", got, groupSession.ChatSessionID)
 	}
 
-	agent := &model.DaoAgent{UUID: uuid.New(), Name: "单聊道人", Status: "active", ModelName: "m"}
+	agent := &model.DaoAgent{DaoAgentID: uuid.New().String(), Name: "单聊道人", Status: "active", ModelName: "m"}
 	if err := DB.Create(agent).Error; err != nil {
 		t.Fatalf("create agent: %v", err)
 	}
-	agentUUID := agent.UUID.String()
-	single := &model.ChatSession{UUID: uuid.New(), Type: model.SessionTypeSingle, AgentID: &agentUUID}
+	agentUUID := agent.DaoAgentID
+	single := &model.ChatSession{ChatSessionID: uuid.New().String(), Type: model.SessionTypeSingle, AgentID: &agentUUID}
 	if err := DB.Create(single).Error; err != nil {
 		t.Fatalf("create single session: %v", err)
 	}
-	preloaded, err := dao.TakeSessionByUUID(ctx, single.UUID)
+	preloaded, err := dao.TakeSessionByUUID(ctx, mustParseUUID(t, single.ChatSessionID))
 	if err != nil {
 		t.Fatalf("TakeSessionByUUID(single) error = %v", err)
 	}

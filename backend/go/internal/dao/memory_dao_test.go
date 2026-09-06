@@ -33,11 +33,11 @@ func TestMemoryDAOCreateAndList(t *testing.T) {
 	ctx := context.Background()
 
 	m1 := &model.AgentMemory{
-		UUID: uuid.New(), AgentID: testAgentUUID, Kind: "user_fact",
+		AgentMemoryID: uuid.New().String(), AgentID: testAgentUUID, Kind: "user_fact",
 		Content: "用户喜欢围棋", ContentHash: "h1", Importance: 4, Confidence: 0.9,
 	}
 	m2 := &model.AgentMemory{
-		UUID: uuid.New(), AgentID: testAgentUUID, Kind: "episode",
+		AgentMemoryID: uuid.New().String(), AgentID: testAgentUUID, Kind: "episode",
 		Content: "上个月一起复盘了一盘棋", ContentHash: "h2",
 	}
 	if err := d.SaveMemory(ctx, m1); err != nil {
@@ -55,7 +55,7 @@ func TestMemoryDAOCreateAndList(t *testing.T) {
 		t.Fatalf("list by kind: n=%d err=%v", len(fact), err)
 	}
 	// onlyActive=false 包含 superseded
-	if err := d.SupersedeMemory(ctx, m1.UUID.String()); err != nil {
+	if err := d.SupersedeMemory(ctx, m1.AgentMemoryID); err != nil {
 		t.Fatalf("supersede: %v", err)
 	}
 	activeOnly, _ := d.ListMemories(ctx, testAgentUUID, "", true)
@@ -73,18 +73,18 @@ func TestMemoryDAOTakeByUUIDAndHash(t *testing.T) {
 	d := NewMemoryDao()
 	ctx := context.Background()
 	m := &model.AgentMemory{
-		UUID: uuid.New(), AgentID: testAgentUUID, Kind: "user_fact",
+		AgentMemoryID: uuid.New().String(), AgentID: testAgentUUID, Kind: "user_fact",
 		Content: "用户喜欢围棋", ContentHash: "h1",
 	}
 	if err := d.SaveMemory(ctx, m); err != nil {
 		t.Fatalf("save: %v", err)
 	}
-	got, err := d.TakeMemoryByUUID(ctx, m.UUID)
-	if err != nil || got.ID != m.ID {
+	got, err := d.TakeMemoryByUUID(ctx, uuid.MustParse(m.AgentMemoryID))
+	if err != nil || got.AgentMemoryID != m.AgentMemoryID {
 		t.Fatalf("take by uuid: %+v err=%v", got, err)
 	}
 	hit, err := d.FindActiveByContentHash(ctx, testAgentUUID, "h1")
-	if err != nil || hit == nil || hit.ID != m.ID {
+	if err != nil || hit == nil || hit.AgentMemoryID != m.AgentMemoryID {
 		t.Fatalf("find by hash: %+v err=%v", hit, err)
 	}
 	if _, err := d.TakeMemoryByUUID(ctx, uuid.New()); err == nil {
@@ -96,21 +96,21 @@ func TestMemoryDAOSupersedeAndTouchAndDelete(t *testing.T) {
 	newMemoryTestDB(t)
 	d := NewMemoryDao()
 	ctx := context.Background()
-	m := &model.AgentMemory{UUID: uuid.New(), AgentID: testAgentUUID, Kind: "user_fact", Content: "x", ContentHash: "h"}
+	m := &model.AgentMemory{AgentMemoryID: uuid.New().String(), AgentID: testAgentUUID, Kind: "user_fact", Content: "x", ContentHash: "h"}
 	if err := d.SaveMemory(ctx, m); err != nil {
 		t.Fatalf("save: %v", err)
 	}
-	if err := d.TouchMemory(ctx, m.UUID.String()); err != nil {
+	if err := d.TouchMemory(ctx, m.AgentMemoryID); err != nil {
 		t.Fatalf("touch: %v", err)
 	}
-	after, _ := d.GetMemory(ctx, m.UUID.String())
+	after, _ := d.GetMemory(ctx, m.AgentMemoryID)
 	if after.LastAccessedAt == nil {
 		t.Fatal("touch 后 LastAccessedAt 应非空")
 	}
-	if err := d.SupersedeMemory(ctx, m.UUID.String()); err != nil {
+	if err := d.SupersedeMemory(ctx, m.AgentMemoryID); err != nil {
 		t.Fatalf("supersede: %v", err)
 	}
-	s, _ := d.GetMemory(ctx, m.UUID.String())
+	s, _ := d.GetMemory(ctx, m.AgentMemoryID)
 	if s.Status != "superseded" {
 		t.Fatalf("status=%q, want superseded", s.Status)
 	}

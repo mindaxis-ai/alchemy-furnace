@@ -174,11 +174,11 @@ func TestGroupMemberErrorWirePayloadExplicitlyMarksNonterminal(t *testing.T) {
 func TestSessionResponseIncludesStatusesAndCurrentMembers(t *testing.T) {
 	agentID := uuid.NewString()
 	session := &model.ChatSession{
-		UUID: uuid.New(), Type: model.SessionTypeGroup, AgentID: &agentID,
-		Agent: model.DaoAgent{UUID: uuid.New(), Status: "inactive"},
+		ChatSessionID: uuid.New().String(), Type: model.SessionTypeGroup, AgentID: &agentID,
+		Agent: model.DaoAgent{DaoAgentID: uuid.New().String(), Status: "inactive"},
 		Members: []model.SessionMember{
-			{AgentID: uuid.NewString(), Agent: model.DaoAgent{UUID: uuid.New(), Name: "Alpha", Status: "active"}},
-			{AgentID: uuid.NewString(), Agent: model.DaoAgent{UUID: uuid.New(), Name: "Beta", Status: "inactive"}},
+			{AgentID: uuid.NewString(), Agent: model.DaoAgent{DaoAgentID: uuid.New().String(), Name: "Alpha", Status: "active"}},
+			{AgentID: uuid.NewString(), Agent: model.DaoAgent{DaoAgentID: uuid.New().String(), Name: "Beta", Status: "inactive"}},
 		},
 	}
 
@@ -208,8 +208,8 @@ func TestSessionResponseIncludesSingleAgentIdentity(t *testing.T) {
 	agentUID := uuid.New()
 	agentID := agentUID.String()
 	session := &model.ChatSession{
-		UUID: uuid.New(), Type: model.SessionTypeSingle, AgentID: &agentID,
-		Agent: model.DaoAgent{UUID: agentUID, Name: "太上老君", Avatar: "https://example.com/laojun.png", Status: "inactive"},
+		ChatSessionID: uuid.New().String(), Type: model.SessionTypeSingle, AgentID: &agentID,
+		Agent: model.DaoAgent{DaoAgentID: agentUID.String(), Name: "太上老君", Avatar: "https://example.com/laojun.png", Status: "inactive"},
 	}
 	response := toSessionResponse(session)
 	if response.AgentID != agentUID.String() || response.AgentName != "太上老君" {
@@ -224,8 +224,8 @@ func TestSessionResponseIncludesSingleAgentIdentity(t *testing.T) {
 // 真实群聊的 AgentID 为 NULL(单聊外键),带残留预加载也不得输出身份
 func TestSessionResponseOmitsSingleAgentIdentityForGroup(t *testing.T) {
 	session := &model.ChatSession{
-		UUID: uuid.New(), Type: model.SessionTypeGroup,
-		Agent: model.DaoAgent{UUID: uuid.New(), Name: "太上老君", Avatar: "https://example.com/laojun.png", Status: "inactive"},
+		ChatSessionID: uuid.New().String(), Type: model.SessionTypeGroup,
+		Agent: model.DaoAgent{DaoAgentID: uuid.New().String(), Name: "太上老君", Avatar: "https://example.com/laojun.png", Status: "inactive"},
 	}
 	data, err := json.Marshal(toSessionResponse(session))
 	if err != nil {
@@ -248,10 +248,10 @@ func TestSessionResponseOmitsSingleAgentIdentityForGroup(t *testing.T) {
 func TestGetSessionReturnsDirectGroupMetadata(t *testing.T) {
 	sessionUID := uuid.New()
 	stub := &sseChatStub{
-		session: &model.ChatSession{ID: 7, UUID: sessionUID, Type: model.SessionTypeGroup, Title: "Deep link"},
+		session: &model.ChatSession{ChatSessionID: sessionUID.String(), Type: model.SessionTypeGroup, Title: "Deep link"},
 		members: []*model.SessionMember{{
 			AgentID: uuid.NewString(),
-			Agent:   model.DaoAgent{UUID: uuid.New(), Name: "Current member", Avatar: "/member.png", Status: "inactive"},
+			Agent:   model.DaoAgent{DaoAgentID: uuid.New().String(), Name: "Current member", Avatar: "/member.png", Status: "inactive"},
 		}},
 	}
 	gin.SetMode(gin.TestMode)
@@ -283,12 +283,11 @@ func (s *sseChatStub) RunConversation(_ context.Context, cmd service.Conversatio
 // Task 15:LangGraph 权威路径——handler 只做输入校验与委托,不存在任何 legacy 组装链。
 func TestSSEChatLangGraphDelegatesWithoutLegacyComposition(t *testing.T) {
 	sessionUID := uuid.New()
-	agentID := uint(7)
 	agentIDText := uuid.NewString()
 	stub := &sseChatStub{
 		session: &model.ChatSession{
-			ID: 3, UUID: sessionUID, Type: model.SessionTypeSingle, AgentID: &agentIDText,
-			Agent: model.DaoAgent{ID: agentID, UUID: uuid.New(), Status: "active", ModelName: "test-model"},
+			ChatSessionID: sessionUID.String(), Type: model.SessionTypeSingle, AgentID: &agentIDText,
+			Agent: model.DaoAgent{DaoAgentID: uuid.New().String(), Status: "active", ModelName: "test-model"},
 		},
 	}
 	w := performSSEChatBody(t, stub, sessionUID, `{"content":"hello","retry":true,"debug_prompt":true}`)
@@ -312,7 +311,7 @@ func TestSSEChatLangGraphDelegatesWithoutLegacyComposition(t *testing.T) {
 func TestSSEGroupLangGraphDelegatesToRunConversation(t *testing.T) {
 	sessionUID := uuid.New()
 	stub := &sseChatStub{
-		session: &model.ChatSession{ID: 4, UUID: sessionUID, Type: model.SessionTypeGroup},
+		session: &model.ChatSession{ChatSessionID: sessionUID.String(), Type: model.SessionTypeGroup},
 	}
 	w := performSSEChatBody(t, stub, sessionUID, `{"content":"报数","retry":true,"debug_prompt":true}`)
 

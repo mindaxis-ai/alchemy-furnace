@@ -1,5 +1,5 @@
 // 道人服用与能力编排路由：服用 / 能力列表 / 全量编排 / 移除能力
-// 能力对外标识为 AgentPillEffect.UUID（effect_id），服用响应回传该标识；
+// 能力对外标识为 AgentPillEffect.AgentPillEffectID（effect_id），服用响应回传该标识；
 // 全量编排 PUT 的提交集必须等于活跃集，乐观锁由 expected_effects_revision 承担。
 package pill_inventory
 
@@ -66,9 +66,9 @@ func (h *Handler) ConsumePill(c *gin.Context) (response.Code, any, error) {
 	return response.Ok, operationResultOut(result), nil
 }
 
-// effectOut 能力输出（UUID 在模型上是 json:"-"）
+// effectOut 能力输出（主键统一为 uuid 文本）
 type effectOut struct {
-	ID         uuid.UUID     `json:"id"`
+	ID         string        `json:"id"`
 	Name       string        `json:"name"`
 	Schema     model.JSONMap `json:"schema"`
 	Weight     float64       `json:"weight"`
@@ -93,7 +93,7 @@ func (h *Handler) ListEffects(c *gin.Context) (response.Code, any, error) {
 	out := make([]effectOut, 0, len(effects))
 	for _, ef := range effects {
 		out = append(out, effectOut{
-			ID:         ef.Effect.UUID,
+			ID:         ef.Effect.AgentPillEffectID,
 			Name:       ef.Effect.NameSnapshot,
 			Schema:     ef.Effect.SchemaSnapshot,
 			Weight:     ef.Effect.Weight,
@@ -165,7 +165,7 @@ func (h *Handler) UpdateEffects(c *gin.Context) (response.Code, any, error) {
 	out := make([]effectOut, 0, len(effects))
 	for _, ef := range effects {
 		out = append(out, effectOut{
-			ID:         ef.Effect.UUID,
+			ID:         ef.Effect.AgentPillEffectID,
 			Name:       ef.Effect.NameSnapshot,
 			Schema:     ef.Effect.SchemaSnapshot,
 			Weight:     ef.Effect.Weight,

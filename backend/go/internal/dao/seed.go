@@ -96,7 +96,7 @@ func SeedDefaultLLMModels(db *gorm.DB) error {
 	}
 
 	defaultEntry := model.LLMModel{
-		ProviderID:  provider.UUID.String(),
+		ProviderID:  provider.LLMProviderID,
 		Name:        cfg.LLM.DefaultModel,
 		DisplayName: cfg.LLM.DefaultModel,
 		Temperature: 0.7,
@@ -122,7 +122,7 @@ func SeedDefaultLLMModels(db *gorm.DB) error {
 		return fmt.Errorf("写入默认模型种子失败: %w", err)
 	}
 	synthesisEntry := model.LLMModel{
-		ProviderID:  provider.UUID.String(),
+		ProviderID:  provider.LLMProviderID,
 		Name:        synthesisModel,
 		DisplayName: synthesisModel,
 		Temperature: 0.7,
@@ -162,7 +162,7 @@ func SeedBuiltinRecipes(db *gorm.DB) error {
 				return err
 			}
 			rev := model.PillRecipeRevision{
-				RecipeID:     recipe.UUID.String(),
+				RecipeID:     recipe.PillRecipeID,
 				Revision:     1,
 				Name:         src.Name,
 				Description:  src.Description,
@@ -174,7 +174,7 @@ func SeedBuiltinRecipes(db *gorm.DB) error {
 			if err := tx.Create(&rev).Error; err != nil {
 				return err
 			}
-			return tx.Model(&recipe).Update("current_revision_id", rev.UUID.String()).Error
+			return tx.Model(&recipe).Update("current_revision_id", rev.PillRecipeRevisionID).Error
 		})
 		if err != nil {
 			return fmt.Errorf("写入内置丹方「%s」失败: %w", src.Name, err)
@@ -238,21 +238,21 @@ func GrantStarterPills(db *gorm.DB) error {
 	err := db.Transaction(func(tx *gorm.DB) error {
 		for _, r := range recipes {
 			var existing int64
-			if err := tx.Model(&model.PillStarterGrant{}).Where("recipe_id = ?", r.UUID.String()).Count(&existing).Error; err != nil {
+			if err := tx.Model(&model.PillStarterGrant{}).Where("recipe_id = ?", r.PillRecipeID).Count(&existing).Error; err != nil {
 				return err
 			}
 			if existing > 0 {
 				continue // 已有赠送记录（重启不自动补货）
 			}
 			if r.CurrentRevisionID == nil {
-				return fmt.Errorf("内置丹方「%s」缺少当前版本，无法赠送", r.UUID.String())
+				return fmt.Errorf("内置丹方「%s」缺少当前版本，无法赠送", r.PillRecipeID)
 			}
 			// 来源操作：每枚一次赠送独立操作，提供 OriginOperationID
-			sum := sha256.Sum256([]byte("starter_grant|" + r.UUID.String()))
+			sum := sha256.Sum256([]byte("starter_grant|" + r.PillRecipeID))
 			op := model.PillOperation{
 				Kind:        "starter_grant",
 				PayloadHash: hex.EncodeToString(sum[:]),
-				ResultJSON:  model.JSONMap{"kind": "starter_grant", "recipe_uuid": r.UUID.String()},
+				ResultJSON:  model.JSONMap{"kind": "starter_grant", "recipe_uuid": r.PillRecipeID},
 			}
 			if err := tx.Create(&op).Error; err != nil {
 				return err
@@ -260,15 +260,15 @@ func GrantStarterPills(db *gorm.DB) error {
 			item := model.PillItem{
 				RecipeRevisionID:  *r.CurrentRevisionID,
 				State:             model.PillAvailable,
-				OriginOperationID: op.UUID.String(),
+				OriginOperationID: op.PillOperationID,
 				OriginIndex:       0,
 			}
 			if err := tx.Create(&item).Error; err != nil {
 				return err
 			}
-			itemUID := item.UUID.String()
+			itemUID := item.PillItemID
 			if err := tx.Create(&model.PillStarterGrant{
-				RecipeID: r.UUID.String(), ItemID: &itemUID,
+				RecipeID: r.PillRecipeID, ItemID: &itemUID,
 			}).Error; err != nil {
 				return err
 			}

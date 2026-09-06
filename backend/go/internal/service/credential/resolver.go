@@ -36,7 +36,7 @@ func NewResolver() *ModelResolver {
 }
 
 // ResolveCredentials 解析指定模型名的调用凭证
-//   - 同名模型存在于多个供应商时,取 sort_order,uuid 最小者并记录 warning(平局按业务键 uuid 文本)
+//   - 同名模型存在于多个供应商时,取 sort_order,llm_model_id 最小者并记录 warning(平局按业务键 uuid 文本)
 //   - 找到已启用模型:返回供应商凭证(base_url + 解密 api_key)
 //   - 找到但全部已停用:返回明确错误「该模型已停用，请更换模型」
 //   - 未找到:返回仅含模型名的空凭证(Python 回退环境变量配置,向后兼容)并记录警告
@@ -48,7 +48,7 @@ func (r *ModelResolver) ResolveCredentials(ctx context.Context, name string) (*M
 
 	var models []model.LLMModel
 	if err := dao.GetDB().WithContext(ctx).Where("name = ?", name).
-		Order("sort_order ASC, uuid ASC").Find(&models).Error; err != nil {
+		Order("sort_order ASC, llm_model_id ASC").Find(&models).Error; err != nil {
 		return nil, fmt.Errorf("查询模型配置失败: %w", err)
 	}
 	if len(models) == 0 {
@@ -72,9 +72,9 @@ func (r *ModelResolver) ResolveCredentials(ctx context.Context, name string) (*M
 		return nil, errors.New("该模型已停用，请更换模型")
 	}
 	if enabledCount > 1 {
-		zap.L().Warn("[炼丹炉] 同名模型存在于多个供应商，按 sort_order,uuid 取第一个",
+		zap.L().Warn("[炼丹炉] 同名模型存在于多个供应商，按 sort_order,llm_model_id 取第一个",
 			zap.String("model", name),
-			zap.String("selected_id", selected.UUID.String()),
+			zap.String("selected_id", selected.LLMModelID),
 			zap.String("provider_id", selected.ProviderID))
 	}
 
@@ -129,10 +129,10 @@ func (r *ModelResolver) ResolveFusionCredentials(ctx context.Context) (*ModelCre
 }
 
 // resolveModelCredentials 由已启用模型解析完整调用凭证:加载供应商 -> 校验启用 -> 解密 api_key
-// m.ProviderID 为供应商 UUID 文本(011 业务键),按 uuid 列定位供应商行
+// m.ProviderID 为供应商业务键文本(011),按 llm_provider_id 列定位供应商行
 func (r *ModelResolver) resolveModelCredentials(ctx context.Context, m *model.LLMModel) (*ModelCredentials, error) {
 	var p model.LLMProvider
-	if err := dao.GetDB().WithContext(ctx).Where("uuid = ?", m.ProviderID).First(&p).Error; err != nil {
+	if err := dao.GetDB().WithContext(ctx).Where("llm_provider_id = ?", m.ProviderID).First(&p).Error; err != nil {
 		return nil, fmt.Errorf("查询模型所属供应商配置失败: %w", err)
 	}
 	if !p.IsEnabled {

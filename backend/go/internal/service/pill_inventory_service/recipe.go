@@ -36,7 +36,7 @@ func (s *Inventory) SaveRecipe(ctx context.Context, req service.SaveRecipeReques
 				return nil, err
 			}
 			rev := &model.PillRecipeRevision{
-				RecipeID:     recipe.UUID.String(),
+				RecipeID:     recipe.PillRecipeID,
 				Revision:     1,
 				Name:         req.Draft.Name,
 				Description:  req.Draft.Description,
@@ -49,26 +49,26 @@ func (s *Inventory) SaveRecipe(ctx context.Context, req service.SaveRecipeReques
 			if err := dao.CreatePillRecipeRevision(tx, rev); err != nil {
 				return nil, err
 			}
-			if err := dao.SetPillRecipeCurrentRevision(tx, recipe.ID, rev.UUID.String()); err != nil {
+			if err := dao.SetPillRecipeCurrentRevision(tx, recipe.PillRecipeID, rev.PillRecipeRevisionID); err != nil {
 				return nil, err
 			}
 			res := &service.PillOperationResult{
-				OperationID: op.UUID,
-				RecipeID:    &recipe.UUID,
-				RevisionID:  &rev.UUID,
+				OperationID: req.OperationID,
+				RecipeID:    uuidPtr(recipe.PillRecipeID),
+				RevisionID:  uuidPtr(rev.PillRecipeRevisionID),
 			}
 			if req.CraftOne {
 				item := &model.PillItem{
-					RecipeRevisionID:  rev.UUID.String(),
+					RecipeRevisionID:  rev.PillRecipeRevisionID,
 					State:             model.PillAvailable,
-					OriginOperationID: op.UUID.String(),
+					OriginOperationID: op.PillOperationID,
 					OriginIndex:       0,
 					CreatedAt:         s.now(),
 				}
 				if err := dao.CreatePillItem(tx, item); err != nil {
 					return nil, err
 				}
-				res.ItemIDs = []uuid.UUID{item.UUID}
+				res.ItemIDs = []uuid.UUID{uuidVal(item.PillItemID)}
 			}
 			return res, nil
 		})
@@ -108,12 +108,12 @@ func (s *Inventory) UpdateRecipe(ctx context.Context, req service.UpdateRecipeRe
 			if err != nil {
 				return nil, err
 			}
-			if current.UUID != req.ExpectedRevisionID {
+			if current.PillRecipeRevisionID != req.ExpectedRevisionID.String() {
 				return nil, errors.New(errors.ErrorTypeConflict, "recipe.revision_conflict",
 					"丹方已被他人更新，请刷新后重试")
 			}
 			rev := &model.PillRecipeRevision{
-				RecipeID:     recipe.UUID.String(),
+				RecipeID:     recipe.PillRecipeID,
 				Revision:     current.Revision + 1,
 				Name:         req.Draft.Name,
 				Description:  req.Draft.Description,
@@ -126,13 +126,13 @@ func (s *Inventory) UpdateRecipe(ctx context.Context, req service.UpdateRecipeRe
 			if err := dao.CreatePillRecipeRevision(tx, rev); err != nil {
 				return nil, err
 			}
-			if err := dao.SetPillRecipeCurrentRevision(tx, recipe.ID, rev.UUID.String()); err != nil {
+			if err := dao.SetPillRecipeCurrentRevision(tx, recipe.PillRecipeID, rev.PillRecipeRevisionID); err != nil {
 				return nil, err
 			}
 			return &service.PillOperationResult{
-				OperationID: op.UUID,
-				RecipeID:    &recipe.UUID,
-				RevisionID:  &rev.UUID,
+				OperationID: req.OperationID,
+				RecipeID:    uuidPtr(recipe.PillRecipeID),
+				RevisionID:  uuidPtr(rev.PillRecipeRevisionID),
 			}, nil
 		})
 }
@@ -153,11 +153,11 @@ func (s *Inventory) ArchiveRecipe(ctx context.Context, req service.ArchiveRecipe
 				return nil, err
 			}
 			if recipe.ArchivedAt == nil {
-				if err := dao.SetPillRecipeArchived(tx, recipe.ID, s.now()); err != nil {
+				if err := dao.SetPillRecipeArchived(tx, recipe.PillRecipeID, s.now()); err != nil {
 					return nil, err
 				}
 			}
-			return &service.PillOperationResult{OperationID: op.UUID, RecipeID: &recipe.UUID}, nil
+			return &service.PillOperationResult{OperationID: req.OperationID, RecipeID: uuidPtr(recipe.PillRecipeID)}, nil
 		})
 	return err
 }
@@ -188,7 +188,7 @@ func (s *Inventory) ListRecipes(ctx context.Context, page, size int, keyword str
 			if rev, ok := revs[*r.CurrentRevisionID]; ok {
 				name = rev.Name
 				revision = rev.Revision
-				revUUID = rev.UUID
+				revUUID = uuidVal(rev.PillRecipeRevisionID)
 			}
 		}
 		items = append(items, service.RecipeListItem{PillRecipe: r, Name: name, CurrentRevisionUUID: revUUID, Revision: revision})
@@ -236,7 +236,7 @@ func (s *Inventory) GetRecipeRevision(ctx context.Context, recipeUUID, revisionU
 	if err != nil {
 		return nil, errors.ErrorServerInternalError("recipe.get_failed")
 	}
-	if rev.RecipeID != recipe.UUID.String() {
+	if rev.RecipeID != recipe.PillRecipeID {
 		return nil, errors.ErrorRecordNotFound("recipe.revision_not_found")
 	}
 	return rev, nil

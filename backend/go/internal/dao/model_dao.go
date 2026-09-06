@@ -1,4 +1,4 @@
-// Package dao 模型配置数据访问实现(新架构 internal 分层;UUID 边界在此解析,内部联结仍用自增 ID)
+// Package dao 模型配置数据访问实现(新架构 internal 分层;业务主键为 uuid 文本列 llm_model_id/llm_provider_id)
 package dao
 
 import (
@@ -19,11 +19,11 @@ func NewModelDao() *ModelDao {
 }
 
 // CountEnabledModelByName 统计「已启用供应商下的已启用模型」中指定模型名的数量
-// llm_models.provider_id 为供应商 UUID 文本(011 业务键),JOIN 按 llm_providers.uuid 匹配
+// llm_models.provider_id 为供应商业务键文本(011),JOIN 按 llm_providers.llm_provider_id 匹配
 func (d *ModelDao) CountEnabledModelByName(ctx context.Context, name string) (int64, errors.Error) {
 	var count int64
 	if err := GetDB().WithContext(ctx).Table("llm_models").
-		Joins("JOIN llm_providers ON llm_providers.uuid = llm_models.provider_id").
+		Joins("JOIN llm_providers ON llm_providers.llm_provider_id = llm_models.provider_id").
 		Where("llm_models.name = ? AND llm_models.is_enabled = ? AND llm_providers.is_enabled = ?", name, true, true).
 		Count(&count).Error; err != nil {
 		return 0, errors.ErrorServerInternalError("dao.model.count_enabled_by_name")
@@ -34,7 +34,7 @@ func (d *ModelDao) CountEnabledModelByName(ctx context.Context, name string) (in
 // TakeModelByUUID 按对外 UUID 查询模型(预加载 Provider)
 func (d *ModelDao) TakeModelByUUID(ctx context.Context, uid uuid.UUID) (*model.LLMModel, errors.Error) {
 	var m model.LLMModel
-	if err := GetDB().WithContext(ctx).Preload("Provider").Where("uuid = ?", uid.String()).First(&m).Error; err != nil {
+	if err := GetDB().WithContext(ctx).Preload("Provider").Where("llm_model_id = ?", uid.String()).First(&m).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, errors.ErrorRecordNotFound("dao.model.take_by_uuid")
 		}
@@ -43,7 +43,7 @@ func (d *ModelDao) TakeModelByUUID(ctx context.Context, uid uuid.UUID) (*model.L
 	return &m, nil
 }
 
-// FindModelsByProvider 分页查询指定供应商下的模型列表(按 sort_order,id 排序);providerID 为供应商 UUID 文本
+// FindModelsByProvider 分页查询指定供应商下的模型列表(按 sort_order,llm_model_id 排序);providerID 为供应商业务键文本
 func (d *ModelDao) FindModelsByProvider(ctx context.Context, providerID string, page, size int) (int64, []*model.LLMModel, errors.Error) {
 	db := GetDB().WithContext(ctx).Model(&model.LLMModel{}).Where("provider_id = ?", providerID)
 
@@ -56,19 +56,19 @@ func (d *ModelDao) FindModelsByProvider(ctx context.Context, providerID string, 
 	}
 
 	var models []*model.LLMModel
-	if err := db.Order("sort_order ASC, id ASC").Offset((page - 1) * size).Limit(size).Find(&models).Error; err != nil {
+	if err := db.Order("sort_order ASC, llm_model_id ASC").Offset((page - 1) * size).Limit(size).Find(&models).Error; err != nil {
 		return 0, nil, errors.ErrorServerInternalError("dao.model.find_by_provider")
 	}
 	return total, models, nil
 }
 
 // CountModelsByNameInProvider 统计同供应商下同名模型数量(excludeUID 为空串时不排除)
-// providerID/excludeUID 均为 UUID 文本:providerID 匹配 llm_models.provider_id,排除按业务键 uuid
+// providerID/excludeUID 均为业务键文本:providerID 匹配 llm_models.provider_id,排除按业务键 llm_model_id
 func (d *ModelDao) CountModelsByNameInProvider(ctx context.Context, providerID string, name string, excludeUID string) (int64, errors.Error) {
 	var count int64
 	q := GetDB().WithContext(ctx).Model(&model.LLMModel{}).Where("provider_id = ? AND name = ?", providerID, name)
 	if excludeUID != "" {
-		q = q.Where("uuid != ?", excludeUID)
+		q = q.Where("llm_model_id != ?", excludeUID)
 	}
 	if err := q.Count(&count).Error; err != nil {
 		return 0, errors.ErrorServerInternalError("dao.model.count_by_name_in_provider")
@@ -116,21 +116,21 @@ func (d *ModelDao) UpdateModel(ctx context.Context, m *model.LLMModel, updates m
 	if err := GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if v, ok := updates["is_default"]; ok {
 			if b, ok := toBool(v); ok && b {
-				if err := tx.Model(&model.LLMModel{}).Where("is_default = ? AND id <> ?", true, m.ID).Update("is_default", false).Error; err != nil {
+				if err := tx.Model(&model.LLMModel{}).Where("is_default = ? AND llm_model_id <> ?", true, m.LLMModelID).Update("is_default", false).Error; err != nil {
 					return err
 				}
 			}
 		}
 		if v, ok := updates["is_synthesis"]; ok {
 			if b, ok := toBool(v); ok && b {
-				if err := tx.Model(&model.LLMModel{}).Where("is_synthesis = ? AND id <> ?", true, m.ID).Update("is_synthesis", false).Error; err != nil {
+				if err := tx.Model(&model.LLMModel{}).Where("is_synthesis = ? AND llm_model_id <> ?", true, m.LLMModelID).Update("is_synthesis", false).Error; err != nil {
 					return err
 				}
 			}
 		}
 		if v, ok := updates["is_fusion"]; ok {
 			if b, ok := toBool(v); ok && b {
-				if err := tx.Model(&model.LLMModel{}).Where("is_fusion = ? AND id <> ?", true, m.ID).Update("is_fusion", false).Error; err != nil {
+				if err := tx.Model(&model.LLMModel{}).Where("is_fusion = ? AND llm_model_id <> ?", true, m.LLMModelID).Update("is_fusion", false).Error; err != nil {
 					return err
 				}
 			}
@@ -183,12 +183,12 @@ func (d *ModelDao) CountAgentReferencesByNames(ctx context.Context, names []stri
 	return counts, nil
 }
 
-// FindModelsByName 按模型名查询全部记录(预加载 Provider,按 sort_order,id 排序),供凭证解析链使用
+// FindModelsByName 按模型名查询全部记录(预加载 Provider,按 sort_order,llm_model_id 排序),供凭证解析链使用
 func (d *ModelDao) FindModelsByName(ctx context.Context, name string) ([]*model.LLMModel, errors.Error) {
 	var models []*model.LLMModel
 	if err := GetDB().WithContext(ctx).Preload("Provider").
 		Where("name = ?", name).
-		Order("sort_order ASC, id ASC").
+		Order("sort_order ASC, llm_model_id ASC").
 		Find(&models).Error; err != nil {
 		return nil, errors.ErrorServerInternalError("dao.model.find_by_name")
 	}
@@ -246,9 +246,9 @@ func (d *ModelDao) FindEnabledOptions(ctx context.Context) ([]model.LLMModelOpti
 	var rows []optionRow
 	if err := GetDB().WithContext(ctx).Table("llm_models").
 		Select("llm_models.name, llm_models.display_name, llm_models.is_default, llm_providers.name AS provider_name, llm_providers.display_name AS provider_display_name").
-		Joins("JOIN llm_providers ON llm_providers.uuid = llm_models.provider_id").
+		Joins("JOIN llm_providers ON llm_providers.llm_provider_id = llm_models.provider_id").
 		Where("llm_models.is_enabled = ? AND llm_providers.is_enabled = ?", true, true).
-		Order("llm_providers.sort_order ASC, llm_providers.id ASC, llm_models.sort_order ASC, llm_models.id ASC").
+		Order("llm_providers.sort_order ASC, llm_providers.llm_provider_id ASC, llm_models.sort_order ASC, llm_models.llm_model_id ASC").
 		Scan(&rows).Error; err != nil {
 		return nil, errors.ErrorServerInternalError("dao.model.find_enabled_options")
 	}
@@ -266,12 +266,12 @@ func (d *ModelDao) FindEnabledOptions(ctx context.Context) ([]model.LLMModelOpti
 	return options, nil
 }
 
-// FindFirstEnabledModelByProvider 取供应商下第一个已启用模型(连接测试回退用),无则 ErrorTypeRecordNotFound;providerID 为供应商 UUID 文本
+// FindFirstEnabledModelByProvider 取供应商下第一个已启用模型(连接测试回退用),无则 ErrorTypeRecordNotFound;providerID 为供应商业务键文本
 func (d *ModelDao) FindFirstEnabledModelByProvider(ctx context.Context, providerID string) (*model.LLMModel, errors.Error) {
 	var m model.LLMModel
 	if err := GetDB().WithContext(ctx).
 		Where("provider_id = ? AND is_enabled = ?", providerID, true).
-		Order("sort_order ASC, id ASC").First(&m).Error; err != nil {
+		Order("sort_order ASC, llm_model_id ASC").First(&m).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, errors.ErrorRecordNotFound("dao.model.find_first_enabled")
 		}
