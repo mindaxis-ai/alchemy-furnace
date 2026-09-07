@@ -2,6 +2,7 @@ package memory_service
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 
 	"github.com/alchemy-furnace/server/internal/dao"
@@ -16,7 +17,9 @@ const testAgentUID = "0197a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b"
 
 func newTestService(t *testing.T) (*MemoryService, *dao.MemoryDao) {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	// 蒸馏 worker 在独立 goroutine 中访问数据库。SQLite 的 :memory: 按连接隔离，
+	// 连接池切换连接后会看不到已迁移的表；每个测试使用独立临时文件来保持一致视图。
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "memory-service.db")), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
