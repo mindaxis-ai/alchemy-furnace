@@ -2,7 +2,7 @@
 //
 // 本包是「金丹编译 + 提示词渲染」的唯一事实源(spec §16.9: Go 是唯一策略源):
 //   - CompileProfile     纯函数:基础性格 + 金丹列表 -> 完整结构化档案,类型合法字段
-//                        进对应字段,类型异常/未知键原值进 UnknownFields(无损,§6.2/§12)
+//     进对应字段,类型异常/未知键原值进 UnknownFields(无损,§6.2/§12)
 //   - WithEmergence      合并涌现层(LLM 只产出涌现规则/冲突调和,不能覆盖金丹事实,§6.1)
 //   - RenderSystemPrompt 确定性渲染分区提示词(§11;见 render.go)
 //
@@ -18,7 +18,7 @@ import (
 )
 
 // ProfileVersion 行为档案版本;language_patterns.profile_version 不等于此值视为失效重建
-const ProfileVersion = 1
+const ProfileVersion = 2
 
 // CompiledPillProfile 单颗金丹的无损编译结果(spec §6.2)
 type CompiledPillProfile struct {
