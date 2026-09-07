@@ -43,11 +43,11 @@ func NewWithClock(db *gorm.DB, fusionClient synthesis.FusionClient, credential c
 // previewTTL 预览有效期（§3.3：15 分钟）
 const previewTTL = 15 * time.Minute
 
-// loadFusionInputs 读事务加载材料并核对可用性；返回按请求顺序的引擎输入与实例 UUID。
+// loadFusionInputs 读事务加载材料并核对可用性；返回按请求顺序的引擎输入与实例业务主键。
 // 任一材料缺失 404 / 非可用 409；读取与模型调用分离——LLM 请求绝不持有事务。
 func (s *Fusion) loadFusionInputs(ctx context.Context, itemUUIDs []uuid.UUID) ([]synthesis.PillInput, []uuid.UUID, errors.Error) {
-	itemsByUUID := make(map[uuid.UUID]model.PillItem, len(itemUUIDs))
-	revsByID := make(map[uint]model.PillRecipeRevision, len(itemUUIDs))
+	itemsByID := make(map[string]model.PillItem, len(itemUUIDs))
+	revsByID := make(map[string]model.PillRecipeRevision, len(itemUUIDs))
 	terr := s.db.Transaction(func(tx *gorm.DB) error {
 		items, err := dao.ListPillItemsByUUIDs(tx, itemUUIDs)
 		if err != nil {
@@ -60,7 +60,7 @@ func (s *Fusion) loadFusionInputs(ctx context.Context, itemUUIDs []uuid.UUID) ([
 				return errors.New(errors.ErrorTypeConflict, "pill.not_available",
 					"金丹不可用（已被服用/融合/弃置）")
 			}
-			itemsByUUID[it.UUID] = it
+			itemsByID[it.PillItemID] = it
 			rev, err := dao.PillRecipeRevisionByID(tx, it.RecipeRevisionID)
 			if err != nil {
 				return err
@@ -75,22 +75,23 @@ func (s *Fusion) loadFusionInputs(ctx context.Context, itemUUIDs []uuid.UUID) ([
 		}
 		return nil, nil, errors.ErrorServerInternalError("service.fusion.load_items")
 	}
-	// 按请求 UUID 顺序组装输入；任一缺失 404（与旧 trial/fusion 语义对齐）
+	// 按请求 UUID 顺序组装输入；任一缺失 404（与旧 trial/fusion 语义对齐）。
+	// 全部命中后 ids 与请求序恒等,直接复用请求切片(业务主键即 uuid 文本)
 	inputs := make([]synthesis.PillInput, 0, len(itemUUIDs))
 	ids := make([]uuid.UUID, 0, len(itemUUIDs))
 	for _, uid := range itemUUIDs {
-		it, ok := itemsByUUID[uid]
+		it, ok := itemsByID[uid.String()]
 		if !ok {
 			return nil, nil, errors.New(errors.ErrorTypeRecordNotFound, "service.fusion.pill_missing",
 				"金丹(id=%s)不存在", uid.String())
 		}
 		rev := revsByID[it.RecipeRevisionID]
 		inputs = append(inputs, synthesis.PillInput{
-			ID:          it.UUID.String(),
+			ID:          it.PillItemID,
 			Name:        rev.Name,
 			SkillSchema: rev.SkillSchema,
 		})
-		ids = append(ids, it.UUID)
+		ids = append(ids, uid)
 	}
 	return inputs, ids, nil
 }
@@ -150,7 +151,7 @@ func (s *Fusion) PreviewFusion(ctx context.Context, req service.PreviewFusionReq
 			"id":   resp.Operator.ID,
 			"name": resp.Operator.Name,
 		},
-		CreatedAt: now,
+		Base:      model.Base{CreatedAt: now},
 		ExpiresAt: now.Add(previewTTL),
 	}
 	if req.ExcludeOperatorID != "" {
@@ -160,7 +161,7 @@ func (s *Fusion) PreviewFusion(ctx context.Context, req service.PreviewFusionReq
 		return nil, errors.ErrorServerInternalError("fusion.preview_save_failed")
 	}
 	return &service.FusionPreviewResult{
-		PreviewID:   preview.UUID,
+		PreviewID:   preview.FusionPreviewID,
 		ExpiresAt:   preview.ExpiresAt,
 		Name:        resp.Name,
 		Description: resp.Description,

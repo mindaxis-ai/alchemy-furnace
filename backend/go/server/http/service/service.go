@@ -164,7 +164,7 @@ func NewDistillationClient() distillation.Client {
 }
 
 // DistillationService 女娲炼制与 skill 导出装配集
-// 任务 5 起导出依赖丹方库存读接口(GetRecipe/GetRecipeRevision/ResolveLegacy),
+// 任务 5 起导出依赖丹方库存读接口(GetRecipe/GetRecipeRevision),
 // 不再引用旧 ElixirPill DAO;ProvideInventory 同时满足 iservice.PillInventory 绑定。
 var DistillationService = wire.NewSet(
 	ProvideDB,

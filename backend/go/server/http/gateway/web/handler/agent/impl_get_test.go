@@ -38,15 +38,15 @@ func TestAgentDetailResponseOmitsLegacyPills(t *testing.T) {
 
 	// 预置一条遗留绑定行(迁移场景下旧表保留,回滚用): 详情响应不得再把它当活跃绑定输出
 	var agent model.DaoAgent
-	if err := db.Where("uuid = ?", agentUUID).First(&agent).Error; err != nil {
+	if err := db.Where("dao_agent_id = ?", agentUUID).First(&agent).Error; err != nil {
 		t.Fatalf("查询道人失败: %v", err)
 	}
 	var pill model.ElixirPill
-	if err := db.Where("uuid = ?", pillUUID).First(&pill).Error; err != nil {
+	if err := db.Where("elixir_pill_id = ?", pillUUID).First(&pill).Error; err != nil {
 		t.Fatalf("查询金丹失败: %v", err)
 	}
 	if err := db.Create(&model.AgentPill{
-		AgentID: agent.ID, PillID: pill.ID, Weight: 1.5, SortOrder: 0,
+		AgentID: agent.DaoAgentID, PillID: pill.ElixirPillID, Weight: 1.5, SortOrder: 0,
 	}).Error; err != nil {
 		t.Fatalf("创建遗留绑定失败: %v", err)
 	}
@@ -71,11 +71,11 @@ func TestAgentDetailResponseKeepsLanguagePattern(t *testing.T) {
 	agentUUID, _ := seedAgentForBindPill(t, db)
 
 	var agent model.DaoAgent
-	if err := db.Where("uuid = ?", agentUUID).First(&agent).Error; err != nil {
+	if err := db.Where("dao_agent_id = ?", agentUUID).First(&agent).Error; err != nil {
 		t.Fatalf("查询道人失败: %v", err)
 	}
 	if err := db.Create(&model.LanguagePattern{
-		AgentID: agent.ID, SystemPrompt: "cached", SourceFingerprint: "sha256:x", IsValid: true,
+		AgentID: agent.DaoAgentID, SystemPrompt: "cached", SourceFingerprint: "sha256:x", IsValid: true,
 	}).Error; err != nil {
 		t.Fatalf("创建语言模式缓存失败: %v", err)
 	}

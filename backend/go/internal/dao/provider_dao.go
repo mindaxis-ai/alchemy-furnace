@@ -1,4 +1,4 @@
-// Package dao 供应商数据访问实现(新架构 internal 分层;UUID 边界在此解析,内部联结仍用自增 ID)
+// Package dao 供应商数据访问实现(新架构 internal 分层;业务主键为 uuid 文本列 llm_provider_id)
 package dao
 
 import (
@@ -21,23 +21,11 @@ func NewProviderDao() *ProviderDao {
 // TakeProviderByUUID 按对外 UUID 查询供应商
 func (d *ProviderDao) TakeProviderByUUID(ctx context.Context, uid uuid.UUID) (*model.LLMProvider, errors.Error) {
 	var p model.LLMProvider
-	if err := GetDB().WithContext(ctx).Where("uuid = ?", uid.String()).First(&p).Error; err != nil {
+	if err := GetDB().WithContext(ctx).Where("llm_provider_id = ?", uid.String()).First(&p).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, errors.ErrorRecordNotFound("dao.provider.take_by_uuid")
 		}
 		return nil, errors.ErrorServerInternalError("dao.provider.take_by_uuid")
-	}
-	return &p, nil
-}
-
-// TakeProviderByID 按内部自增 ID 查询供应商
-func (d *ProviderDao) TakeProviderByID(ctx context.Context, id uint) (*model.LLMProvider, errors.Error) {
-	var p model.LLMProvider
-	if err := GetDB().WithContext(ctx).First(&p, id).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil, errors.ErrorRecordNotFound("dao.provider.take_by_id")
-		}
-		return nil, errors.ErrorServerInternalError("dao.provider.take_by_id")
 	}
 	return &p, nil
 }
@@ -58,7 +46,7 @@ func (d *ProviderDao) FindProviders(ctx context.Context, page, size int, enabled
 	}
 
 	var providers []*model.LLMProvider
-	if err := db.Order("sort_order ASC, id ASC").Offset((page - 1) * size).Limit(size).Find(&providers).Error; err != nil {
+	if err := db.Order("sort_order ASC, llm_provider_id ASC").Offset((page - 1) * size).Limit(size).Find(&providers).Error; err != nil {
 		return 0, nil, errors.ErrorServerInternalError("dao.provider.find")
 	}
 	return total, providers, nil
@@ -88,21 +76,21 @@ func (d *ProviderDao) DeleteProvider(ctx context.Context, provider *model.LLMPro
 	return nil
 }
 
-// CountModelsByProvider 统计供应商下模型数量
-func (d *ProviderDao) CountModelsByProvider(ctx context.Context, providerID uint) (int64, errors.Error) {
+// CountModelsByProvider 统计供应商下模型数量;providerUID 为供应商业务键文本,直接匹配 llm_models.provider_id(011 业务键)
+func (d *ProviderDao) CountModelsByProvider(ctx context.Context, providerUID string) (int64, errors.Error) {
 	var count int64
-	if err := GetDB().WithContext(ctx).Model(&model.LLMModel{}).Where("provider_id = ?", providerID).Count(&count).Error; err != nil {
+	if err := GetDB().WithContext(ctx).Model(&model.LLMModel{}).Where("provider_id = ?", providerUID).Count(&count).Error; err != nil {
 		return 0, errors.ErrorServerInternalError("dao.provider.count_models")
 	}
 	return count, nil
 }
 
-// CountProvidersByName 统计同名供应商数量(excludeID=0 时不排除)
-func (d *ProviderDao) CountProvidersByName(ctx context.Context, name string, excludeID uint) (int64, errors.Error) {
+// CountProvidersByName 统计同名供应商数量(excludeUID 为空串时不排除;排除按业务键 llm_provider_id)
+func (d *ProviderDao) CountProvidersByName(ctx context.Context, name string, excludeUID string) (int64, errors.Error) {
 	var count int64
 	q := GetDB().WithContext(ctx).Model(&model.LLMProvider{}).Where("name = ?", name)
-	if excludeID > 0 {
-		q = q.Where("id <> ?", excludeID)
+	if excludeUID != "" {
+		q = q.Where("llm_provider_id != ?", excludeUID)
 	}
 	if err := q.Count(&count).Error; err != nil {
 		return 0, errors.ErrorServerInternalError("dao.provider.count_by_name")

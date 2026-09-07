@@ -71,7 +71,7 @@ func openFusionTestDB(t *testing.T) *gorm.DB {
 	if err := db.AutoMigrate(
 		&model.PillRecipe{}, &model.PillRecipeRevision{}, &model.PillItem{},
 		&model.AgentPillEffect{}, &model.PillOperation{}, &model.FusionPreview{},
-		&model.PillMigrationState{}, &model.PillLegacyMap{}, &model.PillStarterGrant{},
+		&model.PillStarterGrant{},
 		&model.DaoAgent{}, &model.LanguagePattern{},
 	); err != nil {
 		t.Fatal(err)
@@ -124,7 +124,7 @@ func TestPreviewFusionPersistsPreviewAndReturns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PreviewFusion 报错: %v", err)
 	}
-	if res.PreviewID == uuid.Nil {
+	if res.PreviewID == "" {
 		t.Fatal("返回缺少预览 ID")
 	}
 	if !res.ExpiresAt.Equal(fusionTestNow.Add(15 * time.Minute)) {
@@ -146,7 +146,7 @@ func TestPreviewFusionPersistsPreviewAndReturns(t *testing.T) {
 
 	// DB 行：输入列表保持请求顺序 + 排序集合哈希 + 输出 + 操作者 + 有效期
 	var preview model.FusionPreview
-	if err := db.Where("uuid = ?", res.PreviewID.String()).First(&preview).Error; err != nil {
+	if err := db.Where("fusion_preview_id = ?", res.PreviewID).First(&preview).Error; err != nil {
 		t.Fatalf("查预览失败: %v", err)
 	}
 	if len(preview.InputItemsJSON) != 2 || preview.InputItemsJSON[0] != ids[0].String() {
@@ -204,7 +204,7 @@ func TestPreviewFusionModelFailureKeepsInventory(t *testing.T) {
 	}
 	for _, uid := range ids {
 		var item model.PillItem
-		if err := db.Where("uuid = ?", uid.String()).First(&item).Error; err != nil {
+		if err := db.Where("pill_item_id = ?", uid.String()).First(&item).Error; err != nil {
 			t.Fatalf("查材料失败: %v", err)
 		}
 		if item.State != model.PillAvailable {
@@ -222,13 +222,14 @@ func TestPreviewFusionModelFailureKeepsInventory(t *testing.T) {
 func TestPreviewFusionUnavailableMaterialRejected(t *testing.T) {
 	svc, db, _ := newFusionSvc(t)
 	ids := seedFusionItems(t, db, 2)
-	agent := &model.DaoAgent{Name: "预览道人", ModelName: "gpt-4o", Status: "active"}
+	agentUID := uuid.New()
+	agent := &model.DaoAgent{DaoAgentID: agentUID.String(), Name: "预览道人", ModelName: "gpt-4o", Status: "active"}
 	if err := db.Create(agent).Error; err != nil {
 		t.Fatalf("建道人失败: %v", err)
 	}
 	inv := pill_inventory_service.New(db, func() time.Time { return fusionTestNow })
 	if _, err := inv.Consume(context.Background(), service.ConsumePillRequest{
-		OperationID: uuid.New(), AgentID: agent.UUID, ItemID: ids[0], Weight: 1, SortOrder: 1,
+		OperationID: uuid.New(), AgentID: agentUID, ItemID: ids[0], Weight: 1, SortOrder: 1,
 	}); err != nil {
 		t.Fatalf("预置服用失败: %v", err)
 	}

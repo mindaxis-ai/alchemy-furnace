@@ -82,7 +82,7 @@ func (s *Trial) loadTrialPills(ctx context.Context, inputs []iservice.TrialPillI
 }
 
 // resolveTrialPill 解析单颗试丹输入(返回合成输入,Weight/SortOrder 由调用方回填):
-// 草稿内联 > 指定版本 > 丹方当前版本 > 旧金丹 LegacyMap;目标缺失/多重 → 400。
+// 草稿内联 > 指定版本 > 丹方当前版本;目标缺失/多重 → 400。
 func (s *Trial) resolveTrialPill(ctx context.Context, index int, in iservice.TrialPillInput) (synthesis.PillInput, errors.Error) {
 	// 版本必须依附丹方(先于目标唯一性检查,给出更精确的错误)
 	if in.RevisionID != uuid.Nil && in.RecipeID == uuid.Nil {
@@ -90,14 +90,14 @@ func (s *Trial) resolveTrialPill(ctx context.Context, index int, in iservice.Tri
 			"第%d颗金丹: 指定版本必须携带所属丹方 recipe_id", index+1)
 	}
 	targets := 0
-	for _, has := range []bool{in.PillID != uuid.Nil, in.RecipeID != uuid.Nil, in.Draft != nil} {
+	for _, has := range []bool{in.RecipeID != uuid.Nil, in.Draft != nil} {
 		if has {
 			targets++
 		}
 	}
 	if targets != 1 {
 		return synthesis.PillInput{}, errors.New(errors.ErrorTypeInvalidRequest, "service.trial.invalid_target",
-			"第%d颗金丹必须且只能提供 pill_id、recipe_id(+revision_id) 或草稿之一", index+1)
+			"第%d颗金丹必须且只能提供 recipe_id(+revision_id) 或草稿之一", index+1)
 	}
 
 	if in.Draft != nil {
@@ -107,23 +107,16 @@ func (s *Trial) resolveTrialPill(ctx context.Context, index int, in iservice.Tri
 
 	var rev *model.PillRecipeRevision
 	var aerr errors.Error
-	switch {
-	case in.RevisionID != uuid.Nil:
+	if in.RevisionID != uuid.Nil {
 		rev, aerr = s.inventory.GetRecipeRevision(ctx, in.RecipeID, in.RevisionID)
-	case in.RecipeID != uuid.Nil:
+	} else {
 		_, rev, aerr = s.inventory.GetRecipe(ctx, in.RecipeID)
-	default:
-		recipeUUID, lerr := s.inventory.ResolveLegacy(ctx, "pill", in.PillID.String())
-		if lerr != nil {
-			return synthesis.PillInput{}, lerr
-		}
-		_, rev, aerr = s.inventory.GetRecipe(ctx, recipeUUID)
 	}
 	if aerr != nil {
 		return synthesis.PillInput{}, aerr
 	}
 	return synthesis.PillInput{
-		ID:          rev.UUID.String(),
+		ID:          rev.PillRecipeRevisionID,
 		Name:        rev.Name,
 		SkillSchema: rev.SkillSchema,
 	}, nil

@@ -116,7 +116,7 @@ func (cls *User) getOrCreateProfile(c *gin.Context) (*model.UserProfile, error) 
 		return nil, ierr.New(ierr.ErrorTypeServerInternalError, "user.get", err.Error())
 	}
 	// 不存在:插入默认行
-	profile = &model.UserProfile{ID: 1, DisplayName: "用户"}
+	profile = &model.UserProfile{Base: model.Base{ID: 1}, DisplayName: "用户"}
 	if err := cls.db.WithContext(c.Request.Context()).Create(profile).Error; err != nil {
 		return nil, ierr.New(ierr.ErrorTypeServerInternalError, "user.create", err.Error())
 	}

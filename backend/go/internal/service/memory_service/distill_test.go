@@ -29,7 +29,7 @@ func TestDistillParsesAndPersists(t *testing.T) {
 		Model:       "gpt-4o-mini",
 		UserMessage: "我想学围棋",
 		Targets: []service.DistillTarget{{
-			AgentID: 7,
+			AgentID: testAgentUID,
 			Messages: []service.DistillMessage{
 				{Role: "user", Content: "我想学围棋"},
 				{Role: "assistant", Content: "好,先讲布局。"},
@@ -42,14 +42,14 @@ func TestDistillParsesAndPersists(t *testing.T) {
 	// 等待 worker 处理(轮询 ≤2s)
 	deadline := 40
 	for deadline > 0 {
-		all, _ := svc.ListMemories(context.Background(), 7, "", true)
+		all, _ := svc.ListMemories(context.Background(), testAgentUID, "", true)
 		if len(all) == 2 {
 			break
 		}
 		deadline--
 		time.Sleep(50 * time.Millisecond)
 	}
-	all, _ := svc.ListMemories(context.Background(), 7, "", true)
+	all, _ := svc.ListMemories(context.Background(), testAgentUID, "", true)
 	if len(all) != 2 {
 		t.Fatalf("应持久化 2 条合法候选(非法 2 条被跳过): %+v", all)
 	}
@@ -76,7 +76,7 @@ func TestDistillQueueFullNonBlocking(t *testing.T) {
 		<-block
 		return "[]", nil
 	}
-	spec := service.DistillationSpec{Model: "m", UserMessage: "x", Targets: []service.DistillTarget{{AgentID: 7, Messages: []service.DistillMessage{{Role: "user", Content: "x"}}}}}
+	spec := service.DistillationSpec{Model: "m", UserMessage: "x", Targets: []service.DistillTarget{{AgentID: testAgentUID, Messages: []service.DistillMessage{{Role: "user", Content: "x"}}}}}
 	if !svc.EnqueueDistillation(context.Background(), spec) {
 		t.Fatal("首个任务应入队")
 	}

@@ -17,16 +17,18 @@ import (
 
 // MemoryResponse 记忆响应 DTO:对外输出 UUID
 type MemoryResponse struct {
-	UUID            string    `json:"uuid"`
-	Kind            string    `json:"kind"`
-	Content         string    `json:"content"`
-	Keywords        []string  `json:"keywords"`
-	Importance      int       `json:"importance"`
-	Confidence      float64   `json:"confidence"`
-	Pinned          bool      `json:"pinned"`
-	Status          string    `json:"status"`
-	SourceSessionID string    `json:"source_session_id"`
-	SourceMessageID string    `json:"source_message_id"`
+	ID       string   `json:"id"`
+	Kind     string   `json:"kind"`
+	Content  string   `json:"content"`
+	Keywords []string `json:"keywords"`
+
+	Importance int     `json:"importance"`
+	Confidence float64 `json:"confidence"`
+	Pinned     bool    `json:"pinned"`
+	Status     string  `json:"status"`
+	// 来源关系为 UUID 文本;无来源(手工录入)时缺省(011 契约:*_id 键要么是 UUID 要么不出现,禁止空串)
+	SourceSessionID *string   `json:"source_session_id,omitempty"`
+	SourceMessageID *string   `json:"source_message_id,omitempty"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
 }
@@ -40,7 +42,7 @@ func toMemoryResponse(m *model.AgentMemory) *MemoryResponse {
 		}
 	}
 	return &MemoryResponse{
-		UUID:            m.UUID.String(),
+		ID:              m.AgentMemoryID,
 		Kind:            m.Kind,
 		Content:         m.Content,
 		Keywords:        keywords,
@@ -48,11 +50,19 @@ func toMemoryResponse(m *model.AgentMemory) *MemoryResponse {
 		Confidence:      m.Confidence,
 		Pinned:          m.Pinned,
 		Status:          m.Status,
-		SourceSessionID: m.SourceSessionID,
-		SourceMessageID: m.SourceMessageID,
+		SourceSessionID: uuidTextPtr(m.SourceSessionID),
+		SourceMessageID: uuidTextPtr(m.SourceMessageID),
 		CreatedAt:       m.CreatedAt,
 		UpdatedAt:       m.UpdatedAt,
 	}
+}
+
+// uuidTextPtr 空串 → nil(响应缺省该 *_id 键);非空原样返回指针
+func uuidTextPtr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 // toMemoryResponseList 批量转换
@@ -67,12 +77,12 @@ func toMemoryResponseList(list []*model.AgentMemory) []*MemoryResponse {
 // MemoryUpsertRequest 记忆创建/更新请求
 // kind/content 创建时必填(service 层校验);PATCH 部分更新时缺省=不更新
 type MemoryUpsertRequest struct {
-	Kind       string    `json:"kind" binding:"omitempty,oneof=user_fact user_preference relationship open_loop episode"`
-	Content    string    `json:"content" binding:"omitempty,max=500"`
-	Keywords   []string  `json:"keywords"`
-	Importance *int      `json:"importance" binding:"omitempty,gte=1,lte=5"`
-	Confidence *float64  `json:"confidence" binding:"omitempty,gte=0,lte=1"`
-	Pinned     *bool     `json:"pinned"`
+	Kind       string   `json:"kind" binding:"omitempty,oneof=user_fact user_preference relationship open_loop episode"`
+	Content    string   `json:"content" binding:"omitempty,max=500"`
+	Keywords   []string `json:"keywords"`
+	Importance *int     `json:"importance" binding:"omitempty,gte=1,lte=5"`
+	Confidence *float64 `json:"confidence" binding:"omitempty,gte=0,lte=1"`
+	Pinned     *bool    `json:"pinned"`
 }
 
 // toMemoryInput 请求 → service 层输入
@@ -125,7 +135,7 @@ func (cls *Agent) ListMemories(c *gin.Context) (response.Code, any, error) {
 	if v, ok := c.GetQuery("active"); ok {
 		onlyActive = v != "false"
 	}
-	list, merr := cls.memory.ListMemories(contextutil.NewContextWithGin(c), agent.ID, kind, onlyActive)
+	list, merr := cls.memory.ListMemories(contextutil.NewContextWithGin(c), agent.DaoAgentID, kind, onlyActive)
 	if merr != nil {
 		return 0, nil, merr
 	}
@@ -147,7 +157,7 @@ func (cls *Agent) CreateMemory(c *gin.Context) (response.Code, any, error) {
 	if berr := request.ShouldBindJSON(c, &body); berr != nil {
 		return response.InvalidParams, nil, berr
 	}
-	m, merr := cls.memory.CreateMemory(contextutil.NewContextWithGin(c), agent.ID, body.toMemoryInput())
+	m, merr := cls.memory.CreateMemory(contextutil.NewContextWithGin(c), agent.DaoAgentID, body.toMemoryInput())
 	if merr != nil {
 		return 0, nil, merr
 	}
@@ -173,7 +183,7 @@ func (cls *Agent) UpdateMemory(c *gin.Context) (response.Code, any, error) {
 	if berr := request.ShouldBindJSON(c, &body); berr != nil {
 		return response.InvalidParams, nil, berr
 	}
-	m, merr := cls.memory.UpdateMemory(contextutil.NewContextWithGin(c), agent.ID, memUID, body.toMemoryInput())
+	m, merr := cls.memory.UpdateMemory(contextutil.NewContextWithGin(c), agent.DaoAgentID, memUID, body.toMemoryInput())
 	if merr != nil {
 		return 0, nil, merr
 	}
@@ -195,7 +205,7 @@ func (cls *Agent) DeleteMemory(c *gin.Context) (response.Code, any, error) {
 	if serr != nil {
 		return 0, nil, serr
 	}
-	if merr := cls.memory.DeleteMemory(contextutil.NewContextWithGin(c), agent.ID, memUID); merr != nil {
+	if merr := cls.memory.DeleteMemory(contextutil.NewContextWithGin(c), agent.DaoAgentID, memUID); merr != nil {
 		return 0, nil, merr
 	}
 	return response.Ok, gin.H{"deleted": true}, nil
@@ -212,7 +222,7 @@ func (cls *Agent) ClearMemories(c *gin.Context) (response.Code, any, error) {
 	if serr != nil {
 		return 0, nil, serr
 	}
-	n, merr := cls.memory.ClearMemories(contextutil.NewContextWithGin(c), agent.ID)
+	n, merr := cls.memory.ClearMemories(contextutil.NewContextWithGin(c), agent.DaoAgentID)
 	if merr != nil {
 		return 0, nil, merr
 	}

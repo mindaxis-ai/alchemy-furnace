@@ -45,7 +45,7 @@ func (f *readinessAgentDao) FindAgents(_ context.Context, page, size int, status
 
 func (f *readinessAgentDao) TakeAgentByUUID(_ context.Context, uid uuid.UUID) (*model.DaoAgent, errors.Error) {
 	for _, agent := range f.agents {
-		if agent.UUID == uid {
+		if agent.DaoAgentID == uid.String() {
 			cp := *agent
 			return &cp, nil
 		}
@@ -56,7 +56,7 @@ func (f *readinessAgentDao) TakeAgentByUUID(_ context.Context, uid uuid.UUID) (*
 func newReadinessService(agentDao dao.Agent, resolver credential.Resolver) *Chat {
 	return New(&fakeChatDao{
 		sessions: map[string]*model.ChatSession{},
-		members:  map[uint][]*model.SessionMember{},
+		members:  map[string][]*model.SessionMember{},
 	}, agentDao, nil, resolver, "http://unused")
 }
 
@@ -69,7 +69,7 @@ func TestGetReadinessPagesAllActiveAgentsAndFiltersByFormalCredentials(t *testin
 		uid := uuid.New()
 		modelName := fmt.Sprintf("model-%d", i)
 		agents = append(agents, &model.DaoAgent{
-			ID: uint(i + 1), UUID: uid, Name: fmt.Sprintf("道人%d", i), Status: "active", ModelName: modelName,
+			DaoAgentID: uid.String(), Name: fmt.Sprintf("道人%d", i), Status: "active", ModelName: modelName,
 		})
 		switch i % 4 {
 		case 0:
@@ -144,7 +144,7 @@ func TestGetReadinessWithoutAgentsOrResolver(t *testing.T) {
 	// 有 active 道人但无凭证解析器: 全部不就绪,请求本身不失败
 	uid := uuid.New()
 	agentDao := &readinessAgentDao{agents: []*model.DaoAgent{
-		{ID: 1, UUID: uid, Name: "无凭道人", Status: "active", ModelName: "formal-model"},
+		{DaoAgentID: uid.String(), Name: "无凭道人", Status: "active", ModelName: "formal-model"},
 	}}
 	readiness, err = newReadinessService(agentDao, nil).GetReadiness(context.Background())
 	if err != nil {

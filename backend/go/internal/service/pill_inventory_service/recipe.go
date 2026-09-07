@@ -31,12 +31,12 @@ func (s *Inventory) SaveRecipe(ctx context.Context, req service.SaveRecipeReques
 	}
 	return s.runOperation(ctx, req.OperationID, "save_recipe", saveRecipeHash(req),
 		func(tx *gorm.DB, op *model.PillOperation) (*service.PillOperationResult, error) {
-			recipe := &model.PillRecipe{CreatedAt: s.now()}
+			recipe := &model.PillRecipe{Base: model.Base{CreatedAt: s.now()}}
 			if err := dao.CreatePillRecipe(tx, recipe); err != nil {
 				return nil, err
 			}
 			rev := &model.PillRecipeRevision{
-				RecipeID:     recipe.ID,
+				RecipeID:     recipe.PillRecipeID,
 				Revision:     1,
 				Name:         req.Draft.Name,
 				Description:  req.Draft.Description,
@@ -44,31 +44,31 @@ func (s *Inventory) SaveRecipe(ctx context.Context, req service.SaveRecipeReques
 				Tags:         deepCopyList(req.Draft.Tags),
 				Author:       req.Draft.Author,
 				VersionLabel: orDefault(req.Draft.VersionLabel, "1.0.0"),
-				CreatedAt:    s.now(),
+				Base:         model.Base{CreatedAt: s.now()},
 			}
 			if err := dao.CreatePillRecipeRevision(tx, rev); err != nil {
 				return nil, err
 			}
-			if err := dao.SetPillRecipeCurrentRevision(tx, recipe.ID, rev.ID); err != nil {
+			if err := dao.SetPillRecipeCurrentRevision(tx, recipe.PillRecipeID, rev.PillRecipeRevisionID); err != nil {
 				return nil, err
 			}
 			res := &service.PillOperationResult{
-				OperationID: op.UUID,
-				RecipeID:    &recipe.UUID,
-				RevisionID:  &rev.UUID,
+				OperationID: req.OperationID,
+				RecipeID:    uuidPtr(recipe.PillRecipeID),
+				RevisionID:  uuidPtr(rev.PillRecipeRevisionID),
 			}
 			if req.CraftOne {
 				item := &model.PillItem{
-					RecipeRevisionID:  rev.ID,
+					RecipeRevisionID:  rev.PillRecipeRevisionID,
 					State:             model.PillAvailable,
-					OriginOperationID: op.ID,
+					OriginOperationID: op.PillOperationID,
 					OriginIndex:       0,
-					CreatedAt:         s.now(),
+					Base:              model.Base{CreatedAt: s.now()},
 				}
 				if err := dao.CreatePillItem(tx, item); err != nil {
 					return nil, err
 				}
-				res.ItemIDs = []uuid.UUID{item.UUID}
+				res.ItemIDs = []uuid.UUID{uuidVal(item.PillItemID)}
 			}
 			return res, nil
 		})
@@ -108,12 +108,12 @@ func (s *Inventory) UpdateRecipe(ctx context.Context, req service.UpdateRecipeRe
 			if err != nil {
 				return nil, err
 			}
-			if current.UUID != req.ExpectedRevisionID {
+			if current.PillRecipeRevisionID != req.ExpectedRevisionID.String() {
 				return nil, errors.New(errors.ErrorTypeConflict, "recipe.revision_conflict",
 					"丹方已被他人更新，请刷新后重试")
 			}
 			rev := &model.PillRecipeRevision{
-				RecipeID:     recipe.ID,
+				RecipeID:     recipe.PillRecipeID,
 				Revision:     current.Revision + 1,
 				Name:         req.Draft.Name,
 				Description:  req.Draft.Description,
@@ -121,18 +121,18 @@ func (s *Inventory) UpdateRecipe(ctx context.Context, req service.UpdateRecipeRe
 				Tags:         deepCopyList(req.Draft.Tags),
 				Author:       req.Draft.Author,
 				VersionLabel: orDefault(req.Draft.VersionLabel, current.VersionLabel),
-				CreatedAt:    s.now(),
+				Base:         model.Base{CreatedAt: s.now()},
 			}
 			if err := dao.CreatePillRecipeRevision(tx, rev); err != nil {
 				return nil, err
 			}
-			if err := dao.SetPillRecipeCurrentRevision(tx, recipe.ID, rev.ID); err != nil {
+			if err := dao.SetPillRecipeCurrentRevision(tx, recipe.PillRecipeID, rev.PillRecipeRevisionID); err != nil {
 				return nil, err
 			}
 			return &service.PillOperationResult{
-				OperationID: op.UUID,
-				RecipeID:    &recipe.UUID,
-				RevisionID:  &rev.UUID,
+				OperationID: req.OperationID,
+				RecipeID:    uuidPtr(recipe.PillRecipeID),
+				RevisionID:  uuidPtr(rev.PillRecipeRevisionID),
 			}, nil
 		})
 }
@@ -153,23 +153,23 @@ func (s *Inventory) ArchiveRecipe(ctx context.Context, req service.ArchiveRecipe
 				return nil, err
 			}
 			if recipe.ArchivedAt == nil {
-				if err := dao.SetPillRecipeArchived(tx, recipe.ID, s.now()); err != nil {
+				if err := dao.SetPillRecipeArchived(tx, recipe.PillRecipeID, s.now()); err != nil {
 					return nil, err
 				}
 			}
-			return &service.PillOperationResult{OperationID: op.UUID, RecipeID: &recipe.UUID}, nil
+			return &service.PillOperationResult{OperationID: req.OperationID, RecipeID: uuidPtr(recipe.PillRecipeID)}, nil
 		})
 	return err
 }
 
 // ListRecipes 丹方分页；每丹方附带当前版本名称与可用实例数量
 // （名称批量查版本表组装，UUID 在模型上是 json:"-" 不可直接对外输出）
-func (s *Inventory) ListRecipes(ctx context.Context, page, size int, keyword string, includeArchived bool) (int64, []service.RecipeListItem, map[uint]int64, errors.Error) {
+func (s *Inventory) ListRecipes(ctx context.Context, page, size int, keyword string, includeArchived bool) (int64, []service.RecipeListItem, map[string]int64, errors.Error) {
 	total, recipes, err := dao.ListPillRecipesPaged(s.db, page, size, keyword, includeArchived)
 	if err != nil {
 		return 0, nil, nil, errors.ErrorServerInternalError("recipe.list_failed")
 	}
-	revIDs := make([]uint, 0, len(recipes))
+	revIDs := make([]string, 0, len(recipes))
 	for _, r := range recipes {
 		if r.CurrentRevisionID != nil {
 			revIDs = append(revIDs, *r.CurrentRevisionID)
@@ -188,7 +188,7 @@ func (s *Inventory) ListRecipes(ctx context.Context, page, size int, keyword str
 			if rev, ok := revs[*r.CurrentRevisionID]; ok {
 				name = rev.Name
 				revision = rev.Revision
-				revUUID = rev.UUID
+				revUUID = uuidVal(rev.PillRecipeRevisionID)
 			}
 		}
 		items = append(items, service.RecipeListItem{PillRecipe: r, Name: name, CurrentRevisionUUID: revUUID, Revision: revision})
@@ -236,7 +236,7 @@ func (s *Inventory) GetRecipeRevision(ctx context.Context, recipeUUID, revisionU
 	if err != nil {
 		return nil, errors.ErrorServerInternalError("recipe.get_failed")
 	}
-	if rev.RecipeID != recipe.ID {
+	if rev.RecipeID != recipe.PillRecipeID {
 		return nil, errors.ErrorRecordNotFound("recipe.revision_not_found")
 	}
 	return rev, nil

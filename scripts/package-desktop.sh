@@ -73,7 +73,7 @@ fi
 cd "$ROOT/backend/go"
 COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-REPO="${GITHUB_REPOSITORY:-yusanwen-code/alchemy-furnace}"
+REPO="${GITHUB_REPOSITORY:-mindaxis-ai/alchemy-furnace}"
 
 WAILS_PLATFORM=""
 case "$PLATFORM" in

@@ -34,13 +34,11 @@ func Register(r *gin.Engine, isDesktop bool, guards ...gin.HandlerFunc) error {
 	userHandler := handler.NewUser()
 
 	// 金丹管理(UUID 对外标识)
-	// 旧写入/克隆路由任务 5 起恒 410 pill.legacy_api_removed(handler 方法体即 410,双保险);
-	// 旧详情路由改道 LegacyMap 跳转(ResolveLegacyPill),不读取可用库存。
+	// 旧写入/克隆路由任务 5 起恒 410 pill.legacy_api_removed(handler 方法体即 410,双保险)。
 	pills := v1.Group("/pills")
 	{
 		pills.GET("", router.WrapperPage(pillHandler.List))
 		pills.POST("", router.Wrapper(pillHandler.Create))
-		pills.GET("/:uuid", router.Wrapper(pillInventoryHandler.ResolveLegacyPill))
 		pills.PUT("/:uuid", router.Wrapper(pillHandler.Update))
 		pills.DELETE("/:uuid", router.Wrapper(pillHandler.Delete))
 		pills.POST("/:uuid/clone", router.Wrapper(pillHandler.Clone))
@@ -96,8 +94,6 @@ func Register(r *gin.Engine, isDesktop bool, guards ...gin.HandlerFunc) error {
 		inventoryGroup.POST("/agents/:uuid/effects/:effect_id/remove", router.Wrapper(pillInventoryHandler.RemoveEffect))
 		// 幂等操作查询(断线恢复)
 		inventoryGroup.GET("/pill-operations/:id", router.Wrapper(pillInventoryHandler.GetOperation))
-		// 迁移摘要只读(任务 8: 升级用户展示;无标记 migrated=false;不触发迁移)
-		inventoryGroup.GET("/migration-summary", router.Wrapper(pillInventoryHandler.MigrationSummary))
 	}
 
 	// 系统接口(健康检查/配置;无 service 层,内联构造)
@@ -132,7 +128,8 @@ func Register(r *gin.Engine, isDesktop bool, guards ...gin.HandlerFunc) error {
 		chatGroup.PUT("/sessions/:uuid", router.Wrapper(chatHandler.UpdateSession))
 		chatGroup.POST("/sessions/:uuid/members", router.Wrapper(chatHandler.AddMembers))
 		chatGroup.DELETE("/sessions/:uuid/members/:agent_uuid", router.Wrapper(chatHandler.RemoveMember))
-		chatGroup.POST("/sse/:uuid", chatHandler.SSEChat) // RAW: 自行写出标准 SSE 事件(单/群分流)
+		chatGroup.POST("/sse/:uuid", chatHandler.SSEChat)                // RAW: 自行写出标准 SSE 事件(单/群分流)
+		chatGroup.POST("/runs/:run_id/resume", chatHandler.ResumeRunSSE) // RAW: 续跑 interrupted run(Task 14)
 	}
 
 	// 试丹(临时组合「基础性格 + 金丹」预览,无需创建道人)

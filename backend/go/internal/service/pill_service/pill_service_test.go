@@ -16,13 +16,12 @@ import (
 // 这样 ClonePill 若未深复制,对副本的篡改会直接污染种子,测试才能咬住。
 type fakePillDao struct {
 	pills           map[string]*model.ElixirPill
-	nextID          uint
 	saveErr         errors.Error
 	saveCalls       int
 	updateCalls     int
 	deleteCalls     int
 	invalidateCalls int
-	invalidatedIDs  []uint
+	invalidatedIDs  []string
 }
 
 func (f *fakePillDao) TakePillByUUID(ctx context.Context, uid uuid.UUID) (*model.ElixirPill, errors.Error) {
@@ -43,17 +42,16 @@ func (f *fakePillDao) SavePill(ctx context.Context, pill *model.ElixirPill) erro
 		return f.saveErr
 	}
 	f.saveCalls++
-	f.nextID++
-	pill.ID = f.nextID
-	if pill.UUID == uuid.Nil {
-		pill.UUID = uuid.New()
+	// 模拟 BeforeCreate 兜底:业务主键为空时生成 UUID 文本
+	if pill.ElixirPillID == "" {
+		pill.ElixirPillID = uuid.New().String()
 	}
-	f.pills[pill.UUID.String()] = pill
+	f.pills[pill.ElixirPillID] = pill
 	return nil
 }
 func (f *fakePillDao) UpdatePill(ctx context.Context, pill *model.ElixirPill, updates map[string]any) errors.Error {
 	f.updateCalls++
-	stored := f.pills[pill.UUID.String()]
+	stored := f.pills[pill.ElixirPillID]
 	for k, v := range updates {
 		switch k {
 		case "name":
@@ -74,15 +72,15 @@ func (f *fakePillDao) UpdatePill(ctx context.Context, pill *model.ElixirPill, up
 }
 func (f *fakePillDao) DeletePill(ctx context.Context, pill *model.ElixirPill) errors.Error {
 	f.deleteCalls++
-	delete(f.pills, pill.UUID.String())
+	delete(f.pills, pill.ElixirPillID)
 	return nil
 }
-func (f *fakePillDao) FindAgentIDsByPillID(ctx context.Context, pillID uint) ([]uint, errors.Error) {
-	return []uint{7}, nil
+func (f *fakePillDao) FindAgentIDsByPillID(ctx context.Context, pillUID string) ([]string, errors.Error) {
+	return []string{"agent-uuid-placeholder"}, nil
 }
-func (f *fakePillDao) InvalidateLanguagePatternsByAgentIDs(ctx context.Context, agentIDs []uint) errors.Error {
+func (f *fakePillDao) InvalidateLanguagePatternsByAgentIDs(ctx context.Context, agentUIDs []string) errors.Error {
 	f.invalidateCalls++
-	f.invalidatedIDs = agentIDs
+	f.invalidatedIDs = agentUIDs
 	return nil
 }
 
@@ -93,10 +91,9 @@ func newPillSvc() (*Pill, *fakePillDao) {
 
 func seedPill(f *fakePillDao, builtin bool) *model.ElixirPill {
 	pill := &model.ElixirPill{
-		ID:          42,
-		UUID:        uuid.New(),
-		Name:        "丹心妙语",
-		Description: "温润如茶的表达风格",
+		ElixirPillID: uuid.New().String(),
+		Name:         "丹心妙语",
+		Description:  "温润如茶的表达风格",
 		SkillSchema: model.JSONMap{
 			"expression_dna": map[string]interface{}{"tone": "温润", "pace": "舒缓"},
 			"mental_models":  []interface{}{"阴阳转化"},
@@ -107,7 +104,7 @@ func seedPill(f *fakePillDao, builtin bool) *model.ElixirPill {
 		Version:   "2.1.0",
 		IsBuiltin: builtin,
 	}
-	f.pills[pill.UUID.String()] = pill
+	f.pills[pill.ElixirPillID] = pill
 	return pill
 }
 
@@ -116,7 +113,7 @@ func TestBuiltinPillUpdateRejected(t *testing.T) {
 	builtin := seedPill(fake, true)
 	name := "新名字"
 
-	_, err := svc.UpdatePill(context.Background(), builtin.UUID, &name, nil, nil, nil, nil, nil)
+	_, err := svc.UpdatePill(context.Background(), uuid.MustParse(builtin.ElixirPillID), &name, nil, nil, nil, nil, nil)
 	if err == nil {
 		t.Fatal("内置金丹 UpdatePill 应被拒绝")
 	}
@@ -126,7 +123,7 @@ func TestBuiltinPillUpdateRejected(t *testing.T) {
 	if fake.updateCalls != 0 {
 		t.Fatalf("内置金丹拒绝后仍调用了 DAO UpdatePill %d 次", fake.updateCalls)
 	}
-	if fake.pills[builtin.UUID.String()].Name != "丹心妙语" {
+	if fake.pills[builtin.ElixirPillID].Name != "丹心妙语" {
 		t.Fatal("内置金丹名称被改动")
 	}
 }
@@ -135,7 +132,7 @@ func TestBuiltinPillDeleteRejected(t *testing.T) {
 	svc, fake := newPillSvc()
 	builtin := seedPill(fake, true)
 
-	err := svc.DeletePill(context.Background(), builtin.UUID)
+	err := svc.DeletePill(context.Background(), uuid.MustParse(builtin.ElixirPillID))
 	if err == nil {
 		t.Fatal("内置金丹 DeletePill 应被拒绝")
 	}
@@ -145,7 +142,7 @@ func TestBuiltinPillDeleteRejected(t *testing.T) {
 	if fake.deleteCalls != 0 {
 		t.Fatalf("内置金丹拒绝后仍调用了 DAO DeletePill %d 次", fake.deleteCalls)
 	}
-	if _, ok := fake.pills[builtin.UUID.String()]; !ok {
+	if _, ok := fake.pills[builtin.ElixirPillID]; !ok {
 		t.Fatal("内置金丹被删除")
 	}
 }
@@ -154,15 +151,15 @@ func TestClonePillDeepCopiesSchemaAndMetadata(t *testing.T) {
 	svc, fake := newPillSvc()
 	builtin := seedPill(fake, true)
 
-	clone, err := svc.ClonePill(context.Background(), builtin.UUID)
+	clone, err := svc.ClonePill(context.Background(), uuid.MustParse(builtin.ElixirPillID))
 	if err != nil {
 		t.Fatalf("ClonePill() error = %v", err)
 	}
 	if clone == builtin {
 		t.Fatal("副本与原丹是同一指针")
 	}
-	if clone.UUID == uuid.Nil || clone.UUID == builtin.UUID {
-		t.Fatalf("副本 UUID 必须新生成且不同于原丹: %s", clone.UUID)
+	if clone.ElixirPillID == "" || clone.ElixirPillID == builtin.ElixirPillID {
+		t.Fatalf("副本 UUID 必须新生成且不同于原丹: %s", clone.ElixirPillID)
 	}
 	if clone.IsBuiltin {
 		t.Fatal("副本 is_builtin 必须为 false")
@@ -188,7 +185,7 @@ func TestClonePillDeepCopiesSchemaAndMetadata(t *testing.T) {
 	clone.SkillSchema["future_unknown"].(map[string]interface{})["nested"].([]interface{})[0] = "篡改"
 	clone.Tags[0] = "篡改"
 
-	stored := fake.pills[builtin.UUID.String()]
+	stored := fake.pills[builtin.ElixirPillID]
 	if got := stored.SkillSchema["expression_dna"].(map[string]interface{})["tone"]; got != "温润" {
 		t.Fatalf("篡改副本污染了原丹 expression_dna.tone = %v", got)
 	}
@@ -221,10 +218,10 @@ func TestClonePillSaveFailureLeavesOriginalUntouched(t *testing.T) {
 	builtin := seedPill(fake, true)
 	fake.saveErr = errors.ErrorServerInternalError("test.fake.save")
 
-	if _, err := svc.ClonePill(context.Background(), builtin.UUID); err == nil {
+	if _, err := svc.ClonePill(context.Background(), uuid.MustParse(builtin.ElixirPillID)); err == nil {
 		t.Fatal("保存失败应返回错误")
 	}
-	stored := fake.pills[builtin.UUID.String()]
+	stored := fake.pills[builtin.ElixirPillID]
 	if stored.Name != "丹心妙语" || !stored.IsBuiltin {
 		t.Fatalf("克隆失败改动了原丹: %+v", stored)
 	}
@@ -239,7 +236,7 @@ func TestCustomPillUpdateDeleteUnaffected(t *testing.T) {
 	name := "自定义新名"
 	desc := "新描述"
 
-	updated, err := svc.UpdatePill(context.Background(), custom.UUID, &name, &desc, nil, nil, nil, nil)
+	updated, err := svc.UpdatePill(context.Background(), uuid.MustParse(custom.ElixirPillID), &name, &desc, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("自定义金丹 UpdatePill() error = %v", err)
 	}
@@ -253,13 +250,13 @@ func TestCustomPillUpdateDeleteUnaffected(t *testing.T) {
 		t.Fatalf("更新后缓存失效调用 %d 次, want 1", fake.invalidateCalls)
 	}
 
-	if err := svc.DeletePill(context.Background(), custom.UUID); err != nil {
+	if err := svc.DeletePill(context.Background(), uuid.MustParse(custom.ElixirPillID)); err != nil {
 		t.Fatalf("自定义金丹 DeletePill() error = %v", err)
 	}
 	if fake.deleteCalls != 1 {
 		t.Fatalf("DAO DeletePill 调用 %d 次, want 1", fake.deleteCalls)
 	}
-	if _, ok := fake.pills[custom.UUID.String()]; ok {
+	if _, ok := fake.pills[custom.ElixirPillID]; ok {
 		t.Fatal("自定义金丹删除后仍在库中")
 	}
 }

@@ -69,7 +69,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 		&model.DaoAgent{}, &model.LanguagePattern{},
 		&model.PillRecipe{}, &model.PillRecipeRevision{}, &model.PillItem{},
 		&model.AgentPillEffect{}, &model.PillOperation{}, &model.FusionPreview{},
-		&model.PillMigrationState{}, &model.PillLegacyMap{}, &model.PillStarterGrant{},
+		&model.PillStarterGrant{},
 	); err != nil {
 		t.Fatalf("迁移测试表失败: %v", err)
 	}
@@ -114,10 +114,6 @@ func setupRouter() *gin.Engine {
 	v1.POST("/fusion/confirm", router.Wrapper(h.ConfirmFusion))
 	// 幂等操作查询（断线恢复）
 	v1.GET("/pill-operations/:id", router.Wrapper(h.GetOperation))
-	// 迁移摘要（任务 8 升级用户展示）
-	v1.GET("/migration-summary", router.Wrapper(h.MigrationSummary))
-	// 旧入口封堵：旧金丹详情仅提供 LegacyMap 跳转
-	v1.GET("/pills/:uuid", router.Wrapper(h.ResolveLegacyPill))
 	return r
 }
 
@@ -128,7 +124,7 @@ func seedAgent(t *testing.T, db *gorm.DB) string {
 	if err := db.Create(&agent).Error; err != nil {
 		t.Fatalf("建道人失败: %v", err)
 	}
-	return agent.UUID.String()
+	return agent.DaoAgentID
 }
 
 // seedRecipeAndItem 直接造数：丹方 v1 + 一枚可用金丹实例 + 道人，返回 (道人UUID, 实例UUID)
@@ -140,7 +136,7 @@ func seedRecipeAndItem(t *testing.T, db *gorm.DB) (string, string) {
 		t.Fatalf("建丹方失败: %v", err)
 	}
 	rev := model.PillRecipeRevision{
-		RecipeID:    recipe.ID,
+		RecipeID:    recipe.PillRecipeID,
 		Revision:    1,
 		Name:        "测试丹方",
 		SkillSchema: minSchema(),
@@ -148,11 +144,11 @@ func seedRecipeAndItem(t *testing.T, db *gorm.DB) (string, string) {
 	if err := db.Create(&rev).Error; err != nil {
 		t.Fatalf("建丹方版本失败: %v", err)
 	}
-	item := model.PillItem{RecipeRevisionID: rev.ID, State: model.PillAvailable}
+	item := model.PillItem{RecipeRevisionID: rev.PillRecipeRevisionID, State: model.PillAvailable}
 	if err := db.Create(&item).Error; err != nil {
 		t.Fatalf("建金丹实例失败: %v", err)
 	}
-	return agentID, item.UUID.String()
+	return agentID, item.PillItemID
 }
 
 // doJSON 发送 JSON 请求并解析响应包络；key 非空时携带 Idempotency-Key 头
@@ -204,7 +200,7 @@ func TestConsumeMissingKeyRejected(t *testing.T) {
 		t.Fatalf("缺 key 应携带稳定 error_code: %v", envelope)
 	}
 	var item model.PillItem
-	db.Where("uuid = ?", itemID).First(&item)
+	db.Where("pill_item_id = ?", itemID).First(&item)
 	if item.State != model.PillAvailable {
 		t.Fatalf("缺 key 拒绝后实例状态 = %s, 期望 available", item.State)
 	}
@@ -240,25 +236,25 @@ func TestConsumeHappyPath(t *testing.T) {
 	}
 
 	var item model.PillItem
-	db.Where("uuid = ?", itemID).First(&item)
+	db.Where("pill_item_id = ?", itemID).First(&item)
 	if item.State != model.PillConsumedByAgent {
 		t.Fatalf("实例状态 = %s, 期望 consumed_by_agent", item.State)
 	}
 	var effect model.AgentPillEffect
-	if err := db.Where("uuid = ?", effectID).First(&effect).Error; err != nil {
+	if err := db.Where("agent_pill_effect_id = ?", effectID).First(&effect).Error; err != nil {
 		t.Fatalf("能力未落库: %v", err)
 	}
 	if effect.RemovedAt != nil {
 		t.Fatalf("新能力不应被标记移除: %+v", effect)
 	}
 	var op model.PillOperation
-	if err := db.Where("uuid = ?", opID).First(&op).Error; err != nil {
+	if err := db.Where("pill_operation_id = ?", opID).First(&op).Error; err != nil {
 		t.Fatalf("操作记录未落库: %v", err)
 	}
 }
 
 // TestListEffectsCarriesRevision GET /effects 必须携带 effects_revision
-//（前端 PUT 全量编排的乐观锁输入；缺它前端永远 409）
+// （前端 PUT 全量编排的乐观锁输入；缺它前端永远 409）
 func TestListEffectsCarriesRevision(t *testing.T) {
 	db := setupTestDB(t)
 	agentID, itemID := seedRecipeAndItem(t, db)
@@ -368,11 +364,11 @@ func TestSaveRecipeCraftOne(t *testing.T) {
 		t.Fatalf("craft_one 应返回 item_ids: %v", envelope)
 	}
 	var recipe model.PillRecipe
-	if err := db.Where("uuid = ?", recipeID).First(&recipe).Error; err != nil {
+	if err := db.Where("pill_recipe_id = ?", recipeID).First(&recipe).Error; err != nil {
 		t.Fatalf("丹方未落库: %v", err)
 	}
 	var rev model.PillRecipeRevision
-	if err := db.Where("uuid = ?", revisionID).First(&rev).Error; err != nil {
+	if err := db.Where("pill_recipe_revision_id = ?", revisionID).First(&rev).Error; err != nil {
 		t.Fatalf("版本未落库: %v", err)
 	}
 	if rev.Revision != 1 {
@@ -405,7 +401,7 @@ func TestConfirmFusionExpiredPreviewRejected(t *testing.T) {
 	previewID := dataString(t, envelope, "preview_id")
 
 	// 将预览改为过期
-	if err := db.Model(&model.FusionPreview{}).Where("uuid = ?", previewID).
+	if err := db.Model(&model.FusionPreview{}).Where("fusion_preview_id = ?", previewID).
 		Update("expires_at", fixedNow.Add(-time.Minute)).Error; err != nil {
 		t.Fatalf("改过期失败: %v", err)
 	}
@@ -422,7 +418,7 @@ func TestConfirmFusionExpiredPreviewRejected(t *testing.T) {
 	// 材料未消耗、无产物
 	for _, uid := range items {
 		var item model.PillItem
-		db.Where("uuid = ?", uid).First(&item)
+		db.Where("pill_item_id = ?", uid).First(&item)
 		if item.State != model.PillAvailable {
 			t.Fatalf("过期拒绝后材料 %s 状态 = %s, 期望 available", uid, item.State)
 		}
@@ -456,7 +452,7 @@ func TestRemoveEffectWrongAgentRejected(t *testing.T) {
 		t.Fatalf("跨道人移除期望 404, 实际 %d, body: %v", status, envelope)
 	}
 	var effect model.AgentPillEffect
-	if err := db.Where("uuid = ?", effectID).First(&effect).Error; err != nil {
+	if err := db.Where("agent_pill_effect_id = ?", effectID).First(&effect).Error; err != nil {
 		t.Fatalf("能力不应被删除: %v", err)
 	}
 	if effect.RemovedAt != nil {
@@ -521,7 +517,7 @@ func TestDesktopGuardBlocksInventoryWrites(t *testing.T) {
 		t.Fatalf("未过守卫期望 401, 实际 %d, body: %s", w.Code, w.Body.String())
 	}
 	var item model.PillItem
-	db.Where("uuid = ?", itemID).First(&item)
+	db.Where("pill_item_id = ?", itemID).First(&item)
 	if item.State != model.PillAvailable {
 		t.Fatalf("守卫拦截后实例状态 = %s, 期望 available（库存不可被绕过操作）", item.State)
 	}
@@ -568,7 +564,7 @@ func mustMarshal(v interface{}) []byte {
 }
 
 // TestGetPillItemCarriesTags 实例详情必须携带来源版本的标签
-//（hero spotlight 的「丹性」标签行依赖它；前端 PillItemDetail.tags）
+// （hero spotlight 的「丹性」标签行依赖它；前端 PillItemDetail.tags）
 func TestGetPillItemCarriesTags(t *testing.T) {
 	db := setupTestDB(t)
 	r := setupRouter()
@@ -578,7 +574,7 @@ func TestGetPillItemCarriesTags(t *testing.T) {
 		t.Fatalf("建丹方失败: %v", err)
 	}
 	rev := model.PillRecipeRevision{
-		RecipeID:    recipe.ID,
+		RecipeID:    recipe.PillRecipeID,
 		Revision:    1,
 		Name:        "浩然方",
 		SkillSchema: minSchema(),
@@ -587,13 +583,13 @@ func TestGetPillItemCarriesTags(t *testing.T) {
 	if err := db.Create(&rev).Error; err != nil {
 		t.Fatalf("建丹方版本失败: %v", err)
 	}
-	item := model.PillItem{RecipeRevisionID: rev.ID, State: model.PillAvailable}
+	item := model.PillItem{RecipeRevisionID: rev.PillRecipeRevisionID, State: model.PillAvailable}
 	if err := db.Create(&item).Error; err != nil {
 		t.Fatalf("建金丹实例失败: %v", err)
 	}
 
 	status, envelope := doJSON(t, r, http.MethodGet,
-		fmt.Sprintf("/api/v1/pill-items/%s", item.UUID.String()), "", "")
+		fmt.Sprintf("/api/v1/pill-items/%s", item.PillItemID), "", "")
 	if status != http.StatusOK {
 		t.Fatalf("GET 实例详情期望 200, 实际 %d, body: %v", status, envelope)
 	}

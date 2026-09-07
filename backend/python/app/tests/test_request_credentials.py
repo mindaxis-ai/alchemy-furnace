@@ -7,11 +7,12 @@
 2. 未携带时回退到环境变量配置的共享客户端（向后兼容，不新建客户端）
 3. api_key 为空但 base_url 指向本地服务（如 ollama）时，以占位符 "none"
    通过 OpenAI SDK 的非空校验
-4. 流式路径：取消（GeneratorExit）时显式关闭上游流；错误统一映射为中文 SSE 事件
+4. 合成服务调用级凭证；错误映射与密钥脱敏
+（原流式路径用例随 chat_completion_stream 下线移除——Task 15 LangGraph 权威化，
+ 错误映射仍由 TestErrorMappingAndMasking 覆盖）
 
 运行：cd backend/python && .venv/bin/python -m pytest app/tests/test_request_credentials.py -q
 """
-import asyncio
 import json
 from types import SimpleNamespace
 
@@ -50,55 +51,6 @@ class _SyncClientFactory:
         )
         client.close = lambda: None
         return client
-
-
-class _FakeAsyncStream:
-    """伪造上游 AsyncStream：异步迭代 + 可关闭"""
-
-    def __init__(self, chunks=("你", "好")):
-        self._chunks = chunks
-        self.closed = False
-
-    def __aiter__(self):
-        async def _gen():
-            for text in self._chunks:
-                delta = SimpleNamespace(content=text)
-                yield SimpleNamespace(choices=[SimpleNamespace(delta=delta)])
-
-        return _gen()
-
-    async def close(self):
-        self.closed = True
-
-
-class _AsyncClientFactory:
-    """记录 AsyncOpenAI 构造参数，并返回桩异步客户端"""
-
-    def __init__(self, create):
-        self.calls = []
-        self._create = create
-
-    def __call__(self, **kwargs):
-        self.calls.append(kwargs)
-        client = SimpleNamespace()
-        client.chat = SimpleNamespace(
-            completions=SimpleNamespace(create=self._create)
-        )
-
-        async def _close():
-            return None
-
-        client.close = _close
-        return client
-
-
-def _collect_stream(gen):
-    """同步驱动异步生成器，收集全部 SSE 事件"""
-
-    async def _run():
-        return [item async for item in gen]
-
-    return asyncio.run(_run())
 
 
 # ==================== 1. 非流式对话：调用级凭证 ====================
@@ -170,232 +122,7 @@ class TestChatCompletionCredentials:
         assert call["api_key"] == "none"
 
 
-# ==================== 2. 流式对话：凭证 / 取消 / 错误映射 ====================
-
-
-class TestChatStreamCredentials:
-    def test_stream_empty_content_is_not_success(self, monkeypatch):
-        """模型仅结束而没有正文时必须返回可恢复错误，不能只发 [DONE]。"""
-        monkeypatch.setattr(settings, "openai_api_key", "")
-        svc = ChatService(api_key="", base_url="")
-
-        class EmptyStream:
-            def __aiter__(self):
-                async def _gen():
-                    yield SimpleNamespace(choices=[SimpleNamespace(
-                        delta=SimpleNamespace(content=None, reasoning_content="thinking"),
-                        finish_reason="length",
-                    )])
-                return _gen()
-
-            async def close(self):
-                return None
-
-        async def fake_create(**kwargs):
-            return EmptyStream()
-
-        factory = _AsyncClientFactory(create=fake_create)
-        monkeypatch.setattr(chat_module, "AsyncOpenAI", factory)
-        events = _collect_stream(svc.chat_completion_stream(
-            messages=[{"role": "user", "content": "求道"}],
-            model="deepseek-v4-flash", api_key="sk-request-key",
-            base_url="https://api.deepseek.com/v1", max_tokens=160,
-        ))
-        assert any(json.loads(e[len("data: "):]).get("code") in {"EMPTY_RESPONSE", "OUTPUT_LIMIT_REACHED"} for e in events if e.startswith("data: {") )
-
-    def test_deepseek_chat_explicitly_disables_thinking_for_short_reply(self, monkeypatch):
-        """短回答预算不能被 DeepSeek 默认思考消耗；请求参数必须显式关闭思考。"""
-        monkeypatch.setattr(settings, "openai_api_key", "")
-        svc = ChatService(api_key="", base_url="")
-        stream = _FakeAsyncStream(chunks=("回答",))
-        captured = {}
-
-        async def fake_create(**kwargs):
-            captured.update(kwargs)
-            return stream
-
-        factory = _AsyncClientFactory(create=fake_create)
-        monkeypatch.setattr(chat_module, "AsyncOpenAI", factory)
-        _collect_stream(svc.chat_completion_stream(
-            messages=[{"role": "user", "content": "求道"}],
-            model="deepseek-v4-flash", api_key="sk-request-key",
-            base_url="https://api.deepseek.com/v1", max_tokens=256,
-        ))
-        assert captured["extra_body"] == {"thinking": {"type": "disabled"}}
-    def test_stream_uses_request_credentials_and_closes_stream(self, monkeypatch):
-        """流式路径：调用级凭证生效，且流正常结束后被关闭"""
-        monkeypatch.setattr(settings, "openai_api_key", "")
-        svc = ChatService(api_key="", base_url="")
-        stream = _FakeAsyncStream(chunks=("你", "好"))
-
-        async def fake_create(**kwargs):
-            return stream
-
-        factory = _AsyncClientFactory(create=fake_create)
-        monkeypatch.setattr(chat_module, "AsyncOpenAI", factory)
-
-        events = _collect_stream(
-            svc.chat_completion_stream(
-                messages=[{"role": "user", "content": "求道"}],
-                model="deepseek-chat",
-                api_key="sk-request-key",
-                base_url="https://api.deepseek.com/v1",
-            )
-        )
-
-        assert len(factory.calls) == 1
-        call = factory.calls[0]
-        assert call["api_key"] == "sk-request-key"
-        assert call["base_url"] == "https://api.deepseek.com/v1"
-
-        contents = []
-        for event in events:
-            assert event.startswith("data: ")
-            if event.strip() == "data: [DONE]":
-                continue
-            contents.append(json.loads(event[len("data: "):])["content"])
-        assert "".join(contents) == "你好"
-        assert events[-1].strip() == "data: [DONE]"
-        assert stream.closed is True  # finally 释放了上游流
-
-    def test_stream_cancellation_closes_upstream(self, monkeypatch):
-        """客户端断开（GeneratorExit）-> 显式关闭上游流，停止 token 消耗"""
-        monkeypatch.setattr(settings, "openai_api_key", "")
-        svc = ChatService(api_key="", base_url="")
-        stream = _FakeAsyncStream(chunks=("一", "二", "三"))
-
-        async def fake_create(**kwargs):
-            return stream
-
-        factory = _AsyncClientFactory(create=fake_create)
-        monkeypatch.setattr(chat_module, "AsyncOpenAI", factory)
-
-        async def _run():
-            gen = svc.chat_completion_stream(
-                messages=[{"role": "user", "content": "求道"}],
-                model="deepseek-chat",
-                api_key="sk-request-key",
-                base_url="https://api.deepseek.com/v1",
-            )
-            first = await gen.__anext__()
-            assert "一" in first
-            await gen.aclose()  # 模拟客户端断开
-
-        asyncio.run(_run())
-        assert stream.closed is True
-
-    def test_stream_timeout_maps_to_chinese_error(self, monkeypatch):
-        """LLM 超时 -> SSE 错误事件：语言引擎响应超时，请稍后重试"""
-        import httpx
-
-        monkeypatch.setattr(settings, "openai_api_key", "")
-        svc = ChatService(api_key="", base_url="")
-
-        async def fake_create(**kwargs):
-            raise httpx.TimeoutException("read timeout")
-
-        factory = _AsyncClientFactory(create=fake_create)
-        monkeypatch.setattr(chat_module, "AsyncOpenAI", factory)
-
-        events = _collect_stream(
-            svc.chat_completion_stream(
-                messages=[{"role": "user", "content": "求道"}],
-                model="deepseek-chat",
-                api_key="sk-request-key",
-                base_url="https://api.deepseek.com/v1",
-            )
-        )
-
-        assert len(events) == 2
-        payload = json.loads(events[0][len("data: "):])
-        assert payload["error"] == "语言引擎响应超时，请稍后重试"
-        assert payload["code"] == "TIMEOUT"
-        assert events[1].strip() == "data: [DONE]"
-
-    def test_stream_auth_failure_maps_to_chinese_error(self, monkeypatch):
-        """401/403 鉴权失败 -> SSE 错误事件：模型凭证无效..."""
-
-        class FakeAuthError(Exception):
-            status_code = 401
-
-        monkeypatch.setattr(settings, "openai_api_key", "")
-        svc = ChatService(api_key="", base_url="")
-
-        async def fake_create(**kwargs):
-            raise FakeAuthError("invalid api key")
-
-        factory = _AsyncClientFactory(create=fake_create)
-        monkeypatch.setattr(chat_module, "AsyncOpenAI", factory)
-
-        events = _collect_stream(
-            svc.chat_completion_stream(
-                messages=[{"role": "user", "content": "求道"}],
-                model="deepseek-chat",
-                api_key="sk-bad-key",
-                base_url="https://api.deepseek.com/v1",
-            )
-        )
-
-        payload = json.loads(events[0][len("data: "):])
-        assert payload["error"] == "模型凭证无效，请检查模型管理中的 API Key"
-        assert payload["code"] == "AUTH_FAILED"
-        assert events[1].strip() == "data: [DONE]"
-
-    def test_stream_model_not_found_maps_to_chinese_error(self, monkeypatch):
-        """404 模型不存在 -> SSE 错误事件：模型不存在或不可用"""
-
-        class FakeNotFoundError(Exception):
-            status_code = 404
-
-        monkeypatch.setattr(settings, "openai_api_key", "")
-        svc = ChatService(api_key="", base_url="")
-
-        async def fake_create(**kwargs):
-            raise FakeNotFoundError("model not found")
-
-        factory = _AsyncClientFactory(create=fake_create)
-        monkeypatch.setattr(chat_module, "AsyncOpenAI", factory)
-
-        events = _collect_stream(
-            svc.chat_completion_stream(
-                messages=[{"role": "user", "content": "求道"}],
-                model="ghost-model",
-                api_key="sk-request-key",
-                base_url="https://api.deepseek.com/v1",
-            )
-        )
-
-        payload = json.loads(events[0][len("data: "):])
-        assert payload["error"] == "模型不存在或不可用"
-        assert payload["code"] == "MODEL_NOT_FOUND"
-        assert events[1].strip() == "data: [DONE]"
-
-    def test_stream_env_fallback_no_new_client(self, monkeypatch):
-        """流式路径未携带凭证 -> 复用共享异步客户端"""
-        monkeypatch.setattr(settings, "openai_api_key", "sk-env-key")
-        svc = ChatService(api_key="sk-env-key", base_url="http://env-host/v1")
-        factory = _AsyncClientFactory(create=None)
-        monkeypatch.setattr(chat_module, "AsyncOpenAI", factory)
-
-        stream = _FakeAsyncStream(chunks=("道",))
-
-        async def fake_create(**kwargs):
-            return stream
-
-        monkeypatch.setattr(svc.async_client.chat.completions, "create", fake_create)
-
-        events = _collect_stream(
-            svc.chat_completion_stream(
-                messages=[{"role": "user", "content": "求道"}],
-                model="gpt-4o",
-            )
-        )
-
-        assert factory.calls == []  # 未构造新客户端
-        assert events[-1].strip() == "data: [DONE]"
-
-
-# ==================== 3. 合成服务：调用级凭证 ====================
+# ==================== 2. 合成服务：调用级凭证 ====================
 
 
 class TestSynthesisCredentials:
@@ -461,7 +188,7 @@ class TestSynthesisCredentials:
         assert factory.calls == []
 
 
-# ==================== 4. 错误映射与密钥脱敏 ====================
+# ==================== 3. 错误映射与密钥脱敏 ====================
 
 
 class TestErrorMappingAndMasking:

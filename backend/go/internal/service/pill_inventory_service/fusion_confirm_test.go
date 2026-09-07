@@ -30,7 +30,7 @@ func seedFusionAgent(t *testing.T, db *gorm.DB) uuid.UUID {
 	if err := db.Create(agent).Error; err != nil {
 		t.Fatalf("建道人失败: %v", err)
 	}
-	return agent.UUID
+	return uuid.MustParse(agent.DaoAgentID)
 }
 
 // seedTwoItemsSameRecipe 同一丹方炼出两枚可用实例（同一版本两枚可融合，产品规则 8）
@@ -63,13 +63,13 @@ func seedFusionPreview(t *testing.T, db *gorm.DB, svc *Inventory, itemUUIDs ...u
 		InputHash:        FusionInputHash(itemUUIDs), // 与真实预览流程（fusion_service）同一哈希算法
 		OutputJSON:       model.JSONMap{"name": "融合新丹", "description": "d", "skill_schema": minSchema(), "degraded": false},
 		OperatorSnapshot: model.JSONMap{"id": "dialectic", "name": "对立调和"},
-		CreatedAt:        svc.now(),
+		Base:             model.Base{CreatedAt: svc.now()},
 		ExpiresAt:        svc.now().Add(15 * time.Minute),
 	}
 	if err := db.Create(p).Error; err != nil {
 		t.Fatalf("建预览失败: %v", err)
 	}
-	return p.UUID
+	return uuid.MustParse(p.FusionPreviewID)
 }
 
 // confirmFusion 快捷调用：固定操作键
@@ -84,7 +84,7 @@ func confirmFusion(t *testing.T, svc *Inventory, previewID uuid.UUID, name strin
 func loadPreview(t *testing.T, db *gorm.DB, uid uuid.UUID) *model.FusionPreview {
 	t.Helper()
 	var p model.FusionPreview
-	if err := db.Where("uuid = ?", uid.String()).First(&p).Error; err != nil {
+	if err := db.Where("fusion_preview_id = ?", uid.String()).First(&p).Error; err != nil {
 		t.Fatalf("查预览失败: %v", err)
 	}
 	return &p
@@ -116,7 +116,7 @@ func TestConfirmFusionAtomicallyProducesOutput(t *testing.T) {
 	// A/B 均为 consumed_by_fusion
 	for _, uid := range []uuid.UUID{aID, bID} {
 		var item model.PillItem
-		if err := db.Where("uuid = ?", uid.String()).First(&item).Error; err != nil {
+		if err := db.Where("pill_item_id = ?", uid.String()).First(&item).Error; err != nil {
 			t.Fatalf("查材料失败: %v", err)
 		}
 		if item.State != model.PillConsumedByFusion {
@@ -126,22 +126,22 @@ func TestConfirmFusionAtomicallyProducesOutput(t *testing.T) {
 
 	// 新丹方 v1 + 产物 available 且引用新版本
 	var recipe model.PillRecipe
-	if err := db.Where("uuid = ?", res.RecipeID.String()).First(&recipe).Error; err != nil {
+	if err := db.Where("pill_recipe_id = ?", res.RecipeID.String()).First(&recipe).Error; err != nil {
 		t.Fatalf("查新丹方失败: %v", err)
 	}
 	var rev model.PillRecipeRevision
-	if err := db.Where("uuid = ?", res.RevisionID.String()).First(&rev).Error; err != nil {
+	if err := db.Where("pill_recipe_revision_id = ?", res.RevisionID.String()).First(&rev).Error; err != nil {
 		t.Fatalf("查新版本失败: %v", err)
 	}
-	if rev.RecipeID != recipe.ID || rev.Revision != 1 || rev.Name != "融合新丹" {
-		t.Fatalf("新版本字段异常: %+v (recipe=%d)", rev, recipe.ID)
+	if rev.RecipeID != recipe.PillRecipeID || rev.Revision != 1 || rev.Name != "融合新丹" {
+		t.Fatalf("新版本字段异常: %+v (recipe=%s)", rev, recipe.PillRecipeID)
 	}
 	var out model.PillItem
-	if err := db.Where("uuid = ?", res.ItemIDs[0].String()).First(&out).Error; err != nil {
+	if err := db.Where("pill_item_id = ?", res.ItemIDs[0].String()).First(&out).Error; err != nil {
 		t.Fatalf("查产物失败: %v", err)
 	}
-	if out.State != model.PillAvailable || out.RecipeRevisionID != rev.ID {
-		t.Fatalf("产物状态/版本异常: state=%s rev=%d", out.State, out.RecipeRevisionID)
+	if out.State != model.PillAvailable || out.RecipeRevisionID != rev.PillRecipeRevisionID {
+		t.Fatalf("产物状态/版本异常: state=%s rev=%s", out.State, out.RecipeRevisionID)
 	}
 
 	// 预览绑定本次操作 + lineage 写入（父实例/版本/名称 + 操作 UUID + 操作者）
@@ -189,7 +189,7 @@ func TestConfirmFusionFailsWhenMaterialConsumedElsewhere(t *testing.T) {
 
 	// A 仍 available
 	var a model.PillItem
-	db.Where("uuid = ?", aID.String()).First(&a)
+	db.Where("pill_item_id = ?", aID.String()).First(&a)
 	if a.State != model.PillAvailable {
 		t.Fatalf("失败确认后 A 状态 = %s, 期望 available", a.State)
 	}
@@ -269,7 +269,7 @@ func TestConfirmFusionExpiredPreviewRejected(t *testing.T) {
 	svc, db := newTestSvc(t)
 	aID, bID := seedTwoItemsSameRecipe(t, svc)
 	pID := seedFusionPreview(t, db, svc, aID, bID)
-	if err := db.Model(&model.FusionPreview{}).Where("uuid = ?", pID.String()).
+	if err := db.Model(&model.FusionPreview{}).Where("fusion_preview_id = ?", pID.String()).
 		Update("expires_at", svc.now().Add(-time.Minute)).Error; err != nil {
 		t.Fatalf("改过期失败: %v", err)
 	}
@@ -283,7 +283,7 @@ func TestConfirmFusionExpiredPreviewRejected(t *testing.T) {
 	}
 	for _, uid := range []uuid.UUID{aID, bID} {
 		var item model.PillItem
-		db.Where("uuid = ?", uid.String()).First(&item)
+		db.Where("pill_item_id = ?", uid.String()).First(&item)
 		if item.State != model.PillAvailable {
 			t.Fatalf("过期拒绝后材料 %s 状态 = %s, 期望 available", uid.String(), item.State)
 		}
@@ -304,7 +304,7 @@ func TestConfirmFusionCommittedResultSurvivesExpiry(t *testing.T) {
 		t.Fatalf("确认失败: %v", err)
 	}
 	// 确认后把预览改为过期
-	if err := db.Model(&model.FusionPreview{}).Where("uuid = ?", pID.String()).
+	if err := db.Model(&model.FusionPreview{}).Where("fusion_preview_id = ?", pID.String()).
 		Update("expires_at", svc.now().Add(-time.Minute)).Error; err != nil {
 		t.Fatalf("改过期失败: %v", err)
 	}
@@ -381,7 +381,7 @@ func TestConsumeFusionRaceSingleWinner(t *testing.T) {
 	// 失败的融合不得消耗 B（若融合失败，B 必须仍 available）
 	if confirmErr != nil {
 		var b model.PillItem
-		if err := db1.Where("uuid = ?", bID.String()).First(&b).Error; err != nil {
+		if err := db1.Where("pill_item_id = ?", bID.String()).First(&b).Error; err != nil {
 			t.Fatalf("查 B 失败: %v", err)
 		}
 		if b.State != model.PillAvailable {

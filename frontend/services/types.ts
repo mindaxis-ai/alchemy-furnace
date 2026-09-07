@@ -266,7 +266,7 @@ export type MemoryStatus = 'active' | 'superseded' | 'archived'
 
 /** 道人本地记忆(agent_memories) */
 export interface AgentMemory {
-  uuid: string
+  id: string
   kind: MemoryKind
   content: string
   keywords: string[]
@@ -274,10 +274,10 @@ export interface AgentMemory {
   confidence: number
   pinned: boolean
   status: MemoryStatus
-  /** 来源会话 UUID(为空串表示无来源,如手工录入) */
-  source_session_id: string
-  /** 来源消息 UUID */
-  source_message_id: string
+  /** 来源会话 UUID(无来源如手工录入时缺省) */
+  source_session_id?: string
+  /** 来源消息 UUID(无来源时缺省) */
+  source_message_id?: string
   created_at: string
   updated_at: string
 }
@@ -299,6 +299,20 @@ export type UpdateMemoryRequest = Partial<CreateMemoryRequest>
 
 /** 流终止后的显式恢复协议；none 为安全默认。 */
 export type ChatRecoveryMode = 'none' | 'resend' | 'persisted_retry'
+
+/** 调试模式下仅存在于当前前端消息树中的实际模型输入快照。 */
+export interface PromptDebugPayload {
+  agent_id?: string
+  agent_name?: string
+  agent_avatar?: string
+  model: string
+  messages: Array<{ role: string; content: string }>
+  /** LangGraph 运行期已无预算概念(legacy GenerationOptions 契约遗留),后端恒为 0 或缺失;UI 仅在非零时展示。 */
+  generation?: {
+    max_tokens: number
+    max_sentences: number
+  }
+}
 
 /** 对话会话 */
 /** 群成员 */
@@ -363,6 +377,10 @@ export interface ChatMessage {
   agent_avatar?: string
   /** @提及: agents=道人 UUID 数组;user=是否@了用户 */
   mentions?: { agents?: string[]; user?: boolean }
+  /** 不由历史 API 持久化；刷新或切换会话后消失。 */
+  prompt_debug?: PromptDebugPayload
+  /** 编排回合标识(仅流式临时消息携带,不持久化):续跑控件据此定位 interrupted run */
+  run_id?: string
 }
 
 // ========== 请求 ==========

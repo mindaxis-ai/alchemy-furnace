@@ -36,7 +36,7 @@ func setupServiceTestDB(t *testing.T) (*Agent, *gorm.DB) {
 		&model.DaoAgent{}, &model.ElixirPill{}, &model.AgentPill{}, &model.LanguagePattern{},
 		&model.AgentPillEffect{}, &model.PillItem{},
 		&model.PillRecipe{}, &model.PillRecipeRevision{}, &model.PillOperation{},
-		&model.FusionPreview{}, &model.PillMigrationState{}, &model.PillLegacyMap{}, &model.PillStarterGrant{},
+		&model.FusionPreview{}, &model.PillStarterGrant{},
 		&model.ChatSession{}, &model.SessionMember{}, &model.LLMProvider{}, &model.LLMModel{},
 	); err != nil {
 		t.Fatalf("迁移测试表失败: %v", err)
@@ -91,9 +91,9 @@ func craftTestItem(t *testing.T, db *gorm.DB, name string) uuid.UUID {
 // 任意输入返回 410 pill.legacy_api_removed,且不产生任何绑定写入(防绕过库存)
 func TestReplacePillComposition_RemovedFromService(t *testing.T) {
 	svc, db := setupServiceTestDB(t)
-	agent, pills := seedAgentAndPills(t, db, 2)
-	detail, err := svc.ReplacePillComposition(context.Background(), agent.UUID, []service.PillCompositionItem{
-		{PillUUID: pills[0].UUID, Weight: 2.5},
+	agent, _ := seedAgentAndPills(t, db, 2)
+	detail, err := svc.ReplacePillComposition(context.Background(), uuid.MustParse(agent.DaoAgentID), []service.PillCompositionItem{
+		{PillUUID: uuid.New(), Weight: 2.5},
 	})
 	if err == nil {
 		t.Fatal("ReplacePillComposition 应返回 410 gone, 实际 nil")
@@ -123,7 +123,7 @@ func TestReplacePillComposition_InvalidInputAlsoGone(t *testing.T) {
 		{{PillUUID: uuid.New(), Weight: 1}, {PillUUID: uuid.New(), Weight: 1}},
 		nil,
 	} {
-		_, err := svc.ReplacePillComposition(context.Background(), agent.UUID, items)
+		_, err := svc.ReplacePillComposition(context.Background(), uuid.MustParse(agent.DaoAgentID), items)
 		assertErrType(t, err, errors.ErrorTypeGone, "非法输入也应 410")
 	}
 }
@@ -137,17 +137,17 @@ func TestBindPillConsumesInventoryItem(t *testing.T) {
 	agent, _ := seedAgentAndPills(t, db, 0)
 	itemID := craftTestItem(t, db, "服丹测试")
 	// 预置有效缓存,服用后应失效
-	if err := db.Create(&model.LanguagePattern{AgentID: agent.ID, SystemPrompt: "c", SourceFingerprint: "sha256:x", IsValid: true}).Error; err != nil {
+	if err := db.Create(&model.LanguagePattern{AgentID: agent.DaoAgentID, SystemPrompt: "c", SourceFingerprint: "sha256:x", IsValid: true}).Error; err != nil {
 		t.Fatalf("建缓存失败: %v", err)
 	}
 
-	if err := svc.BindPill(context.Background(), agent.UUID, itemID, 2.5, 3); err != nil {
+	if err := svc.BindPill(context.Background(), uuid.MustParse(agent.DaoAgentID), itemID, 2.5, 3); err != nil {
 		t.Fatalf("BindPill 报错: %v", err)
 	}
 
 	// 实例已消耗,去向可读
 	var item model.PillItem
-	if err := db.Where("uuid = ?", itemID).First(&item).Error; err != nil {
+	if err := db.Where("pill_item_id = ?", itemID.String()).First(&item).Error; err != nil {
 		t.Fatalf("查实例失败: %v", err)
 	}
 	if item.State != model.PillConsumedByAgent {
@@ -156,11 +156,11 @@ func TestBindPillConsumesInventoryItem(t *testing.T) {
 
 	// 能力快照生成(身份=实例 UUID)
 	var ef model.AgentPillEffect
-	if err := db.Preload("Item").Where("agent_id = ?", agent.ID).First(&ef).Error; err != nil {
+	if err := db.Preload("Item").Where("agent_id = ?", agent.DaoAgentID).First(&ef).Error; err != nil {
 		t.Fatalf("查能力快照失败: %v", err)
 	}
-	if ef.Item.UUID != itemID {
-		t.Fatalf("能力快照关联实例 = %s, 期望 %s", ef.Item.UUID, itemID)
+	if ef.Item.PillItemID != itemID.String() {
+		t.Fatalf("能力快照关联实例 = %s, 期望 %s", ef.Item.PillItemID, itemID)
 	}
 	if ef.Weight != 2.5 || ef.SortOrder != 3 {
 		t.Fatalf("权重/顺序 = %v/%v, 期望 2.5/3", ef.Weight, ef.SortOrder)
@@ -168,12 +168,12 @@ func TestBindPillConsumesInventoryItem(t *testing.T) {
 
 	// EffectsRevision 递增 + 缓存失效
 	var reload model.DaoAgent
-	db.First(&reload, agent.ID)
+	db.Where("dao_agent_id = ?", agent.DaoAgentID).First(&reload)
 	if reload.EffectsRevision != 1 {
 		t.Fatalf("effects_revision = %d, 期望 1", reload.EffectsRevision)
 	}
 	var pattern model.LanguagePattern
-	db.Where("agent_id = ?", agent.ID).First(&pattern)
+	db.Where("agent_id = ?", agent.DaoAgentID).First(&pattern)
 	if pattern.IsValid {
 		t.Fatal("服用后语言模式缓存未被失效")
 	}
@@ -185,10 +185,10 @@ func TestBindPillDuplicateItemRejected(t *testing.T) {
 	svc, db := setupServiceTestDB(t)
 	agent, _ := seedAgentAndPills(t, db, 0)
 	itemID := craftTestItem(t, db, "重复服丹")
-	if err := svc.BindPill(context.Background(), agent.UUID, itemID, 1, 1); err != nil {
+	if err := svc.BindPill(context.Background(), uuid.MustParse(agent.DaoAgentID), itemID, 1, 1); err != nil {
 		t.Fatalf("首次服用报错: %v", err)
 	}
-	err := svc.BindPill(context.Background(), agent.UUID, itemID, 1, 2)
+	err := svc.BindPill(context.Background(), uuid.MustParse(agent.DaoAgentID), itemID, 1, 2)
 	assertErrType(t, err, errors.ErrorTypeConflict, "重复服用同实例")
 	if err.GetCode() != "pill.not_available" {
 		t.Fatalf("错误码 = %s, 期望 pill.not_available", err.GetCode())
@@ -213,20 +213,20 @@ func TestUnbindPillRemovesEffectOnly(t *testing.T) {
 	svc, db := setupServiceTestDB(t)
 	agent, _ := seedAgentAndPills(t, db, 0)
 	itemID := craftTestItem(t, db, "移除测试")
-	if err := svc.BindPill(context.Background(), agent.UUID, itemID, 1, 1); err != nil {
+	if err := svc.BindPill(context.Background(), uuid.MustParse(agent.DaoAgentID), itemID, 1, 1); err != nil {
 		t.Fatalf("预置服用失败: %v", err)
 	}
 	// 预置有效缓存,移除后应失效
-	if err := db.Create(&model.LanguagePattern{AgentID: agent.ID, SystemPrompt: "c", SourceFingerprint: "sha256:x", IsValid: true}).Error; err != nil {
+	if err := db.Create(&model.LanguagePattern{AgentID: agent.DaoAgentID, SystemPrompt: "c", SourceFingerprint: "sha256:x", IsValid: true}).Error; err != nil {
 		t.Fatalf("建缓存失败: %v", err)
 	}
 
-	if err := svc.UnbindPill(context.Background(), agent.UUID, itemID); err != nil {
+	if err := svc.UnbindPill(context.Background(), uuid.MustParse(agent.DaoAgentID), itemID); err != nil {
 		t.Fatalf("UnbindPill 报错: %v", err)
 	}
 
 	var ef model.AgentPillEffect
-	if err := db.Where("agent_id = ?", agent.ID).First(&ef).Error; err != nil {
+	if err := db.Where("agent_id = ?", agent.DaoAgentID).First(&ef).Error; err != nil {
 		t.Fatalf("查能力失败: %v", err)
 	}
 	if ef.RemovedAt == nil {
@@ -234,23 +234,23 @@ func TestUnbindPillRemovesEffectOnly(t *testing.T) {
 	}
 	// 实例不返还
 	var item model.PillItem
-	db.Where("uuid = ?", itemID).First(&item)
+	db.Where("pill_item_id = ?", itemID.String()).First(&item)
 	if item.State != model.PillConsumedByAgent {
 		t.Fatalf("移除能力后实例状态 = %s, 期望保持 consumed_by_agent", item.State)
 	}
 	// 版本递增(服用 1 + 移除 1)
 	var reload model.DaoAgent
-	db.First(&reload, agent.ID)
+	db.Where("dao_agent_id = ?", agent.DaoAgentID).First(&reload)
 	if reload.EffectsRevision != 2 {
 		t.Fatalf("effects_revision = %d, 期望 2", reload.EffectsRevision)
 	}
 	var pattern model.LanguagePattern
-	db.Where("agent_id = ?", agent.ID).First(&pattern)
+	db.Where("agent_id = ?", agent.DaoAgentID).First(&pattern)
 	if pattern.IsValid {
 		t.Fatal("移除能力后语言模式缓存未被失效")
 	}
 	// 再次移除 → 404(无活跃能力)
-	err := svc.UnbindPill(context.Background(), agent.UUID, itemID)
+	err := svc.UnbindPill(context.Background(), uuid.MustParse(agent.DaoAgentID), itemID)
 	assertErrType(t, err, errors.ErrorTypeRecordNotFound, "二次移除")
 }
 
@@ -260,36 +260,36 @@ func TestUpdateAgentPillUpdatesEffect(t *testing.T) {
 	svc, db := setupServiceTestDB(t)
 	agent, _ := seedAgentAndPills(t, db, 0)
 	itemID := craftTestItem(t, db, "调权测试")
-	if err := svc.BindPill(context.Background(), agent.UUID, itemID, 1, 1); err != nil {
+	if err := svc.BindPill(context.Background(), uuid.MustParse(agent.DaoAgentID), itemID, 1, 1); err != nil {
 		t.Fatalf("预置服用失败: %v", err)
 	}
-	if err := db.Create(&model.LanguagePattern{AgentID: agent.ID, SystemPrompt: "c", SourceFingerprint: "sha256:x", IsValid: true}).Error; err != nil {
+	if err := db.Create(&model.LanguagePattern{AgentID: agent.DaoAgentID, SystemPrompt: "c", SourceFingerprint: "sha256:x", IsValid: true}).Error; err != nil {
 		t.Fatalf("建缓存失败: %v", err)
 	}
 
 	w, s := 2.0, 4
-	if err := svc.UpdateAgentPill(context.Background(), agent.UUID, itemID, &w, &s); err != nil {
+	if err := svc.UpdateAgentPill(context.Background(), uuid.MustParse(agent.DaoAgentID), itemID, &w, &s); err != nil {
 		t.Fatalf("UpdateAgentPill 报错: %v", err)
 	}
 	var ef model.AgentPillEffect
-	if err := db.Where("agent_id = ?", agent.ID).First(&ef).Error; err != nil {
+	if err := db.Where("agent_id = ?", agent.DaoAgentID).First(&ef).Error; err != nil {
 		t.Fatalf("查能力失败: %v", err)
 	}
 	if ef.Weight != 2 || ef.SortOrder != 4 {
 		t.Fatalf("权重/顺序 = %v/%v, 期望 2/4", ef.Weight, ef.SortOrder)
 	}
 	var reload model.DaoAgent
-	db.First(&reload, agent.ID)
+	db.Where("dao_agent_id = ?", agent.DaoAgentID).First(&reload)
 	if reload.EffectsRevision != 2 {
 		t.Fatalf("effects_revision = %d, 期望 2", reload.EffectsRevision)
 	}
 	var pattern model.LanguagePattern
-	db.Where("agent_id = ?", agent.ID).First(&pattern)
+	db.Where("agent_id = ?", agent.DaoAgentID).First(&pattern)
 	if pattern.IsValid {
 		t.Fatal("调整权重后语言模式缓存未被失效")
 	}
 	// 未吸收实例 → 404
-	err := svc.UpdateAgentPill(context.Background(), agent.UUID, uuid.New(), &w, &s)
+	err := svc.UpdateAgentPill(context.Background(), uuid.MustParse(agent.DaoAgentID), uuid.New(), &w, &s)
 	assertErrType(t, err, errors.ErrorTypeRecordNotFound, "未知实例调权")
 }
 
@@ -300,29 +300,29 @@ func seedEnabledModel(t *testing.T, db *gorm.DB, modelName string) {
 	if err := db.Create(prov).Error; err != nil {
 		t.Fatalf("建供应商失败: %v", err)
 	}
-	mdl := &model.LLMModel{ProviderID: prov.ID, Name: modelName, DisplayName: modelName, IsEnabled: true}
+	mdl := &model.LLMModel{ProviderID: prov.LLMProviderID, Name: modelName, DisplayName: modelName, IsEnabled: true}
 	if err := db.Create(mdl).Error; err != nil {
 		t.Fatalf("建模型失败: %v", err)
 	}
 }
 
-// seedSingleSession 造一个直挂道人的单聊会话
-func seedSingleSession(t *testing.T, db *gorm.DB, agentID uint) {
+// seedSingleSession 造一个直挂道人的单聊会话(关系键=道人UUID文本)
+func seedSingleSession(t *testing.T, db *gorm.DB, agentUID string) {
 	t.Helper()
-	sess := &model.ChatSession{UUID: uuid.New(), Type: model.SessionTypeSingle, AgentID: &agentID}
+	sess := &model.ChatSession{ChatSessionID: uuid.New().String(), Type: model.SessionTypeSingle, AgentID: &agentUID}
 	if err := db.Create(sess).Error; err != nil {
 		t.Fatalf("建单聊会话失败: %v", err)
 	}
 }
 
-// seedGroupMembership 造一个群聊会话并把道人拉进成员表
-func seedGroupMembership(t *testing.T, db *gorm.DB, agentID uint) {
+// seedGroupMembership 造一个群聊会话并把道人拉进成员表(关系键=UUID文本)
+func seedGroupMembership(t *testing.T, db *gorm.DB, agentUID string) {
 	t.Helper()
-	sess := &model.ChatSession{UUID: uuid.New(), Type: model.SessionTypeGroup}
+	sess := &model.ChatSession{ChatSessionID: uuid.New().String(), Type: model.SessionTypeGroup}
 	if err := db.Create(sess).Error; err != nil {
 		t.Fatalf("建群聊会话失败: %v", err)
 	}
-	if err := db.Create(&model.SessionMember{SessionID: sess.ID, AgentID: agentID, SortOrder: 0}).Error; err != nil {
+	if err := db.Create(&model.SessionMember{SessionID: sess.ChatSessionID, AgentID: agentUID, SortOrder: 0}).Error; err != nil {
 		t.Fatalf("拉群成员失败: %v", err)
 	}
 }
@@ -330,9 +330,9 @@ func seedGroupMembership(t *testing.T, db *gorm.DB, agentID uint) {
 func TestDeleteAgentWithSingleChatHistoryReturnsConflict(t *testing.T) {
 	svc, db := setupServiceTestDB(t)
 	agent, _ := seedAgentAndPills(t, db, 0)
-	seedSingleSession(t, db, agent.ID)
+	seedSingleSession(t, db, agent.DaoAgentID)
 
-	err := svc.DeleteAgent(context.Background(), agent.UUID)
+	err := svc.DeleteAgent(context.Background(), uuid.MustParse(agent.DaoAgentID))
 	if err == nil {
 		t.Fatal("有单聊历史时删除应返回冲突错误,实际为 nil")
 	}
@@ -351,7 +351,7 @@ func TestDeleteAgentWithSingleChatHistoryReturnsConflict(t *testing.T) {
 	}
 	// 道人未被删除
 	var count int64
-	db.Model(&model.DaoAgent{}).Where("id = ?", agent.ID).Count(&count)
+	db.Model(&model.DaoAgent{}).Where("dao_agent_id = ?", agent.DaoAgentID).Count(&count)
 	if count != 1 {
 		t.Fatal("有历史时道人不应被删除")
 	}
@@ -360,15 +360,15 @@ func TestDeleteAgentWithSingleChatHistoryReturnsConflict(t *testing.T) {
 func TestDeleteAgentWithGroupChatHistoryReturnsConflict(t *testing.T) {
 	svc, db := setupServiceTestDB(t)
 	agent, _ := seedAgentAndPills(t, db, 0)
-	seedGroupMembership(t, db, agent.ID)
+	seedGroupMembership(t, db, agent.DaoAgentID)
 
-	err := svc.DeleteAgent(context.Background(), agent.UUID)
+	err := svc.DeleteAgent(context.Background(), uuid.MustParse(agent.DaoAgentID))
 	assertErrType(t, err, errors.ErrorTypeConflict, "有群聊历史删除")
 	if err.GetCode() != "service.agent.delete_has_history" {
 		t.Fatalf("错误码 = %s, 期望 service.agent.delete_has_history", err.GetCode())
 	}
 	var count int64
-	db.Model(&model.DaoAgent{}).Where("id = ?", agent.ID).Count(&count)
+	db.Model(&model.DaoAgent{}).Where("dao_agent_id = ?", agent.DaoAgentID).Count(&count)
 	if count != 1 {
 		t.Fatal("有群聊历史时道人不应被删除")
 	}
@@ -377,11 +377,11 @@ func TestDeleteAgentWithGroupChatHistoryReturnsConflict(t *testing.T) {
 func TestDeleteAgentWithoutHistoryHardDeletes(t *testing.T) {
 	svc, db := setupServiceTestDB(t)
 	agent, _ := seedAgentAndPills(t, db, 0)
-	if err := svc.DeleteAgent(context.Background(), agent.UUID); err != nil {
+	if err := svc.DeleteAgent(context.Background(), uuid.MustParse(agent.DaoAgentID)); err != nil {
 		t.Fatalf("无历史删除报错: %v", err)
 	}
 	var count int64
-	db.Model(&model.DaoAgent{}).Where("id = ?", agent.ID).Count(&count)
+	db.Model(&model.DaoAgent{}).Where("dao_agent_id = ?", agent.DaoAgentID).Count(&count)
 	if count != 0 {
 		t.Fatal("无历史道人应被硬删除")
 	}
@@ -391,23 +391,23 @@ func TestUpdateAgentRejectsInvalidStatus(t *testing.T) {
 	svc, db := setupServiceTestDB(t)
 	agent, _ := seedAgentAndPills(t, db, 0)
 	bogus := "bogus"
-	_, err := svc.UpdateAgent(context.Background(), agent.UUID, nil, nil, nil, nil, &bogus, nil, nil)
+	_, err := svc.UpdateAgent(context.Background(), uuid.MustParse(agent.DaoAgentID), nil, nil, nil, nil, &bogus, nil, nil)
 	assertErrType(t, err, errors.ErrorTypeInvalidRequest, "非法 status")
 }
 
 func TestUpdateAgentActivatingWithUnavailableFinalModelFails(t *testing.T) {
 	svc, db := setupServiceTestDB(t)
 	// inactive 道人,其模型在库中不存在(不可用);直接落库绕过创建校验
-	agent := &model.DaoAgent{UUID: uuid.New(), Name: "睡道人", ModelName: "ghost-model", Status: "inactive"}
+	agent := &model.DaoAgent{DaoAgentID: uuid.New().String(), Name: "睡道人", ModelName: "ghost-model", Status: "inactive"}
 	if err := db.Create(agent).Error; err != nil {
 		t.Fatalf("建道人失败: %v", err)
 	}
 	active := "active"
 	// 不传 model_name,仅激活;最终模型仍是不可用的 ghost-model → 拒绝
-	_, err := svc.UpdateAgent(context.Background(), agent.UUID, nil, nil, nil, nil, &active, nil, nil)
+	_, err := svc.UpdateAgent(context.Background(), uuid.MustParse(agent.DaoAgentID), nil, nil, nil, nil, &active, nil, nil)
 	assertErrType(t, err, errors.ErrorTypeInvalidRequest, "激活但模型不可用")
 	var reload model.DaoAgent
-	db.First(&reload, agent.ID)
+	db.Where("dao_agent_id = ?", agent.DaoAgentID).First(&reload)
 	if reload.Status != "inactive" {
 		t.Fatal("校验失败时状态不应被改为 active")
 	}
@@ -416,24 +416,24 @@ func TestUpdateAgentActivatingWithUnavailableFinalModelFails(t *testing.T) {
 func TestUpdateAgentActiveAgentWithUnavailableExistingModelFails(t *testing.T) {
 	svc, db := setupServiceTestDB(t)
 	// active 道人,其现存模型已不可用(后被禁用/删除);只改名也应被拒
-	agent := &model.DaoAgent{UUID: uuid.New(), Name: "旧道人", ModelName: "ghost-model", Status: "active"}
+	agent := &model.DaoAgent{DaoAgentID: uuid.New().String(), Name: "旧道人", ModelName: "ghost-model", Status: "active"}
 	if err := db.Create(agent).Error; err != nil {
 		t.Fatalf("建道人失败: %v", err)
 	}
 	name := "改名"
-	_, err := svc.UpdateAgent(context.Background(), agent.UUID, &name, nil, nil, nil, nil, nil, nil)
+	_, err := svc.UpdateAgent(context.Background(), uuid.MustParse(agent.DaoAgentID), &name, nil, nil, nil, nil, nil, nil)
 	assertErrType(t, err, errors.ErrorTypeInvalidRequest, "active 道人模型不可用(未改 model_name)")
 }
 
 func TestUpdateAgentActivatingWithAvailableModelSucceeds(t *testing.T) {
 	svc, db := setupServiceTestDB(t)
 	seedEnabledModel(t, db, "real-model")
-	agent := &model.DaoAgent{UUID: uuid.New(), Name: "睡道人", ModelName: "real-model", Status: "inactive"}
+	agent := &model.DaoAgent{DaoAgentID: uuid.New().String(), Name: "睡道人", ModelName: "real-model", Status: "inactive"}
 	if err := db.Create(agent).Error; err != nil {
 		t.Fatalf("建道人失败: %v", err)
 	}
 	active := "active"
-	updated, err := svc.UpdateAgent(context.Background(), agent.UUID, nil, nil, nil, nil, &active, nil, nil)
+	updated, err := svc.UpdateAgent(context.Background(), uuid.MustParse(agent.DaoAgentID), nil, nil, nil, nil, &active, nil, nil)
 	if err != nil {
 		t.Fatalf("激活可用模型报错: %v", err)
 	}
@@ -445,13 +445,13 @@ func TestUpdateAgentActivatingWithAvailableModelSucceeds(t *testing.T) {
 func TestUpdateAgentMemoryEnabled(t *testing.T) {
 	svc, db := setupServiceTestDB(t)
 	seedEnabledModel(t, db, "real-model")
-	agent := &model.DaoAgent{UUID: uuid.New(), Name: "记忆道人", ModelName: "real-model", Status: "active"}
+	agent := &model.DaoAgent{DaoAgentID: uuid.New().String(), Name: "记忆道人", ModelName: "real-model", Status: "active"}
 	if err := db.Create(agent).Error; err != nil {
 		t.Fatalf("建道人失败: %v", err)
 	}
 
 	// 默认启用(true)
-	got, err := svc.UpdateAgent(context.Background(), agent.UUID, nil, nil, nil, nil, nil, nil, nil)
+	got, err := svc.UpdateAgent(context.Background(), uuid.MustParse(agent.DaoAgentID), nil, nil, nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("首次更新报错: %v", err)
 	}
@@ -461,7 +461,7 @@ func TestUpdateAgentMemoryEnabled(t *testing.T) {
 
 	// 显式关闭 → 落库
 	disabled := false
-	updated, err := svc.UpdateAgent(context.Background(), agent.UUID, nil, nil, nil, nil, nil, nil, &disabled)
+	updated, err := svc.UpdateAgent(context.Background(), uuid.MustParse(agent.DaoAgentID), nil, nil, nil, nil, nil, nil, &disabled)
 	if err != nil {
 		t.Fatalf("关闭记忆报错: %v", err)
 	}
@@ -469,21 +469,21 @@ func TestUpdateAgentMemoryEnabled(t *testing.T) {
 		t.Fatal("关闭后响应 MemoryEnabled 应为 false")
 	}
 	var reload model.DaoAgent
-	db.First(&reload, agent.ID)
+	db.Where("dao_agent_id = ?", agent.DaoAgentID).First(&reload)
 	if reload.MemoryEnabled {
 		t.Fatal("关闭后落库 MemoryEnabled 应为 false")
 	}
 
 	// 显式开启 → 落库
 	enabled := true
-	updated, err = svc.UpdateAgent(context.Background(), agent.UUID, nil, nil, nil, nil, nil, nil, &enabled)
+	updated, err = svc.UpdateAgent(context.Background(), uuid.MustParse(agent.DaoAgentID), nil, nil, nil, nil, nil, nil, &enabled)
 	if err != nil {
 		t.Fatalf("开启记忆报错: %v", err)
 	}
 	if !updated.MemoryEnabled {
 		t.Fatal("开启后响应 MemoryEnabled 应为 true")
 	}
-	db.First(&reload, agent.ID)
+	db.Where("dao_agent_id = ?", agent.DaoAgentID).First(&reload)
 	if !reload.MemoryEnabled {
 		t.Fatal("开启后落库 MemoryEnabled 应为 true")
 	}

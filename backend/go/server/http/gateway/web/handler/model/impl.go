@@ -66,7 +66,7 @@ type ModelResponse struct {
 // toProviderResponse 供应商富视图 -> 对外 DTO
 func toProviderResponse(v *gmodel.ProviderView) *ProviderResponse {
 	return &ProviderResponse{
-		ID:           v.UUID.String(),
+		ID:           v.LLMProviderID,
 		Name:         v.Name,
 		DisplayName:  v.DisplayName,
 		Protocol:     v.Protocol,
@@ -94,8 +94,8 @@ func toProviderResponseList(views []*gmodel.ProviderView) []*ProviderResponse {
 // toModelResponse 模型富视图 -> 对外 DTO
 func toModelResponse(v *gmodel.ModelView) *ModelResponse {
 	return &ModelResponse{
-		ID:                  v.UUID.String(),
-		ProviderID:          v.Provider.UUID.String(),
+		ID:                  v.LLMModelID,
+		ProviderID:          v.Provider.LLMProviderID,
 		Name:                v.Name,
 		DisplayName:         v.DisplayName,
 		ProviderName:        v.Provider.Name,

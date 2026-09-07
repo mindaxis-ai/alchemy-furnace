@@ -62,7 +62,7 @@ func (s *Inventory) Consume(ctx context.Context, req service.ConsumePillRequest)
 			}
 			// 3) CAS 消耗：available→consumed_by_agent；竞争/重复/已消耗 0 行 → 409。
 			//    先于活跃能力预检：同实例二次服用报「实例不可用」，不误导为能力重复
-			ok, err := dao.ConsumePillItemCAS(tx, item.ID, s.now(), op.ID)
+			ok, err := dao.ConsumePillItemCAS(tx, item.PillItemID, s.now(), op.PillOperationID)
 			if err != nil {
 				return nil, err
 			}
@@ -71,7 +71,7 @@ func (s *Inventory) Consume(ctx context.Context, req service.ConsumePillRequest)
 					"金丹不可服用（已被服用/融合/弃置）")
 			}
 			// 4) 同版本活跃能力预检（唯一索引兜底并发）；失败时 CAS 随事务一起回滚
-			n, err := dao.CountActiveEffectByAgentRevision(tx, agent.ID, rev.ID)
+			n, err := dao.CountActiveEffectByAgentRevision(tx, agent.DaoAgentID, rev.PillRecipeRevisionID)
 			if err != nil {
 				return nil, err
 			}
@@ -82,21 +82,21 @@ func (s *Inventory) Consume(ctx context.Context, req service.ConsumePillRequest)
 			// 5) 能力快照：名称 + 完整 schema 深拷贝（不保存指向请求方可变对象的引用）
 			sortOrder := req.SortOrder
 			if sortOrder <= 0 {
-				maxOrder, err := dao.MaxEffectSortOrder(tx, agent.ID)
+				maxOrder, err := dao.MaxEffectSortOrder(tx, agent.DaoAgentID)
 				if err != nil {
 					return nil, err
 				}
 				sortOrder = maxOrder + 1
 			}
 			ef := &model.AgentPillEffect{
-				AgentID:          agent.ID,
-				ItemID:           item.ID,
-				RecipeRevisionID: rev.ID,
+				AgentID:          agent.DaoAgentID,
+				ItemID:           item.PillItemID,
+				RecipeRevisionID: rev.PillRecipeRevisionID,
 				NameSnapshot:     rev.Name,
 				SchemaSnapshot:   deepCopySchema(rev.SkillSchema),
 				Weight:           weight,
 				SortOrder:        sortOrder,
-				CreatedAt:        s.now(),
+				Base:             model.Base{CreatedAt: s.now()},
 			}
 			if err := dao.CreateAgentPillEffect(tx, ef); err != nil {
 				if isActiveEffectUniqueViolation(err) {
@@ -106,16 +106,16 @@ func (s *Inventory) Consume(ctx context.Context, req service.ConsumePillRequest)
 				return nil, err
 			}
 			// 6) 编排版本递增 + 同事务失效缓存
-			if err := dao.IncrementEffectsRevision(tx, agent.ID); err != nil {
+			if err := dao.IncrementEffectsRevision(tx, agent.DaoAgentID); err != nil {
 				return nil, err
 			}
-			if err := dao.InvalidateLanguagePatternTx(tx, agent.ID); err != nil {
+			if err := dao.InvalidateLanguagePatternTx(tx, agent.DaoAgentID); err != nil {
 				return nil, err
 			}
 			return &service.PillOperationResult{
-				OperationID:     op.UUID,
-				EffectID:        &ef.UUID,
-				ConsumedItemIDs: []uuid.UUID{item.UUID},
+				OperationID:     req.OperationID,
+				EffectID:        uuidPtr(ef.AgentPillEffectID),
+				ConsumedItemIDs: []uuid.UUID{uuidVal(item.PillItemID)},
 			}, nil
 		})
 }

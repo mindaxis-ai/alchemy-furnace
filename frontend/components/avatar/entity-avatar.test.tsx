@@ -11,6 +11,14 @@ describe('EntityAvatar', () => {
     expect(screen.getByRole('img', { name: '太上老君' })).toHaveAttribute('src', 'https://example.com/a.png')
   })
 
+  it('suppresses the referrer for CDN avatar URLs with transformation suffixes', () => {
+    const src = 'https://pics2.baidu.com/feed/avatar.jpeg@f_auto?token=example'
+    render(<EntityAvatar name="太上老君" src={src} size="md" />)
+    const image = screen.getByRole('img', { name: '太上老君' })
+    expect(image).toHaveAttribute('src', src)
+    expect(image).toHaveAttribute('referrerpolicy', 'no-referrer')
+  })
+
   it('falls back to initial once image errors', () => {
     render(<EntityAvatar name="太上老君" src="https://example.com/a.png" size="md" />)
     fireEvent.error(screen.getByRole('img'))

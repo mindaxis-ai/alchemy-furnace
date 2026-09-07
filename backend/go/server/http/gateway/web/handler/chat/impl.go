@@ -72,14 +72,14 @@ func toSessionResponse(s *model.ChatSession) *SessionResponse {
 		typeStr = model.SessionTypeSingle
 	}
 	response := &SessionResponse{
-		ID:        s.UUID.String(),
+		ID:        s.ChatSessionID,
 		Type:      typeStr,
 		Title:     s.Title,
 		CreatedAt: s.CreatedAt,
 		UpdatedAt: s.UpdatedAt,
 	}
 	if s.AgentID != nil {
-		response.AgentID = s.Agent.UUID.String()
+		response.AgentID = s.Agent.DaoAgentID
 		response.AgentName = s.Agent.Name
 		response.AgentAvatar = s.Agent.Avatar
 		response.AgentStatus = s.Agent.Status
@@ -106,14 +106,14 @@ func toSessionResponseList(sessions []*model.ChatSession) []*SessionResponse {
 // toMessageResponse 内部模型 -> 对外 DTO
 func toMessageResponse(m *model.ChatMessage) *MessageResponse {
 	r := &MessageResponse{
-		ID:        m.UUID.String(),
+		ID:        m.ChatMessageID,
 		Role:      m.Role,
 		Content:   m.Content,
 		Mentions:  m.Mentions,
 		CreatedAt: m.CreatedAt,
 	}
 	if m.AgentID != nil && m.Agent != nil {
-		r.AgentID = m.Agent.UUID.String()
+		r.AgentID = m.Agent.DaoAgentID
 		r.AgentName = m.Agent.Name
 	}
 	return r
@@ -122,7 +122,7 @@ func toMessageResponse(m *model.ChatMessage) *MessageResponse {
 // toMemberResponse 群成员 → DTO
 func toMemberResponse(m *model.SessionMember) *MemberResponse {
 	return &MemberResponse{
-		AgentID:     m.Agent.UUID.String(),
+		AgentID:     m.Agent.DaoAgentID,
 		Name:        m.Agent.Name,
 		Avatar:      m.Agent.Avatar,
 		Proactivity: m.Agent.Proactivity,
@@ -208,11 +208,4 @@ type ssePayload struct {
 	ErrorCode string                         `json:"error_code,omitempty"`
 	Terminal  bool                           `json:"terminal,omitempty"`
 	Recovery  chatservice.StreamRecoveryMode `json:"recovery,omitempty"`
-}
-
-// streamResult StreamChat goroutine 的收尾结果
-type streamResult struct {
-	full     string
-	canceled bool
-	err      error
 }

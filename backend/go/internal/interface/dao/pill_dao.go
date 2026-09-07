@@ -28,9 +28,9 @@ type Pill interface {
 	// DeletePill 删除金丹(服用记录由 FK CASCADE 清理)
 	DeletePill(ctx context.Context, pill *model.ElixirPill) errors.Error
 
-	// FindAgentIDsByPillID 查询服用了指定金丹的道人内部 ID 列表(缓存失效用)
-	FindAgentIDsByPillID(ctx context.Context, pillID uint) ([]uint, errors.Error)
+	// FindAgentIDsByPillID 查询服用了指定金丹的道人 UUID 文本列表(缓存失效用)
+	FindAgentIDsByPillID(ctx context.Context, pillUID string) ([]string, errors.Error)
 
-	// InvalidateLanguagePatternsByAgentIDs 批量失效道人的语言模式缓存
-	InvalidateLanguagePatternsByAgentIDs(ctx context.Context, agentIDs []uint) errors.Error
+	// InvalidateLanguagePatternsByAgentIDs 批量失效道人(按 UUID 文本)的语言模式缓存
+	InvalidateLanguagePatternsByAgentIDs(ctx context.Context, agentUIDs []string) errors.Error
 }

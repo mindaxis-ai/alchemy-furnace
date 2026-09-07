@@ -3,8 +3,8 @@
 //   - 幂等: 重复执行只补齐新增列/索引,不会破坏已有数据
 //   - 驱动无关: 同一组模型在 postgres / mysql / sqlite 上生成等价表结构
 //   - 部分唯一索引(is_default / is_synthesis / is_fusion):
-//       模型 tag 上声明 where 子句,PG/SQLite 自动生成 partial index;
-//       MySQL 8.0.13+ 同步支持,更早版本降级为普通 unique 索引并由 service 层兜底
+//     模型 tag 上声明 where 子句,PG/SQLite 自动生成 partial index;
+//     MySQL 8.0.13+ 同步支持,更早版本降级为普通 unique 索引并由 service 层兜底
 package dao
 
 import (
@@ -25,6 +25,7 @@ var allMigratableModels = []any{
 	&model.LanguagePattern{},
 	&model.ChatSession{},
 	&model.ChatMessage{},
+	&model.ChatRun{},
 	&model.SessionMember{},
 	&model.LLMProvider{},
 	&model.LLMModel{},
@@ -37,8 +38,6 @@ var allMigratableModels = []any{
 	&model.AgentPillEffect{},
 	&model.PillOperation{},
 	&model.FusionPreview{},
-	&model.PillMigrationState{},
-	&model.PillLegacyMap{},
 	&model.PillStarterGrant{},
 }
 
@@ -68,11 +67,79 @@ var columnTypeAlterations = []struct {
 	{"user_profile", "avatar", "text"},
 }
 
+// legacyFKProbes 旧(011 之前)schema 探测点:代表性跨表关系列。
+// 011 前关系列是整数自增 ID,011 起一律为 uuid 文本;AutoMigrate 无法把已有整数
+// 关系列安全转换为 uuid(存量数据不可映射),必须拒绝静默升级并引导显式 reset。
+var legacyFKProbes = []struct {
+	Model  any    // 探测表对应的模型(用于 HasTable/ColumnTypes)
+	Column string // 代表性关系列名
+}{
+	{&model.AgentPill{}, "agent_id"},
+	{&model.ChatMessage{}, "session_id"},
+	{&model.LLMModel{}, "provider_id"},
+}
+
+// legacyUUIDColumnProbes 修订轮之前(011 双标识)schema 探测点:已废弃的 uuid 列。
+// 修订轮把实体主键统一为 <EntityID> text 单主键并删除 UUID 列;存量库若带着旧 uuid 列
+// 被 AutoMigrate 升级,新主键列对旧行是空串,行身份全毁,必须拒绝静默升级并引导 reset。
+var legacyUUIDColumnProbes = []struct {
+	Model  any    // 探测表对应的模型(用于 HasTable/HasColumn)
+	Column string // 已废弃的 uuid 列名
+	Table  string // 表名(用于错误信息,显式写死避免反射出 *model.Xxx)
+}{
+	{&model.DaoAgent{}, "uuid", "dao_agents"},
+	{&model.ElixirPill{}, "uuid", "elixir_pills"},
+}
+
+// detectLegacyIntegerFK 检查探测点关系列的数据库类型;任一为整数类型 → 返回旧 schema 错误。
+// 另检查废弃 uuid 列是否存在(011 双标识中间态库) → 同样拒绝。
+// 全新库(表不存在)或已是 text(新 schema) → nil。只读探测,不做任何写入。
+func detectLegacyIntegerFK(db *gorm.DB) error {
+	for _, probe := range legacyFKProbes {
+		if !db.Migrator().HasTable(probe.Model) {
+			continue // 全新库:无表即无旧 schema
+		}
+		cols, err := db.Migrator().ColumnTypes(probe.Model)
+		if err != nil {
+			return fmt.Errorf("读取 %s.%s 列类型失败: %w", db.NamingStrategy.TableName(fmt.Sprintf("%T", probe.Model)), probe.Column, err)
+		}
+		for _, col := range cols {
+			if col.Name() != probe.Column {
+				continue
+			}
+			dbType := strings.ToLower(strings.TrimSpace(col.DatabaseTypeName()))
+			if strings.Contains(dbType, "int") || strings.Contains(dbType, "serial") {
+				return fmt.Errorf(
+					"检测到旧版数据库 schema(关系列为整数外键,如 %s),无法自动升级为 UUID 业务键 schema;"+
+						"请运行 `migrate reset` 重建数据库(全部业务数据将被清空并重新种子),或删除数据目录后重新初始化",
+					probe.Column)
+			}
+		}
+	}
+	// 011 双标识中间态库:废弃 uuid 列仍存在 → 拒绝(主键统一后旧行无法安全映射)
+	for _, probe := range legacyUUIDColumnProbes {
+		if !db.Migrator().HasTable(probe.Model) {
+			continue
+		}
+		if db.Migrator().HasColumn(probe.Model, probe.Column) {
+			return fmt.Errorf(
+				"检测到修订前数据库 schema(%s 仍带 uuid 独立列),实体主键已统一为业务主键文本,无法自动升级;"+
+					"请运行 `migrate reset` 重建数据库(全部业务数据将被清空并重新种子),或删除数据目录后重新初始化",
+				probe.Table)
+		}
+	}
+	return nil
+}
+
 // MigrateUp 同步全部业务表到当前模型定义(幂等,跨驱动)
 // 历史 raw-SQL 迁移文件已不再依赖;若是从旧部署首次切换,可重复运行直至无差异
 func MigrateUp() error {
 	if DB == nil {
 		return fmt.Errorf("数据库未初始化")
+	}
+	// 旧 schema 守门:整数外键的老库拒绝静默升级(数据不可映射),先于任何写入
+	if err := detectLegacyIntegerFK(DB); err != nil {
+		return err
 	}
 	if err := DB.AutoMigrate(allMigratableModels...); err != nil {
 		return fmt.Errorf("AutoMigrate 失败: %w", err)
@@ -148,6 +215,25 @@ func MigrateDown() error {
 	}
 	if err := DB.Migrator().DropTable(allMigratableModels...); err != nil {
 		return fmt.Errorf("DropTable 失败: %w", err)
+	}
+	return nil
+}
+
+// MigrateReset 显式重建:MigrateDown → MigrateUp → 全量种子。
+// 用于旧(整数外键)schema 升级到 UUID 业务键 schema——存量数据不迁移,库重建后由
+// 种子链重置内置内容;Cobra 侧经 `migrate reset`(带确认)调用。任何阶段失败立即返回。
+func MigrateReset() error {
+	if DB == nil {
+		return fmt.Errorf("数据库未初始化")
+	}
+	if err := MigrateDown(); err != nil {
+		return fmt.Errorf("reset 清除旧表失败: %w", err)
+	}
+	if err := MigrateUp(); err != nil {
+		return fmt.Errorf("reset 重建表失败: %w", err)
+	}
+	if err := SeedAll(GetDB()); err != nil {
+		return fmt.Errorf("reset 写入种子失败: %w", err)
 	}
 	return nil
 }

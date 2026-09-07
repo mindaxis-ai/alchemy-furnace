@@ -45,7 +45,7 @@ func TestConsumeHappyPath(t *testing.T) {
 	agent := newTestAgent(t, db)
 	// 预先存在的有效缓存，服用后必须同事务失效
 	if err := db.Create(&model.LanguagePattern{
-		AgentID: agent.ID, SystemPrompt: "旧提示词", IsValid: true,
+		AgentID: agent.DaoAgentID, SystemPrompt: "旧提示词", IsValid: true,
 		SourceFingerprint: "sha256:old", ProfileVersion: 1,
 	}).Error; err != nil {
 		t.Fatal(err)
@@ -59,7 +59,7 @@ func TestConsumeHappyPath(t *testing.T) {
 	itemID := saved.ItemIDs[0]
 
 	res, err := svc.Consume(context.Background(), service.ConsumePillRequest{
-		OperationID: uuid.New(), AgentID: agent.UUID, ItemID: itemID, Weight: 2, SortOrder: 3,
+		OperationID: uuid.New(), AgentID: uuid.MustParse(agent.DaoAgentID), ItemID: itemID, Weight: 2, SortOrder: 3,
 	})
 	if err != nil {
 		t.Fatalf("Consume: %v", err)
@@ -73,7 +73,7 @@ func TestConsumeHappyPath(t *testing.T) {
 
 	// 实例终态：consumed_by_agent + 时间 + 操作去向
 	var item model.PillItem
-	if err := db.Where("uuid = ?", itemID).First(&item).Error; err != nil {
+	if err := db.Where("pill_item_id = ?", itemID.String()).First(&item).Error; err != nil {
 		t.Fatal(err)
 	}
 	if item.State != model.PillConsumedByAgent {
@@ -85,15 +85,15 @@ func TestConsumeHappyPath(t *testing.T) {
 
 	// 能力快照：名称/完整 schema（含未知字段深拷贝）/权重/顺序
 	var effects []model.AgentPillEffect
-	if err := db.Where("agent_id = ?", agent.ID).Find(&effects).Error; err != nil {
+	if err := db.Where("agent_id = ?", agent.DaoAgentID).Find(&effects).Error; err != nil {
 		t.Fatal(err)
 	}
 	if len(effects) != 1 {
 		t.Fatalf("effects=%d, want 1", len(effects))
 	}
 	ef := effects[0]
-	if ef.UUID != *res.EffectID {
-		t.Fatalf("effect uuid 不一致: %v vs %v", ef.UUID, res.EffectID)
+	if ef.AgentPillEffectID != res.EffectID.String() {
+		t.Fatalf("effect id 不一致: %v vs %v", ef.AgentPillEffectID, res.EffectID)
 	}
 	if ef.NameSnapshot != "服丹" {
 		t.Fatalf("name_snapshot=%q", ef.NameSnapshot)
@@ -110,14 +110,14 @@ func TestConsumeHappyPath(t *testing.T) {
 
 	// EffectsRevision 递增 + 缓存失效（同事务）
 	var ag model.DaoAgent
-	if err := db.First(&ag, agent.ID).Error; err != nil {
+	if err := db.Where("dao_agent_id = ?", agent.DaoAgentID).First(&ag).Error; err != nil {
 		t.Fatal(err)
 	}
 	if ag.EffectsRevision != 1 {
 		t.Fatalf("effects_revision=%d, want 1", ag.EffectsRevision)
 	}
 	var lp model.LanguagePattern
-	if err := db.Where("agent_id = ?", agent.ID).First(&lp).Error; err != nil {
+	if err := db.Where("agent_id = ?", agent.DaoAgentID).First(&lp).Error; err != nil {
 		t.Fatal(err)
 	}
 	if lp.IsValid {
@@ -141,7 +141,7 @@ func TestConsumeSecondKeySameItemFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	itemID := saved.ItemIDs[0]
-	req := service.ConsumePillRequest{OperationID: uuid.New(), AgentID: agent.UUID, ItemID: itemID, Weight: 1, SortOrder: 1}
+	req := service.ConsumePillRequest{OperationID: uuid.New(), AgentID: uuid.MustParse(agent.DaoAgentID), ItemID: itemID, Weight: 1, SortOrder: 1}
 	if _, err := svc.Consume(context.Background(), req); err != nil {
 		t.Fatalf("first: %v", err)
 	}
@@ -155,12 +155,12 @@ func TestConsumeSecondKeySameItemFails(t *testing.T) {
 		t.Fatalf("code=%s, want pill.not_available", err.GetCode())
 	}
 	var n int64
-	db.Model(&model.AgentPillEffect{}).Where("agent_id = ?", agent.ID).Count(&n)
+	db.Model(&model.AgentPillEffect{}).Where("agent_id = ?", agent.DaoAgentID).Count(&n)
 	if n != 1 {
 		t.Fatalf("effects=%d, want 1", n)
 	}
 	var ag model.DaoAgent
-	db.First(&ag, agent.ID)
+	db.Where("dao_agent_id = ?", agent.DaoAgentID).First(&ag)
 	if ag.EffectsRevision != 1 {
 		t.Fatalf("effects_revision=%d, want 1", ag.EffectsRevision)
 	}
@@ -177,7 +177,7 @@ func TestConsumeSameKeyRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	key := uuid.New()
-	req := service.ConsumePillRequest{OperationID: key, AgentID: agent.UUID, ItemID: saved.ItemIDs[0], Weight: 1, SortOrder: 1}
+	req := service.ConsumePillRequest{OperationID: key, AgentID: uuid.MustParse(agent.DaoAgentID), ItemID: saved.ItemIDs[0], Weight: 1, SortOrder: 1}
 	first, err := svc.Consume(context.Background(), req)
 	if err != nil {
 		t.Fatal(err)
@@ -211,7 +211,7 @@ func TestConsumeTriggerRejection(t *testing.T) {
 	}
 	itemID := saved.ItemIDs[0]
 	key := uuid.New()
-	req := service.ConsumePillRequest{OperationID: key, AgentID: agent.UUID, ItemID: itemID, Weight: 1, SortOrder: 1}
+	req := service.ConsumePillRequest{OperationID: key, AgentID: uuid.MustParse(agent.DaoAgentID), ItemID: itemID, Weight: 1, SortOrder: 1}
 
 	if err := db.Exec(`
 		CREATE TRIGGER reject_effect_insert BEFORE INSERT ON agent_pill_effects
@@ -224,7 +224,7 @@ func TestConsumeTriggerRejection(t *testing.T) {
 
 	// 全部回滚：实例仍可用、无能力、无操作占位、revision 未动
 	var item model.PillItem
-	db.Where("uuid = ?", itemID).First(&item)
+	db.Where("pill_item_id = ?", itemID.String()).First(&item)
 	if item.State != model.PillAvailable {
 		t.Fatalf("失败后实例应回滚为 available, got %s", item.State)
 	}
@@ -233,12 +233,12 @@ func TestConsumeTriggerRejection(t *testing.T) {
 	if n != 0 {
 		t.Fatalf("失败后能力数=%d, want 0", n)
 	}
-	db.Model(&model.PillOperation{}).Where("uuid = ?", key).Count(&n)
+	db.Model(&model.PillOperation{}).Where("pill_operation_id = ?", key.String()).Count(&n)
 	if n != 0 {
 		t.Fatalf("失败后 operation 应回滚（不可见空结果）, got %d", n)
 	}
 	var ag model.DaoAgent
-	db.First(&ag, agent.ID)
+	db.Where("dao_agent_id = ?", agent.DaoAgentID).First(&ag)
 	if ag.EffectsRevision != 0 {
 		t.Fatalf("失败后 effects_revision=%d, want 0", ag.EffectsRevision)
 	}
@@ -273,12 +273,12 @@ func TestConsumeDuplicateActiveEffect(t *testing.T) {
 	itemB := craftOneOf(t, svc, *saved.RevisionID)
 
 	if _, err := svc.Consume(context.Background(), service.ConsumePillRequest{
-		OperationID: uuid.New(), AgentID: agent.UUID, ItemID: itemA, Weight: 1, SortOrder: 1,
+		OperationID: uuid.New(), AgentID: uuid.MustParse(agent.DaoAgentID), ItemID: itemA, Weight: 1, SortOrder: 1,
 	}); err != nil {
 		t.Fatal(err)
 	}
 	_, err = svc.Consume(context.Background(), service.ConsumePillRequest{
-		OperationID: uuid.New(), AgentID: agent.UUID, ItemID: itemB, Weight: 1, SortOrder: 2,
+		OperationID: uuid.New(), AgentID: uuid.MustParse(agent.DaoAgentID), ItemID: itemB, Weight: 1, SortOrder: 2,
 	})
 	if err == nil {
 		t.Fatal("同版本活跃能力重复服用应 409")
@@ -287,12 +287,12 @@ func TestConsumeDuplicateActiveEffect(t *testing.T) {
 		t.Fatalf("code=%s, want pill.effect_already_active", err.GetCode())
 	}
 	var item model.PillItem
-	db.Where("uuid = ?", itemB).First(&item)
+	db.Where("pill_item_id = ?", itemB.String()).First(&item)
 	if item.State != model.PillAvailable {
 		t.Fatalf("被拒服用后第二枚应仍可用, got %s", item.State)
 	}
 	var n int64
-	db.Model(&model.AgentPillEffect{}).Where("agent_id = ?", agent.ID).Count(&n)
+	db.Model(&model.AgentPillEffect{}).Where("agent_id = ?", agent.DaoAgentID).Count(&n)
 	if n != 1 {
 		t.Fatalf("effects=%d, want 1", n)
 	}
@@ -316,12 +316,12 @@ func TestConsumeArchivedRecipeItemStillWorks(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := svc.Consume(context.Background(), service.ConsumePillRequest{
-		OperationID: uuid.New(), AgentID: agent.UUID, ItemID: saved.ItemIDs[0], Weight: 1, SortOrder: 1,
+		OperationID: uuid.New(), AgentID: uuid.MustParse(agent.DaoAgentID), ItemID: saved.ItemIDs[0], Weight: 1, SortOrder: 1,
 	}); err != nil {
 		t.Fatalf("归档丹方已有实例应可服用: %v", err)
 	}
 	var item model.PillItem
-	db.Where("uuid = ?", saved.ItemIDs[0]).First(&item)
+	db.Where("pill_item_id = ?", saved.ItemIDs[0].String()).First(&item)
 	if item.State != model.PillConsumedByAgent {
 		t.Fatalf("state=%s, want consumed_by_agent", item.State)
 	}
@@ -349,7 +349,7 @@ func TestConsumeUnknownTargets(t *testing.T) {
 	}
 	// 未知实例
 	_, err = svc.Consume(context.Background(), service.ConsumePillRequest{
-		OperationID: uuid.New(), AgentID: agent.UUID, ItemID: uuid.New(), Weight: 1, SortOrder: 1,
+		OperationID: uuid.New(), AgentID: uuid.MustParse(agent.DaoAgentID), ItemID: uuid.New(), Weight: 1, SortOrder: 1,
 	})
 	if err == nil || err.GetCode() != "pill.not_found" {
 		t.Fatalf("未知实例: err=%v code=%s, want 404 pill.not_found", err, err.GetCode())
@@ -367,12 +367,12 @@ func TestConsumeDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := svc.Consume(context.Background(), service.ConsumePillRequest{
-		OperationID: uuid.New(), AgentID: agent.UUID, ItemID: saved.ItemIDs[0], Weight: 0, SortOrder: 0,
+		OperationID: uuid.New(), AgentID: uuid.MustParse(agent.DaoAgentID), ItemID: saved.ItemIDs[0], Weight: 0, SortOrder: 0,
 	}); err != nil {
 		t.Fatal(err)
 	}
 	var ef model.AgentPillEffect
-	db.Where("agent_id = ?", agent.ID).First(&ef)
+	db.Where("agent_id = ?", agent.DaoAgentID).First(&ef)
 	if ef.Weight != 1.0 {
 		t.Fatalf("weight=%v, want 1.0", ef.Weight)
 	}

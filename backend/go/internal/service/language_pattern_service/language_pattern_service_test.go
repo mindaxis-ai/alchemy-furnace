@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	appErrors "github.com/alchemy-furnace/server/internal/errors"
 	"github.com/alchemy-furnace/server/internal/behavior"
+	appErrors "github.com/alchemy-furnace/server/internal/errors"
 	"github.com/alchemy-furnace/server/internal/interface/dao"
 	"github.com/alchemy-furnace/server/internal/service/credential"
 	"github.com/alchemy-furnace/server/internal/synthesis"
@@ -29,7 +29,7 @@ type fakeAgentDAO struct {
 	onConflict        func()
 }
 
-func (f *fakeAgentDAO) TakeAgentDetailByID(ctx context.Context, agentID uint) (*model.DaoAgent, appErrors.Error) {
+func (f *fakeAgentDAO) TakeAgentDetailByUUID(ctx context.Context, uid uuid.UUID) (*model.DaoAgent, appErrors.Error) {
 	if f.agent == nil {
 		return nil, appErrors.ErrorRecordNotFound("fake.agent.missing")
 	}
@@ -105,9 +105,9 @@ func markerSkillSchema() model.JSONMap {
 // newMarkerAgent 构建带已吸收能力(AgentPillEffects 快照)的道人;
 // 身份=被服用实例 UUID,内容=NameSnapshot/SchemaSnapshot(任务 3 起的事实来源)
 func newMarkerAgent() *model.DaoAgent {
-	item := model.PillItem{UUID: uuid.New()}
+	item := model.PillItem{PillItemID: uuid.New().String()}
 	return &model.DaoAgent{
-		ID:              1,
+		DaoAgentID:      uuid.New().String(),
 		Name:            "测试道人",
 		Personality:     "沉稳内敛",
 		EffectsRevision: 3,
@@ -123,10 +123,11 @@ func newMarkerAgent() *model.DaoAgent {
 	}
 }
 
+// allMarkers 静态提示词应渲染的标记。心智模型/决策启发式/示例对话自 e76f6fc 起
+// 移出永久区(仅入 P2 激活区或 few-shot,见 behavior/render_test.go),不再断言出现。
 var allMarkers = []string{
-	"IDENTITY_MARKER", "DNA_MARKER", "MENTAL_MODEL_MARKER", "HEURISTIC_MARKER",
-	"VALUE_MARKER", "ANTI_PATTERN_MARKER", "HONEST_LIMIT_MARKER",
-	"EXAMPLE_MARKER", "UNKNOWN_FIELD_MARKER",
+	"IDENTITY_MARKER", "DNA_MARKER", "VALUE_MARKER", "ANTI_PATTERN_MARKER",
+	"HONEST_LIMIT_MARKER", "UNKNOWN_FIELD_MARKER",
 }
 
 func assertPromptHasAllMarkers(t *testing.T, prompt string) {
@@ -148,7 +149,7 @@ func TestGetOrBuildPatternCacheHitNewFormat(t *testing.T) {
 		t.Fatalf("computeFingerprint: %v", err)
 	}
 	agent.LanguagePattern = &model.LanguagePattern{
-		AgentID:           agent.ID,
+		AgentID:           agent.DaoAgentID,
 		SystemPrompt:      "缓存的提示词",
 		BehaviorProfile:   model.JSONMap{"version": 1},
 		ProfileVersion:    behavior.ProfileVersion,
@@ -159,7 +160,7 @@ func TestGetOrBuildPatternCacheHitNewFormat(t *testing.T) {
 	fakeSynth := &fakeSynthesis{}
 
 	svc := New(fakeAgent, fakeSynth, &fakeCreds{})
-	got, err := svc.GetOrBuildPattern(context.Background(), agent.ID)
+	got, err := svc.GetOrBuildPattern(context.Background(), agent.DaoAgentID)
 	if err != nil {
 		t.Fatalf("GetOrBuildPattern: %v", err)
 	}
@@ -176,7 +177,7 @@ func TestGetOrBuildPatternOldCacheRebuilds(t *testing.T) {
 	agent := newMarkerAgent()
 	fp, _ := computeFingerprint(agent.Personality, buildPillInputs(agent))
 	agent.LanguagePattern = &model.LanguagePattern{
-		AgentID:           agent.ID,
+		AgentID:           agent.DaoAgentID,
 		SystemPrompt:      "旧格式提示词",
 		SourceFingerprint: fp,
 		IsValid:           true,
@@ -190,7 +191,7 @@ func TestGetOrBuildPatternOldCacheRebuilds(t *testing.T) {
 	}}
 
 	svc := New(fakeAgent, fakeSynth, &fakeCreds{})
-	got, err := svc.GetOrBuildPattern(context.Background(), agent.ID)
+	got, err := svc.GetOrBuildPattern(context.Background(), agent.DaoAgentID)
 	if err != nil {
 		t.Fatalf("GetOrBuildPattern: %v", err)
 	}
@@ -213,7 +214,7 @@ func TestGetOrBuildPatternOldCacheRebuilds(t *testing.T) {
 func TestGetOrBuildPatternFingerprintMismatchRebuilds(t *testing.T) {
 	agent := newMarkerAgent()
 	agent.LanguagePattern = &model.LanguagePattern{
-		AgentID:           agent.ID,
+		AgentID:           agent.DaoAgentID,
 		SystemPrompt:      "过期缓存",
 		BehaviorProfile:   model.JSONMap{"version": 1},
 		ProfileVersion:    behavior.ProfileVersion,
@@ -228,7 +229,7 @@ func TestGetOrBuildPatternFingerprintMismatchRebuilds(t *testing.T) {
 	}}
 
 	svc := New(fakeAgent, fakeSynth, &fakeCreds{})
-	_, err := svc.GetOrBuildPattern(context.Background(), agent.ID)
+	_, err := svc.GetOrBuildPattern(context.Background(), agent.DaoAgentID)
 	if err != nil {
 		t.Fatalf("GetOrBuildPattern: %v", err)
 	}
@@ -242,7 +243,7 @@ func TestGetOrBuildPatternProfileVersionMismatchRebuilds(t *testing.T) {
 	agent := newMarkerAgent()
 	fp, _ := computeFingerprint(agent.Personality, buildPillInputs(agent))
 	agent.LanguagePattern = &model.LanguagePattern{
-		AgentID:           agent.ID,
+		AgentID:           agent.DaoAgentID,
 		SystemPrompt:      "旧版本档案",
 		BehaviorProfile:   model.JSONMap{"version": 0},
 		ProfileVersion:    0,
@@ -257,7 +258,7 @@ func TestGetOrBuildPatternProfileVersionMismatchRebuilds(t *testing.T) {
 	}}
 
 	svc := New(fakeAgent, fakeSynth, &fakeCreds{})
-	if _, err := svc.GetOrBuildPattern(context.Background(), agent.ID); err != nil {
+	if _, err := svc.GetOrBuildPattern(context.Background(), agent.DaoAgentID); err != nil {
 		t.Fatalf("GetOrBuildPattern: %v", err)
 	}
 	if fakeSynth.calls != 1 {
@@ -277,7 +278,7 @@ func TestGetOrBuildPatternSuccessPersistsLossless(t *testing.T) {
 	}}
 
 	svc := New(fakeAgent, fakeSynth, &fakeCreds{})
-	got, err := svc.GetOrBuildPattern(context.Background(), agent.ID)
+	got, err := svc.GetOrBuildPattern(context.Background(), agent.DaoAgentID)
 	if err != nil {
 		t.Fatalf("GetOrBuildPattern: %v", err)
 	}
@@ -318,7 +319,7 @@ func TestGetOrBuildPatternDegradedNotPersisted(t *testing.T) {
 	}}
 
 	svc := New(fakeAgent, fakeSynth, &fakeCreds{})
-	got, err := svc.GetOrBuildPattern(context.Background(), agent.ID)
+	got, err := svc.GetOrBuildPattern(context.Background(), agent.DaoAgentID)
 	if err != nil {
 		t.Fatalf("降级路径不应返回错误: %v", err)
 	}
@@ -341,7 +342,7 @@ func TestGetOrBuildPatternCombineErrorLosslessTemp(t *testing.T) {
 	fakeSynth := &fakeSynthesis{err: std.New("python engine down")}
 
 	svc := New(fakeAgent, fakeSynth, &fakeCreds{})
-	got, err := svc.GetOrBuildPattern(context.Background(), agent.ID)
+	got, err := svc.GetOrBuildPattern(context.Background(), agent.DaoAgentID)
 	if err != nil {
 		t.Fatalf("合成失败不应阻断聊天(返回无损渲染): %v", err)
 	}
@@ -365,7 +366,7 @@ func TestGetOrBuildPatternNoCredentialsStillCallsCombine(t *testing.T) {
 	creds := &fakeCreds{err: std.New("no synthesis model configured")}
 
 	svc := New(fakeAgent, fakeSynth, creds)
-	if _, err := svc.GetOrBuildPattern(context.Background(), agent.ID); err != nil {
+	if _, err := svc.GetOrBuildPattern(context.Background(), agent.DaoAgentID); err != nil {
 		t.Fatalf("GetOrBuildPattern: %v", err)
 	}
 	if fakeSynth.calls != 1 {
@@ -390,7 +391,7 @@ func TestGetOrBuildPatternPillInputFromEffectSnapshot(t *testing.T) {
 	}}
 
 	svc := New(fakeAgent, fakeSynth, &fakeCreds{})
-	if _, err := svc.GetOrBuildPattern(context.Background(), agent.ID); err != nil {
+	if _, err := svc.GetOrBuildPattern(context.Background(), agent.DaoAgentID); err != nil {
 		t.Fatalf("GetOrBuildPattern: %v", err)
 	}
 
@@ -402,8 +403,8 @@ func TestGetOrBuildPatternPillInputFromEffectSnapshot(t *testing.T) {
 		t.Fatalf("pills=%d, want 1", len(got))
 	}
 	ef := agent.AgentPillEffects[0]
-	if got[0].ID != ef.Item.UUID.String() {
-		t.Errorf("PillInput.ID=%q, want 实例 UUID %q", got[0].ID, ef.Item.UUID.String())
+	if got[0].ID != ef.Item.PillItemID {
+		t.Errorf("PillInput.ID=%q, want 实例 UUID %q", got[0].ID, ef.Item.PillItemID)
 	}
 	if got[0].Name != ef.NameSnapshot {
 		t.Errorf("Name=%q, want 快照 %q", got[0].Name, ef.NameSnapshot)
@@ -430,7 +431,7 @@ func TestGetOrBuildPatternRevisionConflictRetries(t *testing.T) {
 		agent.EffectsRevision = 4
 		fp, _ := computeFingerprint(agent.Personality, buildPillInputs(agent))
 		agent.LanguagePattern = &model.LanguagePattern{
-			AgentID:           agent.ID,
+			AgentID:           agent.DaoAgentID,
 			SystemPrompt:      "并发服用后的新缓存",
 			BehaviorProfile:   model.JSONMap{"version": 1},
 			ProfileVersion:    behavior.ProfileVersion,
@@ -445,7 +446,7 @@ func TestGetOrBuildPatternRevisionConflictRetries(t *testing.T) {
 	}}
 
 	svc := New(fakeAgent, fakeSynth, &fakeCreds{})
-	got, err := svc.GetOrBuildPattern(context.Background(), agent.ID)
+	got, err := svc.GetOrBuildPattern(context.Background(), agent.DaoAgentID)
 	if err != nil {
 		t.Fatalf("GetOrBuildPattern: %v", err)
 	}
@@ -472,7 +473,7 @@ func TestGetOrBuildPatternRevisionConflictExhausted(t *testing.T) {
 	}}
 
 	svc := New(fakeAgent, fakeSynth, &fakeCreds{})
-	_, err := svc.GetOrBuildPattern(context.Background(), agent.ID)
+	_, err := svc.GetOrBuildPattern(context.Background(), agent.DaoAgentID)
 	if err == nil {
 		t.Fatal("持续冲突应返回错误")
 	}

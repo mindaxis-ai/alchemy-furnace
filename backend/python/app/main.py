@@ -103,13 +103,14 @@ async def global_exception_handler(request, exc):
 
 # ==================== 路由注册 ====================
 
-from app.api import chat, synthesis, quality, fusion, distillation
+from app.api import chat, synthesis, quality, fusion, distillation, orchestration
 
 app.include_router(synthesis.router, prefix="/api/v1")
 app.include_router(chat.router, prefix="/api/v1")
 app.include_router(quality.router, prefix="/api/v1")
 app.include_router(fusion.router, prefix="/api/v1")
 app.include_router(distillation.router, prefix="/api/v1")
+app.include_router(orchestration.router, prefix="/api/v1")
 
 # ==================== 根路由 ====================
 

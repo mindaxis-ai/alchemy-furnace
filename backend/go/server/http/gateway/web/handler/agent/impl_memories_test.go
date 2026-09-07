@@ -19,7 +19,6 @@ import (
 	"github.com/alchemy-furnace/server/internal/interface/service"
 	"github.com/alchemy-furnace/server/internal/service/agent_service"
 	"github.com/alchemy-furnace/server/internal/service/pill_inventory_service"
-	"github.com/alchemy-furnace/server/internal/service/turnpolicy"
 	"github.com/alchemy-furnace/server/model"
 	"github.com/alchemy-furnace/server/server/http/middleware"
 	"github.com/alchemy-furnace/server/server/http/router"
@@ -41,7 +40,7 @@ func newStubMemory() *stubMemory {
 	return &stubMemory{memories: make(map[string]*model.AgentMemory)}
 }
 
-func (s *stubMemory) ListMemories(_ context.Context, _ uint, kind string, onlyActive bool) ([]*model.AgentMemory, errors.Error) {
+func (s *stubMemory) ListMemories(_ context.Context, _ string, kind string, onlyActive bool) ([]*model.AgentMemory, errors.Error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.lastKind, s.lastAct = kind, onlyActive
@@ -55,7 +54,7 @@ func (s *stubMemory) ListMemories(_ context.Context, _ uint, kind string, onlyAc
 	return out, nil
 }
 
-func (s *stubMemory) CreateMemory(_ context.Context, agentID uint, in service.MemoryInput) (*model.AgentMemory, errors.Error) {
+func (s *stubMemory) CreateMemory(_ context.Context, agentUID string, in service.MemoryInput) (*model.AgentMemory, errors.Error) {
 	// 校验镜像真实 service 的 validateInput(创建语义: kind/content 必填)
 	switch in.Kind {
 	case "user_fact", "user_preference", "relationship", "open_loop", "episode":
@@ -68,13 +67,13 @@ func (s *stubMemory) CreateMemory(_ context.Context, agentID uint, in service.Me
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	m := &model.AgentMemory{
-		UUID:       uuid.New(),
-		AgentID:    agentID,
-		Kind:       in.Kind,
-		Content:    in.Content,
-		Importance: 3,
-		Confidence: 0.8,
-		Status:     "active",
+		AgentMemoryID: uuid.New().String(),
+		AgentID:       agentUID,
+		Kind:          in.Kind,
+		Content:       in.Content,
+		Importance:    3,
+		Confidence:    0.8,
+		Status:        "active",
 	}
 	if in.Importance != nil {
 		m.Importance = *in.Importance
@@ -88,11 +87,11 @@ func (s *stubMemory) CreateMemory(_ context.Context, agentID uint, in service.Me
 	for _, kw := range in.Keywords {
 		m.Keywords = append(m.Keywords, kw)
 	}
-	s.memories[m.UUID.String()] = m
+	s.memories[m.AgentMemoryID] = m
 	return m, nil
 }
 
-func (s *stubMemory) UpdateMemory(_ context.Context, _ uint, memoryUUID uuid.UUID, in service.MemoryInput) (*model.AgentMemory, errors.Error) {
+func (s *stubMemory) UpdateMemory(_ context.Context, _ string, memoryUUID uuid.UUID, in service.MemoryInput) (*model.AgentMemory, errors.Error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	m, ok := s.memories[memoryUUID.String()]
@@ -117,7 +116,7 @@ func (s *stubMemory) UpdateMemory(_ context.Context, _ uint, memoryUUID uuid.UUI
 	return m, nil
 }
 
-func (s *stubMemory) DeleteMemory(_ context.Context, _ uint, memoryUUID uuid.UUID) errors.Error {
+func (s *stubMemory) DeleteMemory(_ context.Context, _ string, memoryUUID uuid.UUID) errors.Error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.memories[memoryUUID.String()]; !ok {
@@ -127,7 +126,7 @@ func (s *stubMemory) DeleteMemory(_ context.Context, _ uint, memoryUUID uuid.UUI
 	return nil
 }
 
-func (s *stubMemory) ClearMemories(_ context.Context, _ uint) (int64, errors.Error) {
+func (s *stubMemory) ClearMemories(_ context.Context, _ string) (int64, errors.Error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	n := int64(len(s.memories))
@@ -135,12 +134,14 @@ func (s *stubMemory) ClearMemories(_ context.Context, _ uint) (int64, errors.Err
 	return n, nil
 }
 
-func (s *stubMemory) Retrieve(_ context.Context, _ uint, _ string) ([]turnpolicy.MemorySnippet, errors.Error) {
-	return []turnpolicy.MemorySnippet{{Kind: "user_fact", Content: "用户喜欢围棋"}}, nil
+func (s *stubMemory) Retrieve(_ context.Context, _ string, _ string) ([]service.MemorySnippet, errors.Error) {
+	return []service.MemorySnippet{{Kind: "user_fact", Content: "用户喜欢围棋"}}, nil
 }
 
-func (s *stubMemory) EnqueueDistillation(_ context.Context, _ service.DistillationSpec) bool { return true }
-func (s *stubMemory) Close()                                                                {}
+func (s *stubMemory) EnqueueDistillation(_ context.Context, _ service.DistillationSpec) bool {
+	return true
+}
+func (s *stubMemory) Close() {}
 
 // setupMemoryRouter 装配记忆路由(记忆 service 用桩,agent service 真实)+ PUT 道人路由
 func setupMemoryRouter(stub *stubMemory) *gin.Engine {
@@ -168,7 +169,7 @@ func seedMemoryAgent(t *testing.T, db *gorm.DB) string {
 	if err := db.Create(&agent).Error; err != nil {
 		t.Fatalf("创建测试道人失败: %v", err)
 	}
-	return agent.UUID.String()
+	return agent.DaoAgentID
 }
 
 // doJSON 发送任意方法 JSON 请求并解析响应包络
@@ -193,9 +194,9 @@ func createMemoryViaAPI(t *testing.T, r *gin.Engine, agentUUID, body string) str
 	if status != http.StatusCreated {
 		t.Fatalf("预置记忆失败: %d %v", status, envelope)
 	}
-	memUUID, _ := envelope["data"].(map[string]interface{})["uuid"].(string)
+	memUUID, _ := envelope["data"].(map[string]interface{})["id"].(string)
 	if memUUID == "" {
-		t.Fatalf("创建记忆响应缺 uuid: %v", envelope)
+		t.Fatalf("创建记忆响应缺 id: %v", envelope)
 	}
 	return memUUID
 }
@@ -208,9 +209,9 @@ func TestListMemories(t *testing.T) {
 	r := setupMemoryRouter(stub)
 	agentUUID := seedMemoryAgent(t, db)
 
-	m := &model.AgentMemory{UUID: uuid.New(), Kind: "user_fact", Content: "用户喜欢围棋", Status: "active"}
+	m := &model.AgentMemory{AgentMemoryID: uuid.New().String(), Kind: "user_fact", Content: "用户喜欢围棋", Status: "active"}
 	stub.mu.Lock()
-	stub.memories[m.UUID.String()] = m
+	stub.memories[m.AgentMemoryID] = m
 	stub.mu.Unlock()
 
 	status, envelope := doJSON(t, r, http.MethodGet, "/api/v1/agents/"+agentUUID+"/memories", "")
@@ -222,7 +223,7 @@ func TestListMemories(t *testing.T) {
 		t.Fatalf("data 应为 1 条记忆数组: %v", envelope["data"])
 	}
 	item := list[0].(map[string]interface{})
-	if item["uuid"] != m.UUID.String() || item["kind"] != "user_fact" || item["content"] != "用户喜欢围棋" {
+	if item["id"] != m.AgentMemoryID || item["kind"] != "user_fact" || item["content"] != "用户喜欢围棋" {
 		t.Fatalf("列表字段缺失: %v", item)
 	}
 	if _, ok := item["importance"]; !ok {
@@ -270,7 +271,7 @@ func TestCreateMemory(t *testing.T) {
 		t.Fatalf("创建记忆期望 201, 实际 %d, body: %v", status, envelope)
 	}
 	data := envelope["data"].(map[string]interface{})
-	if data["uuid"] == nil || data["content"] != "用户喜欢围棋" || data["kind"] != "user_fact" {
+	if data["id"] == nil || data["content"] != "用户喜欢围棋" || data["kind"] != "user_fact" {
 		t.Fatalf("创建响应字段缺失: %v", data)
 	}
 	if len(stub.memories) != 1 {
@@ -394,7 +395,7 @@ func TestUpdateAgentMemoryEnabled(t *testing.T) {
 
 	// 落库验证
 	var agent model.DaoAgent
-	if err := dao.DB.Where("uuid = ?", uid).First(&agent).Error; err != nil {
+	if err := dao.DB.Where("dao_agent_id = ?", uid).First(&agent).Error; err != nil {
 		t.Fatalf("查询道人失败: %v", err)
 	}
 	if agent.MemoryEnabled {

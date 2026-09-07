@@ -185,10 +185,8 @@ func TestSkillExport_RequiresExactlyOneTarget(t *testing.T) {
 
 	for _, input := range []*distillation.SkillExportInput{
 		{Format: "codex"},
-		{PillID: "550e8400-e29b-41d4-a716-446655440000", Skill: validExportSkill(), Format: "codex"},
+		{RevisionID: "550e8400-e29b-41d4-a716-446655440002", Format: "codex"},
 		{RecipeID: "550e8400-e29b-41d4-a716-446655440001", Skill: validExportSkill(), Format: "codex"},
-		{RecipeID: "550e8400-e29b-41d4-a716-446655440001", RevisionID: "550e8400-e29b-41d4-a716-446655440002",
-			PillID: "550e8400-e29b-41d4-a716-446655440003", Format: "codex"},
 	} {
 		_, appErr := service.SkillExport(context.Background(), input)
 		if appErr == nil || !appErr.IsType(appErrors.ErrorTypeInvalidRequest) {
@@ -296,70 +294,76 @@ func TestSkillExport_MapsRemoteInvalidTo400WithPublicCode(t *testing.T) {
 	}
 }
 
-// fakeInventory 最小 stub：仅实现导出路径所需方法(GetRecipe/GetRecipeRevision/ResolveLegacy)，
-// 其余接口方法在本测试不触达。legacyPill 保存旧 pill ID → 丹方 UUID 的映射。
+// fakeInventory 最小 stub：仅实现导出路径所需方法(GetRecipe/GetRecipeRevision)，
+// 其余接口方法在本测试不触达。
 type fakeInventory struct {
-	recipe     *model.PillRecipe
-	revision   *model.PillRecipeRevision
-	otherRev   *model.PillRecipeRevision // 属于其他丹方的版本(归属校验用)
-	legacyPill map[string]uuid.UUID      // 旧 pill ID → 丹方 UUID
+	recipe   *model.PillRecipe
+	revision *model.PillRecipeRevision
+	otherRev *model.PillRecipeRevision // 属于其他丹方的版本(归属校验用)
 }
 
 func (f *fakeInventory) GetRecipe(_ context.Context, uid uuid.UUID) (*model.PillRecipe, *model.PillRecipeRevision, appErrors.Error) {
-	if f.recipe == nil || f.recipe.UUID != uid {
+	if f.recipe == nil || f.recipe.PillRecipeID != uid.String() {
 		return nil, nil, appErrors.ErrorRecordNotFound("fake.recipe")
 	}
 	return f.recipe, f.revision, nil
 }
 
 func (f *fakeInventory) GetRecipeRevision(_ context.Context, recipeID, revisionID uuid.UUID) (*model.PillRecipeRevision, appErrors.Error) {
-	if f.revision != nil && f.revision.UUID == revisionID && recipeID == f.recipe.UUID {
+	if f.revision != nil && f.revision.PillRecipeRevisionID == revisionID.String() && recipeID.String() == f.recipe.PillRecipeID {
 		return f.revision, nil
 	}
-	if f.otherRev != nil && f.otherRev.UUID == revisionID && recipeID != f.recipe.UUID {
+	if f.otherRev != nil && f.otherRev.PillRecipeRevisionID == revisionID.String() && recipeID.String() != f.recipe.PillRecipeID {
 		return nil, appErrors.ErrorRecordNotFound("fake.revision_not_of_recipe")
 	}
 	return nil, appErrors.ErrorRecordNotFound("fake.revision")
 }
 
-func (f *fakeInventory) ResolveLegacy(_ context.Context, kind, legacyID string) (uuid.UUID, appErrors.Error) {
-	if kind != "pill" {
-		return uuid.Nil, appErrors.New(appErrors.ErrorTypeInvalidRequest, "pill.invalid_legacy_kind", "未知旧实体类型")
-	}
-	if uid, ok := f.legacyPill[legacyID]; ok {
-		return uid, nil
-	}
-	return uuid.Nil, appErrors.ErrorRecordNotFound("pill.legacy_not_found")
+func (f *fakeInventory) SaveRecipe(context.Context, service.SaveRecipeRequest) (*service.PillOperationResult, appErrors.Error) {
+	panic("unused")
+}
+func (f *fakeInventory) CraftOne(context.Context, service.CraftPillRequest) (*service.PillOperationResult, appErrors.Error) {
+	panic("unused")
+}
+func (f *fakeInventory) Consume(context.Context, service.ConsumePillRequest) (*service.PillOperationResult, appErrors.Error) {
+	panic("unused")
+}
+func (f *fakeInventory) ConfirmFusion(context.Context, service.ConfirmFusionRequest) (*service.PillOperationResult, appErrors.Error) {
+	panic("unused")
+}
+func (f *fakeInventory) GetOperation(context.Context, uuid.UUID) (*service.PillOperationResult, appErrors.Error) {
+	panic("unused")
+}
+func (f *fakeInventory) UpdateRecipe(context.Context, service.UpdateRecipeRequest) (*service.PillOperationResult, appErrors.Error) {
+	panic("unused")
+}
+func (f *fakeInventory) ArchiveRecipe(context.Context, service.ArchiveRecipeRequest) appErrors.Error {
+	panic("unused")
+}
+func (f *fakeInventory) DiscardItem(context.Context, service.DiscardItemRequest) appErrors.Error {
+	panic("unused")
+}
+func (f *fakeInventory) ListRecipes(context.Context, int, int, string, bool) (int64, []service.RecipeListItem, map[string]int64, appErrors.Error) {
+	panic("unused")
+}
+func (f *fakeInventory) ListItems(context.Context, int, int, *uuid.UUID) (int64, []service.ItemListItem, appErrors.Error) {
+	panic("unused")
+}
+func (f *fakeInventory) GetItem(context.Context, uuid.UUID) (*service.ItemDetail, appErrors.Error) {
+	panic("unused")
 }
 
-func (f *fakeInventory) SaveRecipe(context.Context, service.SaveRecipeRequest) (*service.PillOperationResult, appErrors.Error) { panic("unused") }
-func (f *fakeInventory) CraftOne(context.Context, service.CraftPillRequest) (*service.PillOperationResult, appErrors.Error) { panic("unused") }
-func (f *fakeInventory) Consume(context.Context, service.ConsumePillRequest) (*service.PillOperationResult, appErrors.Error) { panic("unused") }
-func (f *fakeInventory) ConfirmFusion(context.Context, service.ConfirmFusionRequest) (*service.PillOperationResult, appErrors.Error) { panic("unused") }
-func (f *fakeInventory) GetOperation(context.Context, uuid.UUID) (*service.PillOperationResult, appErrors.Error) { panic("unused") }
-func (f *fakeInventory) UpdateRecipe(context.Context, service.UpdateRecipeRequest) (*service.PillOperationResult, appErrors.Error) { panic("unused") }
-func (f *fakeInventory) ArchiveRecipe(context.Context, service.ArchiveRecipeRequest) appErrors.Error { panic("unused") }
-func (f *fakeInventory) DiscardItem(context.Context, service.DiscardItemRequest) appErrors.Error { panic("unused") }
-func (f *fakeInventory) ListRecipes(context.Context, int, int, string, bool) (int64, []service.RecipeListItem, map[uint]int64, appErrors.Error) { panic("unused") }
-func (f *fakeInventory) ListItems(context.Context, int, int, *uuid.UUID) (int64, []service.ItemListItem, appErrors.Error) { panic("unused") }
-func (f *fakeInventory) GetItem(context.Context, uuid.UUID) (*service.ItemDetail, appErrors.Error) { panic("unused") }
-func (f *fakeInventory) MigrationSummary(context.Context) (*service.MigrationSummary, appErrors.Error) { panic("unused") }
-
-// pill_id 模式投影必须把空来源序列化为 [] 而非 null:
+// recipe 模式投影必须把空来源序列化为 [] 而非 null:
 // Go nil slice → JSON null → Python Pydantic sources: List 校验失败 422
 // (2026-08-28 桌面验收报错 list_type@body.sources 的回归防线)
-func TestSkillExport_PillIDModeNeverSendsNullSources(t *testing.T) {
+func TestSkillExport_RecipeModeNeverSendsNullSources(t *testing.T) {
 	client := &fakeClient{}
 	recipe, rev := fakeRecipeAndRevision()
-	service := New(client, fakeResolver{}, &fakeInventory{
-		recipe:     recipe,
-		revision:   rev,
-		legacyPill: map[string]uuid.UUID{"550e8400-e29b-41d4-a716-446655440000": recipe.UUID},
-	})
+	service := New(client, fakeResolver{}, &fakeInventory{recipe: recipe, revision: rev})
 
 	_, appErr := service.SkillExport(context.Background(), &distillation.SkillExportInput{
-		PillID: "550e8400-e29b-41d4-a716-446655440000",
-		Format: "codex",
+		RecipeID: recipe.PillRecipeID,
+		Format:   "codex",
 	})
 	if appErr != nil {
 		t.Fatalf("unexpected error = %#v", appErr)
@@ -382,21 +386,21 @@ func TestSkillExport_PillIDModeNeverSendsNullSources(t *testing.T) {
 	}
 }
 
-
 // fakeRecipeAndRevision 构造测试用丹方与当前版本(不可变)
 func fakeRecipeAndRevision() (*model.PillRecipe, *model.PillRecipeRevision) {
-	recipe := &model.PillRecipe{UUID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440001")}
+	recipe := &model.PillRecipe{PillRecipeID: "550e8400-e29b-41d4-a716-446655440001"}
 	rev := &model.PillRecipeRevision{
-		UUID:        uuid.MustParse("550e8400-e29b-41d4-a716-446655440010"),
-		RecipeID:    recipe.ID,
-		Revision:    1,
-		Name:        "结构化金丹",
-		Description: "一份结构化的语言风格技能包",
-		SkillSchema: model.JSONMap{"identity_card": "我是金丹"},
-		Tags:        model.JSONList{"语言"},
-		CreatedAt:   time.Date(2026, 8, 27, 10, 0, 0, 0, time.UTC),
+		PillRecipeRevisionID: "550e8400-e29b-41d4-a716-446655440010",
+		RecipeID:             recipe.PillRecipeID,
+		Revision:             1,
+		Name:                 "结构化金丹",
+		Description:          "一份结构化的语言风格技能包",
+		SkillSchema:          model.JSONMap{"identity_card": "我是金丹"},
+		Tags:                 model.JSONList{"语言"},
+		Base:                 model.Base{CreatedAt: time.Date(2026, 8, 27, 10, 0, 0, 0, time.UTC)},
 	}
-	recipe.CurrentRevisionID = &rev.ID
+	revUID := rev.PillRecipeRevisionID
+	recipe.CurrentRevisionID = &revUID
 	return recipe, rev
 }
 
@@ -407,7 +411,7 @@ func TestSkillExport_RecipeIDExportsCurrentRevision(t *testing.T) {
 	service := New(client, fakeResolver{}, &fakeInventory{recipe: recipe, revision: rev})
 
 	result, appErr := service.SkillExport(context.Background(), &distillation.SkillExportInput{
-		RecipeID: recipe.UUID.String(),
+		RecipeID: recipe.PillRecipeID,
 		Format:   "codex",
 	})
 	if appErr != nil || result == nil {
@@ -438,8 +442,8 @@ func TestSkillExport_RevisionIDExportsSpecifiedRevision(t *testing.T) {
 	service := New(client, fakeResolver{}, &fakeInventory{recipe: recipe, revision: rev})
 
 	_, appErr := service.SkillExport(context.Background(), &distillation.SkillExportInput{
-		RecipeID:   recipe.UUID.String(),
-		RevisionID: rev.UUID.String(),
+		RecipeID:   recipe.PillRecipeID,
+		RevisionID: rev.PillRecipeRevisionID,
 		Format:     "codex",
 	})
 	if appErr != nil {
@@ -455,16 +459,16 @@ func TestSkillExport_RevisionOfOtherRecipe404(t *testing.T) {
 	client := &fakeClient{}
 	recipe, rev := fakeRecipeAndRevision()
 	other := &model.PillRecipeRevision{
-		UUID:     uuid.New(),
-		RecipeID: recipe.ID + 100, // 另一个丹方的内部 ID
-		Revision: 2,
-		Name:     "别人家的丹",
+		PillRecipeRevisionID: uuid.New().String(),
+		RecipeID:             uuid.New().String(), // 另一个丹方的 UUID 文本
+		Revision:             2,
+		Name:                 "别人家的丹",
 	}
 	service := New(client, fakeResolver{}, &fakeInventory{recipe: recipe, revision: rev, otherRev: other})
 
 	_, appErr := service.SkillExport(context.Background(), &distillation.SkillExportInput{
-		RecipeID:   recipe.UUID.String(),
-		RevisionID: other.UUID.String(),
+		RecipeID:   recipe.PillRecipeID,
+		RevisionID: other.PillRecipeRevisionID,
 		Format:     "codex",
 	})
 	if appErr == nil || !appErr.IsType(appErrors.ErrorTypeRecordNotFound) {
@@ -472,49 +476,6 @@ func TestSkillExport_RevisionOfOtherRecipe404(t *testing.T) {
 	}
 	if client.exportCalled {
 		t.Fatal("归属不符不应调用 client")
-	}
-}
-
-// TestSkillExport_LegacyPillIDResolvedViaMap 旧 pill ID → LegacyMap → 丹方 → 当前版本
-func TestSkillExport_LegacyPillIDResolvedViaMap(t *testing.T) {
-	client := &fakeClient{exportResult: &distillation.ExportResult{Filename: "x.zip", Content: []byte("PK")}}
-	recipe, rev := fakeRecipeAndRevision()
-	service := New(client, fakeResolver{}, &fakeInventory{
-		recipe:     recipe,
-		revision:   rev,
-		legacyPill: map[string]uuid.UUID{"550e8400-e29b-41d4-a716-446655440000": recipe.UUID},
-	})
-
-	_, appErr := service.SkillExport(context.Background(), &distillation.SkillExportInput{
-		PillID: "550e8400-e29b-41d4-a716-446655440000",
-		Format: "codex",
-	})
-	if appErr != nil {
-		t.Fatalf("error = %#v", appErr)
-	}
-	if !client.exportCalled || client.exportSkill.Name != "结构化金丹" {
-		t.Fatalf("client skill = %+v", client.exportSkill)
-	}
-}
-
-// TestSkillExport_LegacyPillIDUnmapped404 旧 pill ID 无映射 → 404 pill.legacy_not_found,
-// 不读取可用库存,不调用 client
-func TestSkillExport_LegacyPillIDUnmapped404(t *testing.T) {
-	client := &fakeClient{}
-	service := New(client, fakeResolver{}, &fakeInventory{})
-
-	_, appErr := service.SkillExport(context.Background(), &distillation.SkillExportInput{
-		PillID: "550e8400-e29b-41d4-a716-446655440000",
-		Format: "codex",
-	})
-	if appErr == nil || !appErr.IsType(appErrors.ErrorTypeRecordNotFound) {
-		t.Fatalf("error = %#v, want ErrorTypeRecordNotFound", appErr)
-	}
-	if appErr.GetCode() != "pill.legacy_not_found" {
-		t.Fatalf("code = %q, want pill.legacy_not_found", appErr.GetCode())
-	}
-	if client.exportCalled {
-		t.Fatal("无映射不应调用 client")
 	}
 }
 

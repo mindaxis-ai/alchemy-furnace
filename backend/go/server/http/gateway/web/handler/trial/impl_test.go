@@ -39,15 +39,6 @@ func TestParsePillInputs(t *testing.T) {
 		errCode string
 	}{
 		{
-			name:  "旧金丹 pill_id",
-			input: PillInput{PillID: goodUUID, Weight: 2.0, SortOrder: 3},
-			want: func(t *testing.T, item iservice.TrialPillInput) {
-				if item.PillID.String() != goodUUID || item.Weight != 2.0 || item.SortOrder != 3 {
-					t.Fatalf("解析错误: %+v", item)
-				}
-			},
-		},
-		{
 			name:  "丹方 recipe_id",
 			input: PillInput{RecipeID: goodUUID},
 			want: func(t *testing.T, item iservice.TrialPillInput) {
@@ -75,9 +66,8 @@ func TestParsePillInputs(t *testing.T) {
 			},
 		},
 		{name: "无目标", input: PillInput{}, errCode: "handler.trial.input_target"},
-		{name: "双重目标", input: PillInput{PillID: goodUUID, RecipeID: goodUUID}, errCode: "handler.trial.input_target"},
+		{name: "双重目标", input: PillInput{RecipeID: goodUUID, Name: "草稿", SkillSchema: model.JSONMap{"identity_card": "x"}}, errCode: "handler.trial.input_target"},
 		{name: "版本无丹方", input: PillInput{RevisionID: goodUUID}, errCode: "handler.trial.revision_requires_recipe"},
-		{name: "非法 pill_id", input: PillInput{PillID: "not-a-uuid"}, errCode: "handler.trial.pill_id_parse"},
 		{name: "非法 recipe_id", input: PillInput{RecipeID: "not-a-uuid"}, errCode: "handler.trial.recipe_id_parse"},
 		{name: "非法 revision_id", input: PillInput{RecipeID: goodUUID, RevisionID: "not-a-uuid"}, errCode: "handler.trial.revision_id_parse"},
 		{name: "草稿缺 schema", input: PillInput{Name: "只有名字"}, errCode: "handler.trial.draft_invalid"},
@@ -119,9 +109,9 @@ func setupTrialTestDB(t *testing.T) *gorm.DB {
 	}
 	sqlDB.SetMaxOpenConns(1)
 	if err := db.AutoMigrate(
-		&model.PillRecipe{}, &model.PillRecipeRevision{}, &model.PillLegacyMap{},
+		&model.PillRecipe{}, &model.PillRecipeRevision{},
 		&model.PillItem{}, &model.AgentPillEffect{}, &model.PillOperation{},
-		&model.FusionPreview{}, &model.PillMigrationState{}, &model.PillStarterGrant{},
+		&model.FusionPreview{}, &model.PillStarterGrant{},
 	); err != nil {
 		t.Fatalf("迁移测试表失败: %v", err)
 	}
@@ -168,7 +158,7 @@ func seedTrialRecipe(t *testing.T, db *gorm.DB, n int) (model.PillRecipe, []mode
 	revs := make([]model.PillRecipeRevision, 0, n)
 	for i := 1; i <= n; i++ {
 		rev := model.PillRecipeRevision{
-			RecipeID:    recipe.ID,
+			RecipeID:    recipe.PillRecipeID,
 			Revision:    i,
 			Name:        fmt.Sprintf("丹方 v%d", i),
 			Description: fmt.Sprintf("第 %d 版简介", i),
@@ -181,7 +171,7 @@ func seedTrialRecipe(t *testing.T, db *gorm.DB, n int) (model.PillRecipe, []mode
 		revs = append(revs, rev)
 	}
 	latest := revs[len(revs)-1]
-	if err := db.Model(&recipe).Update("current_revision_id", latest.ID).Error; err != nil {
+	if err := db.Model(&recipe).Update("current_revision_id", latest.PillRecipeRevisionID).Error; err != nil {
 		t.Fatalf("指向当前版本失败: %v", err)
 	}
 	return recipe, revs
@@ -202,7 +192,7 @@ func TestSynthesizeRoute_RecipeMode(t *testing.T) {
 	recipe, revs := seedTrialRecipe(t, db, 2)
 	r, fake := setupTrialRouter(db, &fakeTrialSynth{})
 
-	body := fmt.Sprintf(`{"personality":"沉稳内敛","pills":[{"recipe_id":%q}]}`, recipe.UUID.String())
+	body := fmt.Sprintf(`{"personality":"沉稳内敛","pills":[{"recipe_id":%q}]}`, recipe.PillRecipeID)
 	status, raw := postTrialSynthesis(t, r, body)
 
 	if status != http.StatusOK {
@@ -219,7 +209,7 @@ func TestSynthesizeRoute_RecipeMode(t *testing.T) {
 	if !bytes.Contains([]byte(envelope.Data.SystemPrompt), []byte("我是v2")) {
 		t.Errorf("应取当前版本 v2: %q", envelope.Data.SystemPrompt)
 	}
-	if len(fake.received) != 1 || fake.received[0].ID != revs[1].UUID.String() {
+	if len(fake.received) != 1 || fake.received[0].ID != revs[1].PillRecipeRevisionID {
 		t.Fatalf("透传给合成引擎的输入错误: %+v", fake.received)
 	}
 }
@@ -231,13 +221,13 @@ func TestSynthesizeRoute_RevisionMode(t *testing.T) {
 	r, fake := setupTrialRouter(db, &fakeTrialSynth{})
 
 	body := fmt.Sprintf(`{"personality":"沉稳内敛","pills":[{"recipe_id":%q,"revision_id":%q}]}`,
-		recipe.UUID.String(), revs[0].UUID.String())
+		recipe.PillRecipeID, revs[0].PillRecipeRevisionID)
 	status, raw := postTrialSynthesis(t, r, body)
 
 	if status != http.StatusOK {
 		t.Fatalf("期望 200, 实际 %d, body=%s", status, raw)
 	}
-	if fake.received[0].ID != revs[0].UUID.String() {
+	if fake.received[0].ID != revs[0].PillRecipeRevisionID {
 		t.Fatalf("应引用指定版本 v1: %+v", fake.received)
 	}
 }
@@ -269,7 +259,7 @@ func TestSynthesizeRoute_InvalidTarget(t *testing.T) {
 	db := setupTrialTestDB(t)
 	r, _ := setupTrialRouter(db, &fakeTrialSynth{})
 
-	body := fmt.Sprintf(`{"personality":"沉稳内敛","pills":[{"pill_id":%q,"recipe_id":%q}]}`, uuid.NewString(), uuid.NewString())
+	body := fmt.Sprintf(`{"personality":"沉稳内敛","pills":[{"recipe_id":%q,"name":"草稿","skill_schema":{"identity_card":"x"}}]}`, uuid.NewString())
 	status, raw := postTrialSynthesis(t, r, body)
 
 	if status != http.StatusBadRequest {
@@ -286,17 +276,10 @@ func TestSynthesizeRoute_InvalidTarget(t *testing.T) {
 func TestSynthesizeRoute_DoesNotConsume(t *testing.T) {
 	db := setupTrialTestDB(t)
 	recipe, _ := seedTrialRecipe(t, db, 1)
-	legacyID := "550e8400-e29b-41d4-a716-446655440000"
-	if err := db.Create(&model.PillLegacyMap{
-		LegacyKind: "pill", LegacyID: legacyID, TargetUUID: recipe.UUID,
-	}).Error; err != nil {
-		t.Fatalf("建旧映射失败: %v", err)
-	}
 	r, _ := setupTrialRouter(db, &fakeTrialSynth{})
 
 	bodies := []string{
-		fmt.Sprintf(`{"personality":"沉稳内敛","pills":[{"recipe_id":%q}]}`, recipe.UUID.String()),
-		fmt.Sprintf(`{"personality":"沉稳内敛","pills":[{"pill_id":%q}]}`, legacyID),
+		fmt.Sprintf(`{"personality":"沉稳内敛","pills":[{"recipe_id":%q}]}`, recipe.PillRecipeID),
 		`{"personality":"沉稳内敛","pills":[{"name":"草稿","skill_schema":{"identity_card":"x"}}]}`,
 	}
 	for _, body := range bodies {
@@ -313,18 +296,5 @@ func TestSynthesizeRoute_DoesNotConsume(t *testing.T) {
 		if count != 0 {
 			t.Errorf("试丹不得写 %T,实际 %d 行", m, count)
 		}
-	}
-}
-
-// TestSynthesizeRoute_LegacyPillUnmapped 旧 pill_id 无映射 → 404(试丹不猜测内容)
-func TestSynthesizeRoute_LegacyPillUnmapped(t *testing.T) {
-	db := setupTrialTestDB(t)
-	r, _ := setupTrialRouter(db, &fakeTrialSynth{})
-
-	body := fmt.Sprintf(`{"personality":"沉稳内敛","pills":[{"pill_id":%q}]}`, uuid.NewString())
-	status, raw := postTrialSynthesis(t, r, body)
-
-	if status != http.StatusNotFound {
-		t.Fatalf("期望 404, 实际 %d, body=%s", status, raw)
 	}
 }

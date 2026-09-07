@@ -43,7 +43,7 @@ func setupAvatarDB(t *testing.T) *gorm.DB {
 	if err := db.Create(&provider).Error; err != nil {
 		t.Fatalf("创建测试供应商失败: %v", err)
 	}
-	m := model.LLMModel{ProviderID: provider.ID, Name: "gpt-4o", DisplayName: "GPT-4o", IsEnabled: true}
+	m := model.LLMModel{ProviderID: provider.LLMProviderID, Name: "gpt-4o", DisplayName: "GPT-4o", IsEnabled: true}
 	if err := db.Create(&m).Error; err != nil {
 		t.Fatalf("创建默认模型失败: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestCreateAgent_AvatarEmptyValid(t *testing.T) {
 	r := setupAvatarRouter()
 	uid := createAvatarAgent(t, r, "")
 	var agent model.DaoAgent
-	if err := dao.DB.Where("uuid = ?", uid).First(&agent).Error; err != nil {
+	if err := dao.DB.Where("dao_agent_id = ?", uid).First(&agent).Error; err != nil {
 		t.Fatalf("查询道人失败: %v", err)
 	}
 	if agent.Avatar != "" {

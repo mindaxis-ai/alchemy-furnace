@@ -38,9 +38,9 @@ func TestConflictWithDataEmission(t *testing.T) {
 	}
 
 	var body struct {
-		Code int               `json:"code"`
-		Msg  string            `json:"message"`
-		Data map[string]int64  `json:"data"`
+		Code int              `json:"code"`
+		Msg  string           `json:"message"`
+		Data map[string]int64 `json:"data"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("unmarshal response: %v (body=%s)", err, w.Body.String())

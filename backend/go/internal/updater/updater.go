@@ -50,6 +50,10 @@ type Asset struct {
 // https://api.github.com/repos/<UpdateRepo>/releases/latest
 // 字段映射: tag_name→Version, body→Notes, html_url→PageURL, assets[]→Assets
 func CheckLatest(ctx context.Context) (*ReleaseInfo, error) {
+	// 本地 dev 等非语义化版本无法安全参与版本比较，即使打包脚本配置了更新源也应禁用。
+	if normalizeVersion(buildinfo.Version) == "" {
+		return nil, ErrUpdateDisabled
+	}
 	repo := buildinfo.UpdateRepo
 	if repo == "" {
 		return nil, ErrUpdateDisabled
@@ -103,20 +107,7 @@ func CheckLatest(ctx context.Context) (*ReleaseInfo, error) {
 //
 // semver 要求版本前有 v(自动补);含 pre/- 的版本视为 prerelease,不推
 func IsNewer(latest, current string) bool {
-	normalize := func(v string) string {
-		v = strings.TrimSpace(v)
-		if v == "" {
-			return ""
-		}
-		if !strings.HasPrefix(v, "v") {
-			v = "v" + v
-		}
-		if !semver.IsValid(v) {
-			return ""
-		}
-		return v
-	}
-	l, c := normalize(latest), normalize(current)
+	l, c := normalizeVersion(latest), normalizeVersion(current)
 	if l == "" || c == "" {
 		return false
 	}
@@ -125,6 +116,20 @@ func IsNewer(latest, current string) bool {
 		return false
 	}
 	return semver.Compare(l, c) > 0
+}
+
+func normalizeVersion(v string) string {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return ""
+	}
+	if !strings.HasPrefix(v, "v") {
+		v = "v" + v
+	}
+	if !semver.IsValid(v) {
+		return ""
+	}
+	return v
 }
 
 // SelectAsset 根据平台选资产

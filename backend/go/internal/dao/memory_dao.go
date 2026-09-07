@@ -1,4 +1,4 @@
-// Package dao 道人数据访问实现(新架构 internal 分层;UUID 边界在此解析,内部联结仍用自增 ID)
+// Package dao 道人数据访问实现(新架构 internal 分层;业务主键统一 uuid 文本,对外标识解析在此完成)
 package dao
 
 import (
@@ -20,7 +20,7 @@ func NewMemoryDao() *MemoryDao {
 }
 
 // ListMemories 按道人列出记忆(kind 为空不过滤;onlyActive=true 仅 active),新近优先
-func (d *MemoryDao) ListMemories(ctx context.Context, agentID uint, kind string, onlyActive bool) ([]*model.AgentMemory, errors.Error) {
+func (d *MemoryDao) ListMemories(ctx context.Context, agentID string, kind string, onlyActive bool) ([]*model.AgentMemory, errors.Error) {
 	db := GetDB().WithContext(ctx).Model(&model.AgentMemory{}).Where("agent_id = ?", agentID)
 	if kind != "" {
 		db = db.Where("kind = ?", kind)
@@ -35,10 +35,10 @@ func (d *MemoryDao) ListMemories(ctx context.Context, agentID uint, kind string,
 	return list, nil
 }
 
-// GetMemory 按内部自增 ID 查询记忆
-func (d *MemoryDao) GetMemory(ctx context.Context, id uint) (*model.AgentMemory, errors.Error) {
+// GetMemory 按记忆 UUID 文本查询记忆(011 业务键,列 agent_memories.agent_memory_id)
+func (d *MemoryDao) GetMemory(ctx context.Context, memoryUID string) (*model.AgentMemory, errors.Error) {
 	var m model.AgentMemory
-	if err := GetDB().WithContext(ctx).Where("id = ?", id).First(&m).Error; err != nil {
+	if err := GetDB().WithContext(ctx).Where("agent_memory_id = ?", memoryUID).First(&m).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, errors.ErrorRecordNotFound("dao.memory.get_memory")
 		}
@@ -50,7 +50,7 @@ func (d *MemoryDao) GetMemory(ctx context.Context, id uint) (*model.AgentMemory,
 // TakeMemoryByUUID 按对外 UUID 查询记忆
 func (d *MemoryDao) TakeMemoryByUUID(ctx context.Context, uid uuid.UUID) (*model.AgentMemory, errors.Error) {
 	var m model.AgentMemory
-	if err := GetDB().WithContext(ctx).Where("uuid = ?", uid.String()).First(&m).Error; err != nil {
+	if err := GetDB().WithContext(ctx).Where("agent_memory_id = ?", uid.String()).First(&m).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, errors.ErrorRecordNotFound("dao.memory.take_by_uuid")
 		}
@@ -75,17 +75,17 @@ func (d *MemoryDao) UpdateMemory(ctx context.Context, m *model.AgentMemory) erro
 	return nil
 }
 
-// DeleteMemory 物理删除单条记忆(spec §10.2:用户删除=物理删除)
-func (d *MemoryDao) DeleteMemory(ctx context.Context, id uint) errors.Error {
-	if err := GetDB().WithContext(ctx).Delete(&model.AgentMemory{}, id).Error; err != nil {
+// DeleteMemory 物理删除单条记忆(spec §10.2:用户删除=物理删除);memoryUID 为记忆 UUID 文本
+func (d *MemoryDao) DeleteMemory(ctx context.Context, memoryUID string) errors.Error {
+	if err := GetDB().WithContext(ctx).Where("agent_memory_id = ?", memoryUID).Delete(&model.AgentMemory{}).Error; err != nil {
 		return errors.ErrorServerInternalError("dao.memory.delete_memory")
 	}
 	return nil
 }
 
-// DeleteMemoriesByAgent 物理清空道人全部记忆
-func (d *MemoryDao) DeleteMemoriesByAgent(ctx context.Context, agentID uint) (int64, errors.Error) {
-	result := GetDB().WithContext(ctx).Where("agent_id = ?", agentID).Delete(&model.AgentMemory{})
+// DeleteMemoriesByAgent 物理清空道人全部记忆(spec §10.2,Unscoped 不走 gorm 软删)
+func (d *MemoryDao) DeleteMemoriesByAgent(ctx context.Context, agentID string) (int64, errors.Error) {
+	result := GetDB().WithContext(ctx).Where("agent_id = ?", agentID).Unscoped().Delete(&model.AgentMemory{})
 	if result.Error != nil {
 		return 0, errors.ErrorServerInternalError("dao.memory.delete_by_agent")
 	}
@@ -93,7 +93,7 @@ func (d *MemoryDao) DeleteMemoriesByAgent(ctx context.Context, agentID uint) (in
 }
 
 // FindActiveByContentHash 按内容哈希查 active 记忆(无命中返回 nil,nil)
-func (d *MemoryDao) FindActiveByContentHash(ctx context.Context, agentID uint, hash string) (*model.AgentMemory, errors.Error) {
+func (d *MemoryDao) FindActiveByContentHash(ctx context.Context, agentID string, hash string) (*model.AgentMemory, errors.Error) {
 	var m model.AgentMemory
 	if err := GetDB().WithContext(ctx).
 		Where("agent_id = ? AND content_hash = ? AND status = ?", agentID, hash, "active").
@@ -106,20 +106,20 @@ func (d *MemoryDao) FindActiveByContentHash(ctx context.Context, agentID uint, h
 	return &m, nil
 }
 
-// SupersedeMemory 将记忆置为 superseded(冲突置替,spec §10.2)
-func (d *MemoryDao) SupersedeMemory(ctx context.Context, id uint) errors.Error {
+// SupersedeMemory 将记忆置为 superseded(冲突置替,spec §10.2);memoryUID 为记忆 UUID 文本
+func (d *MemoryDao) SupersedeMemory(ctx context.Context, memoryUID string) errors.Error {
 	if err := GetDB().WithContext(ctx).Model(&model.AgentMemory{}).
-		Where("id = ?", id).
+		Where("agent_memory_id = ?", memoryUID).
 		Update("status", "superseded").Error; err != nil {
 		return errors.ErrorServerInternalError("dao.memory.supersede")
 	}
 	return nil
 }
 
-// TouchMemory 更新最近检索时间(LastAccessedAt)
-func (d *MemoryDao) TouchMemory(ctx context.Context, id uint) errors.Error {
+// TouchMemory 更新最近检索时间(LastAccessedAt);memoryUID 为记忆 UUID 文本
+func (d *MemoryDao) TouchMemory(ctx context.Context, memoryUID string) errors.Error {
 	if err := GetDB().WithContext(ctx).Model(&model.AgentMemory{}).
-		Where("id = ?", id).
+		Where("agent_memory_id = ?", memoryUID).
 		Update("last_accessed_at", time.Now()).Error; err != nil {
 		return errors.ErrorServerInternalError("dao.memory.touch")
 	}

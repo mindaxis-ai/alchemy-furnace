@@ -20,7 +20,6 @@ import (
 	"github.com/alchemy-furnace/server/internal/interface/dao"
 	"github.com/alchemy-furnace/server/internal/interface/service"
 	"github.com/alchemy-furnace/server/internal/service/credential"
-	"github.com/alchemy-furnace/server/internal/service/turnpolicy"
 	"github.com/alchemy-furnace/server/model"
 )
 
@@ -67,18 +66,18 @@ func NewMemoryService(memoryDAO dao.Memory, creds credential.Resolver, engineBas
 
 // ---------- CRUD ----------
 
-// ListMemories 按道人列出记忆
-func (s *MemoryService) ListMemories(ctx context.Context, agentID uint, kind string, onlyActive bool) ([]*model.AgentMemory, errors.Error) {
-	return s.dao.ListMemories(ctx, agentID, kind, onlyActive)
+// ListMemories 按道人列出记忆(agentUID 为道人 UUID 文本)
+func (s *MemoryService) ListMemories(ctx context.Context, agentUID string, kind string, onlyActive bool) ([]*model.AgentMemory, errors.Error) {
+	return s.dao.ListMemories(ctx, agentUID, kind, onlyActive)
 }
 
-// CreateMemory 创建记忆:校验 → 哈希去重 → 冲突置替(§10.2)
-func (s *MemoryService) CreateMemory(ctx context.Context, agentID uint, in service.MemoryInput) (*model.AgentMemory, errors.Error) {
+// CreateMemory 创建记忆:校验 → 哈希去重 → 冲突置替(§10.2);agentUID 为道人 UUID 文本
+func (s *MemoryService) CreateMemory(ctx context.Context, agentUID string, in service.MemoryInput) (*model.AgentMemory, errors.Error) {
 	if err := validateInput(in); err != nil {
 		return nil, err
 	}
 	hash := memoryHash(in.Kind, in.Content)
-	existing, err := s.dao.FindActiveByContentHash(ctx, agentID, hash)
+	existing, err := s.dao.FindActiveByContentHash(ctx, agentUID, hash)
 	if err != nil && !errors.IsType(err, errors.ErrorTypeRecordNotFound) {
 		return nil, err
 	}
@@ -96,12 +95,12 @@ func (s *MemoryService) CreateMemory(ctx context.Context, agentID uint, in servi
 		return existing, nil
 	}
 	// 冲突检测:同 kind + bigram ≥0.85 → 旧 active 置替;pinned 永不置替(§10.2)
-	if err := s.supersedeConflicts(ctx, agentID, in.Kind, in.Content); err != nil {
+	if err := s.supersedeConflicts(ctx, agentUID, in.Kind, in.Content); err != nil {
 		return nil, err
 	}
 	m := &model.AgentMemory{
-		UUID:            uuid.New(),
-		AgentID:         agentID,
+		AgentMemoryID:   uuid.New().String(),
+		AgentID:         agentUID,
 		Kind:            in.Kind,
 		Content:         strings.TrimSpace(in.Content),
 		Importance:      defaultInt(in.Importance, 3),
@@ -126,13 +125,13 @@ func (s *MemoryService) CreateMemory(ctx context.Context, agentID uint, in servi
 	return m, nil
 }
 
-// UpdateMemory 按 UUID 部分更新记忆(nil 字段不更新);内容/类型变更时重算内容哈希
-func (s *MemoryService) UpdateMemory(ctx context.Context, agentID uint, memoryUUID uuid.UUID, in service.MemoryInput) (*model.AgentMemory, errors.Error) {
+// UpdateMemory 按 UUID 部分更新记忆(nil 字段不更新);内容/类型变更时重算内容哈希;agentUID 为道人 UUID 文本
+func (s *MemoryService) UpdateMemory(ctx context.Context, agentUID string, memoryUUID uuid.UUID, in service.MemoryInput) (*model.AgentMemory, errors.Error) {
 	m, err := s.dao.TakeMemoryByUUID(ctx, memoryUUID)
 	if err != nil {
 		return nil, err
 	}
-	if m.AgentID != agentID {
+	if m.AgentID != agentUID {
 		return nil, errors.New(errors.ErrorTypeInvalidRequest, "memory.agent_mismatch", "不属于该道人的记忆")
 	}
 	contentChanged, kindChanged := false, false
@@ -175,29 +174,29 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, agentID uint, memoryUU
 	return m, nil
 }
 
-// DeleteMemory 物理删除单条记忆(§10.2)
-func (s *MemoryService) DeleteMemory(ctx context.Context, agentID uint, memoryUUID uuid.UUID) errors.Error {
+// DeleteMemory 物理删除单条记忆(§10.2);agentUID 为道人 UUID 文本
+func (s *MemoryService) DeleteMemory(ctx context.Context, agentUID string, memoryUUID uuid.UUID) errors.Error {
 	m, err := s.dao.TakeMemoryByUUID(ctx, memoryUUID)
 	if err != nil {
 		return err
 	}
-	if m.AgentID != agentID {
+	if m.AgentID != agentUID {
 		return errors.New(errors.ErrorTypeInvalidRequest, "memory.agent_mismatch", "不属于该道人的记忆")
 	}
-	return s.dao.DeleteMemory(ctx, m.ID)
+	return s.dao.DeleteMemory(ctx, m.AgentMemoryID)
 }
 
-// ClearMemories 物理清空道人全部记忆
-func (s *MemoryService) ClearMemories(ctx context.Context, agentID uint) (int64, errors.Error) {
-	return s.dao.DeleteMemoriesByAgent(ctx, agentID)
+// ClearMemories 物理清空道人全部记忆;agentUID 为道人 UUID 文本
+func (s *MemoryService) ClearMemories(ctx context.Context, agentUID string) (int64, errors.Error) {
+	return s.dao.DeleteMemoriesByAgent(ctx, agentUID)
 }
 
 // ---------- 检索(§10.4) ----------
 
 // Retrieve 按 pinned > 关键词精确 > bigram > importance > 最近访问 > open_loop 排序,
 // 截 ≤6 条 ≤1200 字符;并 Touch 命中记忆的 LastAccessedAt。
-func (s *MemoryService) Retrieve(ctx context.Context, agentID uint, userMessage string) ([]turnpolicy.MemorySnippet, errors.Error) {
-	list, err := s.dao.ListMemories(ctx, agentID, "", true)
+func (s *MemoryService) Retrieve(ctx context.Context, agentUID string, userMessage string) ([]service.MemorySnippet, errors.Error) {
+	list, err := s.dao.ListMemories(ctx, agentUID, "", true)
 	if err != nil {
 		return nil, err
 	}
@@ -233,16 +232,16 @@ func (s *MemoryService) Retrieve(ctx context.Context, agentID uint, userMessage 
 			scoredList[j], scoredList[j-1] = scoredList[j-1], scoredList[j]
 		}
 	}
-	out := make([]turnpolicy.MemorySnippet, 0, maxSnippets)
+	out := make([]service.MemorySnippet, 0, maxSnippets)
 	total := 0
-	touched := make([]uint, 0, maxSnippets)
+	touched := make([]string, 0, maxSnippets)
 	for _, s := range scoredList {
 		if len(out) >= maxSnippets || total+len([]rune(s.m.Content)) > maxSnippetChars {
 			break
 		}
-		out = append(out, turnpolicy.MemorySnippet{Kind: s.m.Kind, Content: s.m.Content})
+		out = append(out, service.MemorySnippet{Kind: s.m.Kind, Content: s.m.Content})
 		total += len([]rune(s.m.Content))
-		touched = append(touched, s.m.ID)
+		touched = append(touched, s.m.AgentMemoryID)
 	}
 	for _, id := range touched {
 		_ = s.dao.TouchMemory(ctx, id)
@@ -330,8 +329,8 @@ func bigramSet(s string) map[string]struct{} {
 }
 
 // supersedeConflicts 同 kind 且 bigram ≥0.85 的旧 active 置替;pinned 永不自动置替(§10.2)
-func (s *MemoryService) supersedeConflicts(ctx context.Context, agentID uint, kind, content string) errors.Error {
-	list, err := s.dao.ListMemories(ctx, agentID, kind, true)
+func (s *MemoryService) supersedeConflicts(ctx context.Context, agentUID string, kind, content string) errors.Error {
+	list, err := s.dao.ListMemories(ctx, agentUID, kind, true)
 	if err != nil {
 		return err
 	}
@@ -341,7 +340,7 @@ func (s *MemoryService) supersedeConflicts(ctx context.Context, agentID uint, ki
 			continue // pinned 永不自动置替(§10.2)
 		}
 		if bigramSimilarity(norm, normalizeForCompare(m.Content)) >= 0.85 {
-			if err := s.dao.SupersedeMemory(ctx, m.ID); err != nil {
+			if err := s.dao.SupersedeMemory(ctx, m.AgentMemoryID); err != nil {
 				return err
 			}
 		}

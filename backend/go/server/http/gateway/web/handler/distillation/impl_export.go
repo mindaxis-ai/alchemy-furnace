@@ -1,6 +1,6 @@
 // Skill 导出接口: POST /api/v1/distillation/skill-export
 // 只读 RAW handler(不经 Wrapper): 成功直接写 ZIP 二进制流 + Content-Disposition;
-// 失败写统一 JSON 错误信封。请求只接收已保存金丹的结构化数据或合法 pill_id,
+// 失败写统一 JSON 错误信封。请求只接收丹方版本引用或结构化 skill 数据,
 // 绝不接收 API Key —— 携带凭据字段一律 403(服务端权限边界)。
 package distillation
 
@@ -10,20 +10,18 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/alchemy-furnace/server/internal/context/contextutil"
 	nudist "github.com/alchemy-furnace/server/internal/distillation"
 	appErrors "github.com/alchemy-furnace/server/internal/errors"
-	"github.com/alchemy-furnace/server/internal/context/contextutil"
 	"github.com/alchemy-furnace/server/server/http/request"
 	"github.com/alchemy-furnace/server/server/http/response"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
 
-// SkillExportRequest 导出请求: pill_id / recipe_id(+revision_id) / skill 三选一,format 必填
-// 任务 5 起: 导出指定丹方版本(recipe_id 为当前版本,带 revision_id 为指定版本);
-// 旧 pill_id 只经 LegacyMap 解析,不读取可用库存。
+// SkillExportRequest 导出请求: recipe_id(+revision_id) / skill 二选一,format 必填
+// 任务 5 起: 导出指定丹方版本(recipe_id 为当前版本,带 revision_id 为指定版本)。
 type SkillExportRequest struct {
-	PillID     string                  `json:"pill_id"`
 	RecipeID   string                  `json:"recipe_id"`
 	RevisionID string                  `json:"revision_id"`
 	Skill      *nudist.ExportableSkill `json:"skill"`
@@ -52,7 +50,6 @@ func (h *Handler) SkillExport(c *gin.Context) {
 	}
 
 	result, serr := h.service.SkillExport(contextutil.NewContextWithGin(c), &nudist.SkillExportInput{
-		PillID:     body.PillID,
 		RecipeID:   body.RecipeID,
 		RevisionID: body.RevisionID,
 		Skill:      body.Skill,

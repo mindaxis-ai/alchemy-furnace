@@ -27,7 +27,7 @@ import {
   ChevronLeft,
   ChevronDown,
   Bot,
-  Send,
+  ArrowUp,
   X,
   Menu,
   Sparkles,
@@ -319,7 +319,7 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
   // 如果没有选择会话: 大厅。readiness 决定创建入口,但不遮蔽已有会话列表
   if (!currentSession) {
     return (
-      <div className="mx-auto flex h-[calc(100vh-4rem)] max-w-6xl px-4 sm:px-6 relative">
+      <div className="mx-auto flex h-[calc(100dvh-4rem)] w-full relative bg-background">
         <div className="flex-1 flex flex-col items-center justify-center text-center px-4">
           <Sparkles className="w-12 h-12 text-sage/50 mb-4" />
           <h1 className="text-2xl font-serif font-bold text-gold mb-2">论道</h1>
@@ -421,14 +421,14 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
   }
 
   return (
-    <div className="mx-auto flex h-[calc(100vh-4rem)] max-w-6xl px-4 sm:px-6 relative">
+    <div className="mx-auto flex h-[calc(100dvh-4rem)] w-full relative bg-background">
       {/* ========== 会话列表侧边栏 ========== */}
       {/* 桌面端侧边栏 */}
       <div className={`
         hidden md:block
         ${sidebarOpen ? 'w-72' : 'w-0'}
         transition-all duration-300 overflow-hidden
-        border-r border-border/70 bg-muted
+        border-r border-border/70 bg-secondary/50
       `}>
         <div className="frosted w-72 h-full flex flex-col">
           {/* 侧边栏头部 */}
@@ -579,76 +579,76 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
         </div>
 
         {/* 消息列表 */}
-        <div ref={messagesScrollRef} onScroll={handleMessagesScroll} className="flex-1 overflow-y-auto relative px-4 py-5">
-          <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
-          {(chatState.history.hasOlder || chatState.history.olderError) && (
-            <div className="flex flex-col items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => { void handleLoadOlder() }}
-                disabled={chatState.history.loadingOlder}
-                className="text-xs font-medium text-gold hover:text-foreground disabled:cursor-wait disabled:opacity-60"
-              >
-                {chatState.history.loadingOlder ? t('history.loadingOlder') : t('history.loadOlder')}
-              </button>
-              {chatState.history.olderError && (
-                <p role="alert" className="text-xs text-primary">{chatState.history.olderError}</p>
-              )}
-            </div>
-          )}
-          {messages.length === 0 && (
-            <div className="flex flex-col items-center justify-center h-full text-center">
-              <Sparkles className="w-10 h-10 text-sage/50 mb-3" />
-              <p className="text-sm text-muted-foreground">发送消息开始论道</p>
-              <p className="text-xs text-sage/70 mt-1">道人将以金丹化性后的性情为你作答</p>
-            </div>
-          )}
+        <div ref={messagesScrollRef} onScroll={handleMessagesScroll} className="flex-1 overflow-y-auto relative px-5 py-8">
+          <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
+            {(chatState.history.hasOlder || chatState.history.olderError) && (
+              <div className="flex flex-col items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => { void handleLoadOlder() }}
+                  disabled={chatState.history.loadingOlder}
+                  className="text-xs font-medium text-gold hover:text-foreground disabled:cursor-wait disabled:opacity-60"
+                >
+                  {chatState.history.loadingOlder ? t('history.loadingOlder') : t('history.loadOlder')}
+                </button>
+                {chatState.history.olderError && (
+                  <p role="alert" className="text-xs text-primary">{chatState.history.olderError}</p>
+                )}
+              </div>
+            )}
+            {messages.length === 0 && (
+              <div className="flex flex-col items-center justify-center h-full text-center">
+                <Sparkles className="w-10 h-10 text-sage/50 mb-3" />
+                <p className="text-sm text-muted-foreground">发送消息开始论道</p>
+                <p className="text-xs text-sage/70 mt-1">道人将以金丹化性后的性情为你作答</p>
+              </div>
+            )}
 
-          {messages.map((message, messageIndex) => (
-            message.is_error ? (
-              /* 服务端错误：内联错误气泡 */
-              <div key={message.id} className="flex justify-center animate-in fade-in duration-300">
-                <div className="flex items-center gap-2 max-w-[85%] md:max-w-[70%] px-4 py-2.5 rounded-2xl bg-primary/10 border border-primary/30 text-primary">
-                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                  <p className="text-xs leading-relaxed">{message.content}</p>
-                  {message.retryable && !readOnlyReason && (
-                    <button
-                      type="button"
-                      onClick={() => { void retryMessage(messageIndex) }}
-                      className="shrink-0 text-xs font-medium text-gold hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60"
-                    >
-                      {t('stream.retry')}
-                    </button>
-                  )}
+            {messages.map((message, messageIndex) => (
+              message.is_error ? (
+                /* 服务端错误：内联错误气泡 */
+                <div key={message.id} className="flex justify-center animate-in fade-in duration-300">
+                  <div className="flex items-center gap-2 max-w-[85%] md:max-w-[70%] px-4 py-2.5 rounded-2xl bg-primary/10 border border-primary/30 text-primary">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                    <p className="text-xs leading-relaxed">{message.content}</p>
+                    {message.retryable && !readOnlyReason && (
+                      <button
+                        type="button"
+                        onClick={() => { void retryMessage(messageIndex) }}
+                        className="shrink-0 text-xs font-medium text-gold hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60"
+                      >
+                        {t('stream.retry')}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <ChatMessage
+                  key={message.id}
+                  message={message}
+                  streaming={chatState.streaming && message.role === 'assistant' && message.id.startsWith('stream-')}
+                  members={currentSession.members}
+                  onRetry={message.incomplete && message.retryable && !readOnlyReason ? () => { void retryMessage(messageIndex) } : undefined}
+                />
+              )
+            ))}
+
+            {/* 流式输出中指示器 */}
+            {chatState.streaming && messages[messages.length - 1]?.role === 'user' && (
+              <div className="flex items-start gap-3">
+                <div className="w-9 h-9 rounded-full bg-gold/20 text-gold border border-gold/30 flex items-center justify-center flex-shrink-0">
+                  <Bot className="w-5 h-5" />
+                </div>
+                <div className="bg-card border border-gold/30 rounded-2xl rounded-tl-sm px-4 py-3 animate-pulse">
+                  <div className="flex items-center gap-1.5 text-xs text-gold/70">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>{t('stream.pending')}</span>
+                  </div>
                 </div>
               </div>
-            ) : (
-              <ChatMessage
-                key={message.id}
-                message={message}
-                streaming={chatState.streaming && message.role === 'assistant' && message.id.startsWith('stream-')}
-                members={currentSession.members}
-                onRetry={message.incomplete && message.retryable && !readOnlyReason ? () => { void retryMessage(messageIndex) } : undefined}
-              />
-            )
-          ))}
+            )}
 
-          {/* 流式输出中指示器 */}
-          {chatState.streaming && messages[messages.length - 1]?.role === 'user' && (
-            <div className="flex items-start gap-3">
-              <div className="w-9 h-9 rounded-full bg-gold/20 text-gold border border-gold/30 flex items-center justify-center flex-shrink-0">
-                <Bot className="w-5 h-5" />
-              </div>
-              <div className="bg-card border border-gold/30 rounded-2xl rounded-tl-sm px-4 py-3 animate-pulse">
-                <div className="flex items-center gap-1.5 text-xs text-gold/70">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>{t('stream.pending')}</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div ref={messagesEndRef} />
+            <div ref={messagesEndRef} />
           </div>
 
           {/* 「回到底部」浮按钮:用户滚上去后才出现,贴在聊天框右下角(避开消息区) */}
@@ -1125,7 +1125,12 @@ function ChatInput({
 }) {
   const t = useTranslations('chatView')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const textarea = textareaRef.current
+    if (!textarea) return
+    textarea.style.height = 'auto'
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`
+  }, [value])
 
   // @ 提及补全:从光标前找 @ 查询
   // 仅群聊启用(单聊时 members 为空)
@@ -1201,6 +1206,7 @@ function ChatInput({
 
   // 键盘:上下选择 / Enter 选中 / Esc 关闭
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.nativeEvent.isComposing) return
     // 补全浮层开启时拦截
     if (mention && candidates.length > 0) {
       if (e.key === 'ArrowDown') {
@@ -1233,9 +1239,9 @@ function ChatInput({
   }
 
   return (
-    <div className="px-4 py-3 border-t border-border/70 bg-card/80">
-      <div className="flex items-end gap-2">
-        <div ref={containerRef} className="relative flex-1 min-w-0">
+    <div className="px-4 pb-4 pt-2 bg-background">
+      <div className="mx-auto max-w-3xl rounded-3xl border border-input bg-card p-3 shadow-[0_4px_20px_rgba(30,64,100,0.06)] focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/10">
+        <div className="relative min-w-0">
           <textarea
             ref={textareaRef}
             value={value}
@@ -1251,8 +1257,8 @@ function ChatInput({
             }}
             aria-label={t('input.messageLabel')}
             placeholder={disabled ? t('input.readOnlyPlaceholder') : t(isGroup ? 'input.groupPlaceholder' : 'input.placeholder')}
-            className="dao-input resize-none min-h-[44px] max-h-[120px] py-2.5 w-full"
-            rows={1}
+            className="block w-full resize-none border-0 bg-transparent px-2 py-2 text-sm leading-6 text-foreground outline-none placeholder:text-muted-foreground min-h-[72px] max-h-[200px]"
+            rows={2}
           />
           {/* @ 补全浮层(飞书式) */}
           {mention && popPos && (
@@ -1265,21 +1271,23 @@ function ChatInput({
             />
           )}
         </div>
-        <button
-          aria-label={streaming ? t('input.stop') : t('input.send')}
-          onClick={streaming ? onStop : onSend}
-          disabled={!streaming && (disabled || !value.trim())}
-          className="dao-btn-primary px-3 py-2.5 flex-shrink-0 disabled:opacity-40"
-          title={streaming ? t('input.stop') : t('input.send')}
-        >
-          {streaming ? (
-            <Square className="w-5 h-5" />
-          ) : (
-            <Send className="w-5 h-5" />
-          )}
-        </button>
+        <div className="mt-2 flex items-center justify-end gap-2">
+          <button
+            aria-label={streaming ? t('input.stop') : t('input.send')}
+            onClick={streaming ? onStop : onSend}
+            disabled={!streaming && (disabled || !value.trim())}
+            className="flex size-8 shrink-0 items-center justify-center rounded-full bg-foreground text-background transition-colors hover:bg-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-30"
+            title={streaming ? t('input.stop') : t('input.send')}
+          >
+            {streaming ? (
+              <Square className="w-5 h-5" />
+            ) : (
+              <ArrowUp className="w-4 h-4" />
+            )}
+          </button>
+        </div>
       </div>
-      <p className={`mt-1.5 break-words text-center text-[10px] ${disabledReason ? 'text-gold/80' : 'text-sage/70'}`}>
+      <p className={`mt-2 break-words text-center text-[10px] ${disabledReason ? 'text-gold/80' : 'text-sage/70'}`}>
         {disabledReason || t(isGroup ? 'input.helpGroup' : 'input.help')}
       </p>
     </div>

@@ -52,6 +52,7 @@ export function getVersion(): Promise<VersionInfo> {
 
 /** 检查更新响应(/api/v1/update/check,仅 desktop) */
 export interface UpdateCheckResult {
+  enabled: boolean
   has_update: boolean
   latest_version: string
   current_version: string
@@ -89,4 +90,3 @@ export function getUpdateProgress(): Promise<UpdateProgress> {
 export function openExternalUrl(url: string): Promise<void> {
   return post<void>('/desktop/open-url', { url })
 }
-

@@ -15,7 +15,7 @@
  */
 import { useRef, useState, useMemo } from 'react'
 import { useTranslations } from 'next-intl'
-import { TriangleAlert, CircleStop } from 'lucide-react'
+import { TriangleAlert, CircleStop, Code2, ChevronDown } from 'lucide-react'
 import type { ChatMessage as ChatMessageType, Agent } from '@/services/types'
 import { MarkdownRenderer } from '@/components/markdown-renderer'
 import { ProfilePopover } from '@/components/profile-popover'
@@ -40,14 +40,33 @@ export function ChatMessage({ message, streaming = false, members, onRetry }: Ch
 
   // 头像 popover 状态
   const [popoverOpen, setPopoverOpen] = useState(false)
+  const [promptDebugOpen, setPromptDebugOpen] = useState(false)
   const avatarAnchorRef = useRef<HTMLButtonElement>(null)
 
   const isUser = message.role === 'user'
+  const createdAt = useMemo(() => {
+    const date = new Date(message.created_at)
+    if (Number.isNaN(date.getTime())) return null
+    return {
+      short: new Intl.DateTimeFormat(undefined, {
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23',
+      }).format(date),
+      full: new Intl.DateTimeFormat(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(date),
+    }
+  }, [message.created_at])
 
   // 头像 popover 数据
   const { profile: userProfile } = useUser()
   const { state: agentState } = useAgent()
-  const { state: chatState } = useChat()
+  const { state: chatState, continueRun } = useChat()
   const currentSession = chatState.currentSession
   // 单聊会话身份兜底(群聊不得使用单聊的 session 身份;群聊 agent_name/agent_avatar 为空)
   const sessionAgentName = currentSession && currentSession.type !== 'group' ? currentSession.agent_name : undefined
@@ -108,6 +127,13 @@ export function ChatMessage({ message, streaming = false, members, onRetry }: Ch
     return null
   }, [isUser, message.agent_id, message.agent_name, message.created_at, agentState.agents, chatState.currentSession, members])
 
+  // Task 14:该消息是当前 interrupted run 的不完整片段时,提供「继续」续跑动作
+  // (重发/重试路径另行保留;续跑按 run_id 定位,不重发用户消息)
+  const canContinue = !isUser
+    && Boolean(message.incomplete)
+    && Boolean(message.run_id)
+    && chatState.interruptedRunId === message.run_id
+
   const memberAvatar = members?.find(member => member.agent_id === message.agent_id)?.avatar
   const avatarSrc = isUser ? userProfile?.avatar : (message.agent_avatar || agentProfile?.avatar || memberAvatar || sessionAgentAvatar)
 
@@ -124,7 +150,7 @@ export function ChatMessage({ message, streaming = false, members, onRetry }: Ch
 
   return (
     <div className={`
-      flex w-full items-start gap-3 min-w-0
+      group/message flex w-full items-start gap-3 min-w-0
       ${isUser ? 'flex-row-reverse' : 'flex-row'}
       animate-in fade-in duration-300
     `}>
@@ -136,14 +162,14 @@ export function ChatMessage({ message, streaming = false, members, onRetry }: Ch
         onClick={() => setPopoverOpen(true)}
         className={`
           shrink-0 self-start
-          w-10 h-10 rounded-xl
+          w-7 h-7 rounded-full
           flex items-center justify-center
           transition-all duration-150
           hover:ring-2 hover:ring-gold/50 hover:ring-offset-2 hover:ring-offset-background
           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60
           ${isUser
-            ? 'bg-primary/10 text-primary border border-primary/30'
-            : 'bg-gold/15 text-gold border border-gold/30'
+            ? 'bg-secondary text-muted-foreground'
+            : 'bg-secondary text-primary'
           }
         `}
       >
@@ -158,7 +184,7 @@ export function ChatMessage({ message, streaming = false, members, onRetry }: Ch
         />
       </button>
 
-      {/* 名字 + 气泡(竖直堆叠,与头像独立列) */}
+      {/* 名字 + 正文(竖直堆叠,与头像独立列) */}
       <div className={`
         flex-1 min-w-0 flex flex-col
         ${isUser ? 'items-end' : 'items-start'}
@@ -167,34 +193,23 @@ export function ChatMessage({ message, streaming = false, members, onRetry }: Ch
         <span className={`
           block text-[11px] mb-1.5 px-1 whitespace-nowrap font-medium
           ${isUser ? 'self-end' : 'self-start'}
-          ${isUser
-            ? 'text-primary/75'
-            : 'text-gold/90'
-          }
+          text-muted-foreground
         `}>
           {isUser
             ? (userProfile?.display_name || t('userLabel'))
             : (message.agent_name || sessionAgentName || t('assistantLabel'))}
         </span>
 
-        {/* 消息气泡:block,宽由 max-w 控制,长内容自然换行 */}
+        {/* 用户消息使用浅蓝气泡，助手回复保持 Codex 式开放正文。 */}
         <div className={`
-          relative block w-fit max-w-[82%] text-left
-          px-4 py-3 rounded-2xl break-words shadow-sm
+          relative block text-left break-words
           ${isUser
-            ? 'bg-primary/[0.07] border border-primary/25 rounded-tr-md'
-            : 'bg-card border border-border/80 rounded-tl-md'
+            ? 'w-fit max-w-[90%] rounded-3xl bg-secondary px-5 py-3'
+            : 'w-full bg-transparent py-1'
           }
         `}>
-          {/* 丹色印记：一条克制的身份线，不参与正文宽度计算。 */}
-          {!isUser && (
-            <>
-              <div className="absolute left-0 top-3 bottom-3 w-0.5 bg-gradient-to-b from-gold/80 to-sage/50 rounded-full" />
-            </>
-          )}
-
           {/* 消息内容 */}
-          <div className={`md-selectable ${isUser ? '' : 'pl-2 pr-2'} min-w-0 break-words`}>
+          <div className="md-selectable min-w-0 break-words">
             {isUser ? (
               // 用户消息: 高亮 @名字 且 @ 文字可点击触发 popover
               <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
@@ -215,6 +230,58 @@ export function ChatMessage({ message, streaming = false, members, onRetry }: Ch
             <span className="inline-block w-1.5 h-4 rounded-full bg-gold/80 ml-1 align-text-bottom animate-pulse" />
           )}
         </div>
+
+        {/* 消息时间沿用 Codex 的轻量操作区：悬停消息或聚焦其中控件时出现。 */}
+        {createdAt && (
+          <div className={`
+            mt-1 flex h-5 items-center px-1
+            text-xs tabular-nums text-muted-foreground/75
+            opacity-0 transition-opacity duration-150
+            group-hover/message:opacity-100 group-focus-within/message:opacity-100
+            ${isUser ? 'self-end justify-end' : 'self-start justify-start'}
+          `}>
+            <time dateTime={message.created_at} title={createdAt.full}>{createdAt.short}</time>
+          </div>
+        )}
+
+        {!isUser && message.prompt_debug && (
+          <div className="mt-1.5 w-full max-w-[82%] pl-1">
+            <button
+              type="button"
+              aria-expanded={promptDebugOpen}
+              onClick={() => setPromptDebugOpen(open => !open)}
+              className="inline-flex items-center gap-1.5 text-[10px] text-muted-foreground transition-colors hover:text-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60"
+            >
+              <Code2 className="h-3 w-3" />
+              {promptDebugOpen ? t('promptDebugHide') : t('promptDebugShow')}
+              <ChevronDown className={`h-3 w-3 transition-transform ${promptDebugOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {promptDebugOpen && (
+              <div className="mt-2 max-h-96 overflow-auto rounded-xl border border-border/70 bg-muted/50 p-3 text-left text-[11px] leading-relaxed">
+                <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
+                  <span>{t('promptDebugModel')}: <code className="text-foreground">{message.prompt_debug.model}</code></span>
+                  {(() => {
+                    // LangGraph 无预算概念时后端发 0/0,此时预算行无意义不展示;
+                    // generation 缺失(异常/旧载荷)也不得崩渲染(2026-09-04 展开面板 TypeError 根因)。
+                    const gen = message.prompt_debug.generation
+                    if (!gen || (gen.max_tokens <= 0 && gen.max_sentences <= 0)) return null
+                    return (
+                      <span>{t('promptDebugBudget')}: <code className="text-foreground">{gen.max_tokens} tokens / {gen.max_sentences} sentences</code></span>
+                    )
+                  })()}
+                </div>
+                <div className="space-y-3">
+                  {message.prompt_debug.messages.map((item, index) => (
+                    <div key={`${item.role}-${index}`}>
+                      <div className="mb-1 font-mono uppercase tracking-wide text-gold">{item.role}</div>
+                      <pre className="whitespace-pre-wrap break-words font-mono text-foreground">{item.content}</pre>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* @提及 chips(群聊道人消息) - 可点击 */}
         {!isUser && message.mentions && (message.mentions.agents?.length || message.mentions.user) && (
@@ -249,6 +316,15 @@ export function ChatMessage({ message, streaming = false, members, onRetry }: Ch
                   <TriangleAlert className="w-3 h-3 shrink-0" />
                   {t('incomplete')}
                 </span>
+                {canContinue && (
+                  <button
+                    type="button"
+                    onClick={() => { void continueRun() }}
+                    className="text-[10px] font-medium text-gold hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60"
+                  >
+                    {t('continue')}
+                  </button>
+                )}
                 {onRetry && (
                   <button
                     type="button"

@@ -37,7 +37,7 @@ export function UpdateDialog({ onClose }: UpdateDialogProps) {
       .then((r) => {
         if (cancelled) return
         setResult(r)
-        if (r.notes === '开发构建未启用更新') {
+        if (!r.enabled) {
           setPhase('disabled')
         } else if (r.has_update) {
           setPhase('available')

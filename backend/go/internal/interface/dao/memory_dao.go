@@ -14,10 +14,10 @@ import (
 // UUID 边界在此解析,内部联结仍用自增 ID;删除/清空为物理删除
 type Memory interface {
 	// ListMemories 按道人列出记忆(kind 为空不过滤;onlyActive=true 仅 active)
-	ListMemories(ctx context.Context, agentID uint, kind string, onlyActive bool) ([]*model.AgentMemory, errors.Error)
+	ListMemories(ctx context.Context, agentID string, kind string, onlyActive bool) ([]*model.AgentMemory, errors.Error)
 
-	// GetMemory 按内部自增 ID 查询记忆
-	GetMemory(ctx context.Context, id uint) (*model.AgentMemory, errors.Error)
+	// GetMemory 按记忆 UUID 文本查询记忆(memoryUID 为 011 业务键)
+	GetMemory(ctx context.Context, memoryUID string) (*model.AgentMemory, errors.Error)
 
 	// TakeMemoryByUUID 按对外 UUID 查询记忆,不存在返回 ErrorTypeRecordNotFound
 	TakeMemoryByUUID(ctx context.Context, uid uuid.UUID) (*model.AgentMemory, errors.Error)
@@ -28,18 +28,18 @@ type Memory interface {
 	// UpdateMemory 全字段更新既有记忆
 	UpdateMemory(ctx context.Context, m *model.AgentMemory) errors.Error
 
-	// DeleteMemory 物理删除单条记忆
-	DeleteMemory(ctx context.Context, id uint) errors.Error
+	// DeleteMemory 物理删除单条记忆(memoryUID 为记忆 UUID 文本,011 业务键)
+	DeleteMemory(ctx context.Context, memoryUID string) errors.Error
 
 	// DeleteMemoriesByAgent 物理清空道人全部记忆,返回受影响行数
-	DeleteMemoriesByAgent(ctx context.Context, agentID uint) (int64, errors.Error)
+	DeleteMemoriesByAgent(ctx context.Context, agentID string) (int64, errors.Error)
 
 	// FindActiveByContentHash 按内容哈希查 active 记忆(无命中返回 nil,nil)
-	FindActiveByContentHash(ctx context.Context, agentID uint, hash string) (*model.AgentMemory, errors.Error)
+	FindActiveByContentHash(ctx context.Context, agentID string, hash string) (*model.AgentMemory, errors.Error)
 
-	// SupersedeMemory 将记忆置为 superseded(冲突置替,spec §10.2)
-	SupersedeMemory(ctx context.Context, id uint) errors.Error
+	// SupersedeMemory 将记忆置为 superseded(冲突置替,spec §10.2);memoryUID 为记忆 UUID 文本
+	SupersedeMemory(ctx context.Context, memoryUID string) errors.Error
 
-	// TouchMemory 更新最近检索时间(LastAccessedAt)
-	TouchMemory(ctx context.Context, id uint) errors.Error
+	// TouchMemory 更新最近检索时间(LastAccessedAt);memoryUID 为记忆 UUID 文本
+	TouchMemory(ctx context.Context, memoryUID string) errors.Error
 }

@@ -25,7 +25,7 @@ func New(agent service.Agent, memory service.Memory) *Agent {
 
 // ---------- 响应 DTO ----------
 
-// Response 道人响应 DTO:id 输出 UUID 字符串
+// Response 道人响应 DTO:id 输出业务主键(DaoAgentID,uuid 文本)
 type Response struct {
 	ID            string    `json:"id"`
 	Name          string    `json:"name"`
@@ -41,7 +41,7 @@ type Response struct {
 // toResponse 内部模型 → 对外 DTO
 func toResponse(a *model.DaoAgent) *Response {
 	return &Response{
-		ID:            a.UUID.String(),
+		ID:            a.DaoAgentID,
 		Name:          a.Name,
 		Avatar:        a.Avatar,
 		Personality:   a.Personality,

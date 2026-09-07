@@ -39,7 +39,7 @@ func TestAutoMigrateSQLite(t *testing.T) {
 
 	wantTables := []string{
 		"elixir_pills", "dao_agents", "agent_pills", "language_patterns",
-		"chat_sessions", "chat_messages", "session_members", "llm_providers", "llm_models",
+		"chat_sessions", "chat_messages", "chat_runs", "session_members", "llm_providers", "llm_models",
 		"user_profile",
 	}
 	for _, table := range wantTables {
@@ -114,7 +114,7 @@ func TestPartialUniqueIndexSQLite(t *testing.T) {
 
 	// 2) 第一条 is_default=true 写入应成功
 	first := &model.LLMModel{
-		ProviderID: provider.ID, Name: "a", DisplayName: "A",
+		ProviderID: provider.LLMProviderID, Name: "a", DisplayName: "A",
 		IsDefault: true, IsEnabled: true,
 	}
 	if err := db.Create(first).Error; err != nil {
@@ -123,7 +123,7 @@ func TestPartialUniqueIndexSQLite(t *testing.T) {
 
 	// 3) 第二条 is_default=true 写入应被部分唯一索引拒绝
 	second := &model.LLMModel{
-		ProviderID: provider.ID, Name: "b", DisplayName: "B",
+		ProviderID: provider.LLMProviderID, Name: "b", DisplayName: "B",
 		IsDefault: true, IsEnabled: true,
 	}
 	err := db.Create(second).Error
@@ -142,10 +142,10 @@ func TestPartialUniqueIndexSQLite(t *testing.T) {
 func TestDriverAutoResolve(t *testing.T) {
 	// 走 loader.resolveDriver 行为模拟(直接复用同一函数需要 init 状态,这里内联验证规则)
 	cases := []struct {
-		name      string
-		input     configuration.DatabaseConfig
+		name       string
+		input      configuration.DatabaseConfig
 		wantDriver string
-		wantPath  string
+		wantPath   string
 	}{
 		{
 			name: "未填 + 有 host → postgres",
@@ -155,10 +155,10 @@ func TestDriverAutoResolve(t *testing.T) {
 			wantDriver: configuration.DriverPostgres,
 		},
 		{
-			name:      "未填 + 无 host → sqlite",
-			input:     configuration.DatabaseConfig{},
+			name:       "未填 + 无 host → sqlite",
+			input:      configuration.DatabaseConfig{},
 			wantDriver: configuration.DriverSQLite,
-			wantPath:  "./data/alchemy.db",
+			wantPath:   "./data/alchemy.db",
 		},
 		{
 			name: "显式 sqlite + 无 path → 默认路径",
@@ -166,7 +166,7 @@ func TestDriverAutoResolve(t *testing.T) {
 				Driver: configuration.DriverSQLite,
 			},
 			wantDriver: configuration.DriverSQLite,
-			wantPath:  "./data/alchemy.db",
+			wantPath:   "./data/alchemy.db",
 		},
 		{
 			name: "显式 mysql 透传",
@@ -317,5 +317,190 @@ func TestMaybeAutoMigrateUpgradesExistingSchema(t *testing.T) {
 	}
 	if loaded.SystemPrompt != "旧提示词" {
 		t.Errorf("历史 system_prompt 被破坏: %q", loaded.SystemPrompt)
+	}
+}
+
+// legacyIntegerFKDDL 011 之前的旧 schema 样本:代表性关系列为整数自增外键。
+// 只覆盖探测点表,其余业务表不建(探测在首个命中列即返回)。
+var legacyIntegerFKDDL = []string{
+	`CREATE TABLE agent_pills (
+		id integer PRIMARY KEY AUTOINCREMENT,
+		agent_id integer NOT NULL,
+		pill_id integer NOT NULL,
+		weight real DEFAULT 1.0,
+		sort_order integer DEFAULT 0,
+		created_at datetime, updated_at datetime
+	);`,
+	`CREATE TABLE chat_messages (
+		id integer PRIMARY KEY AUTOINCREMENT,
+		session_id integer NOT NULL,
+		role text NOT NULL,
+		content text NOT NULL,
+		created_at datetime
+	);`,
+	`CREATE TABLE llm_models (
+		id integer PRIMARY KEY AUTOINCREMENT,
+		provider_id integer NOT NULL,
+		name text NOT NULL,
+		created_at datetime, updated_at datetime
+	);`,
+}
+
+// TestMigrateUpRejectsLegacyIntegerFKSchema 老库(整数外键)不允许静默升级:
+// 正常启动迁移必须返回指导 reset 的错误,且不做任何 DropTable(原数据由用户显式处置)。
+func TestMigrateUpRejectsLegacyIntegerFKSchema(t *testing.T) {
+	tmp := t.TempDir()
+	db := newSQLiteTestDB(t, filepath.Join(tmp, "legacy.db"))
+	prev := DB
+	DB = db
+	defer func() { DB = prev }()
+
+	for i, ddl := range legacyIntegerFKDDL {
+		if err := db.Exec(ddl).Error; err != nil {
+			t.Fatalf("建旧表 #%d 失败: %v\nDDL: %s", i, err, ddl)
+		}
+	}
+	// 写一行历史数据,证明拒绝路径不破坏数据
+	if err := db.Exec(`INSERT INTO agent_pills (agent_id, pill_id) VALUES (1, 2)`).Error; err != nil {
+		t.Fatalf("写历史数据失败: %v", err)
+	}
+
+	err := MigrateUp()
+	if err == nil {
+		t.Fatal("旧整数外键 schema 未被拒绝: 发生静默升级")
+	}
+	if !strings.Contains(err.Error(), "migrate reset") {
+		t.Errorf("错误未指导用户执行 migrate reset: %v", err)
+	}
+
+	// 拒绝路径不得动旧库:表与数据原样保留
+	var cnt int64
+	if err := db.Table("agent_pills").Count(&cnt).Error; err != nil || cnt != 1 {
+		t.Fatalf("拒绝路径破坏了旧数据: cnt=%d err=%v", cnt, err)
+	}
+	if !db.Migrator().HasTable("chat_messages") {
+		t.Error("拒绝路径不应 Drop 任何表: chat_messages 丢失")
+	}
+}
+
+// legacyUUIDColumnDDL 修订轮之前(011 双标识)的 schema 样本:实体主键仍是
+// integer id,身份由独立 uuid 列承担。只覆盖探测点表,其余业务表不建。
+var legacyUUIDColumnDDL = []string{
+	`CREATE TABLE dao_agents (
+		id integer PRIMARY KEY AUTOINCREMENT,
+		uuid text NOT NULL UNIQUE,
+		name text NOT NULL,
+		created_at datetime, updated_at datetime
+	);`,
+	`CREATE TABLE elixir_pills (
+		id integer PRIMARY KEY AUTOINCREMENT,
+		uuid text NOT NULL UNIQUE,
+		name text NOT NULL,
+		created_at datetime, updated_at datetime
+	);`,
+}
+
+// TestMigrateUpRejectsUUIDColumnSchema 011 双标识中间态库不允许静默升级:
+// 主键统一为业务主键文本后,旧库 uuid 列若被 AutoMigrate 保留,新主键列对旧行是
+// 空串,行身份全毁;必须返回指导 reset 的错误,且不破坏旧数据。
+func TestMigrateUpRejectsUUIDColumnSchema(t *testing.T) {
+	tmp := t.TempDir()
+	db := newSQLiteTestDB(t, filepath.Join(tmp, "dual-id.db"))
+	prev := DB
+	DB = db
+	defer func() { DB = prev }()
+
+	for i, ddl := range legacyUUIDColumnDDL {
+		if err := db.Exec(ddl).Error; err != nil {
+			t.Fatalf("建双标识旧表 #%d 失败: %v\nDDL: %s", i, err, ddl)
+		}
+	}
+	// 写一行历史数据,证明拒绝路径不破坏数据
+	if err := db.Exec(`INSERT INTO dao_agents (uuid, name) VALUES ('uuid-old-agent', '旧道人')`).Error; err != nil {
+		t.Fatalf("写历史数据失败: %v", err)
+	}
+
+	err := MigrateUp()
+	if err == nil {
+		t.Fatal("011 双标识 schema 未被拒绝: 发生静默升级")
+	}
+	if !strings.Contains(err.Error(), "migrate reset") {
+		t.Errorf("错误未指导用户执行 migrate reset: %v", err)
+	}
+
+	// 拒绝路径不得动旧库:表与数据原样保留
+	var cnt int64
+	if err := db.Table("dao_agents").Count(&cnt).Error; err != nil || cnt != 1 {
+		t.Fatalf("拒绝路径破坏了旧数据: cnt=%d err=%v", cnt, err)
+	}
+	if !db.Migrator().HasTable("elixir_pills") {
+		t.Error("拒绝路径不应 Drop 任何表: elixir_pills 丢失")
+	}
+}
+
+// TestMigrateResetRebuildsUUIDSchema reset 端到端:旧行清空 → 表重建 → 种子写入 → UUID 关系列可写。
+// LLM 种子在测试环境无 API Key 时幂等跳过(供应商计数为 0 即「已清空且未写」)。
+func TestMigrateResetRebuildsUUIDSchema(t *testing.T) {
+	tmp := t.TempDir()
+	db := newSQLiteTestDB(t, filepath.Join(tmp, "reset.db"))
+	prev := DB
+	DB = db
+	defer func() { DB = prev }()
+
+	// 1) 建当前 schema 并写入任意旧数据
+	if err := db.AutoMigrate(allMigratableModels...); err != nil {
+		t.Fatalf("建表失败: %v", err)
+	}
+	if err := db.Create(&model.DaoAgent{Name: "旧道人", Personality: "reset 前的旧数据"}).Error; err != nil {
+		t.Fatalf("写旧道人失败: %v", err)
+	}
+	if err := db.Create(&model.LLMProvider{Name: "old", DisplayName: "Old", BaseURL: "http://old", IsEnabled: true}).Error; err != nil {
+		t.Fatalf("写旧供应商失败: %v", err)
+	}
+
+	// 2) reset:Drop → 重建 → 全量种子
+	if err := MigrateReset(); err != nil {
+		t.Fatalf("MigrateReset 失败: %v", err)
+	}
+
+	// 3) 旧行清空
+	var agentCnt int64
+	if err := db.Model(&model.DaoAgent{}).Count(&agentCnt).Error; err != nil || agentCnt != 0 {
+		t.Fatalf("reset 后残留旧道人: cnt=%d err=%v", agentCnt, err)
+	}
+	var providerCnt int64
+	if err := db.Model(&model.LLMProvider{}).Count(&providerCnt).Error; err != nil || providerCnt != 0 {
+		t.Fatalf("reset 后残留旧供应商: cnt=%d err=%v", providerCnt, err)
+	}
+
+	// 4) 种子数据存在(内置金丹/丹方各 5,每丹方 1 枚赠送 + 1 条赠送记录)
+	for _, check := range []struct {
+		table string
+		query string
+		want  int64
+	}{
+		{"elixir_pills", "is_builtin = true", 5},
+		{"pill_recipes", "is_builtin = true", 5},
+		{"pill_starter_grants", "1 = 1", 5},
+		{"pill_items", "state = 'available'", 5},
+	} {
+		var cnt int64
+		if err := db.Table(check.table).Where(check.query).Count(&cnt).Error; err != nil || cnt != check.want {
+			t.Errorf("%s(%s): got %d want %d, err=%v", check.table, check.query, cnt, check.want, err)
+		}
+	}
+
+	// 5) 业务主键(uuid 文本)关系列可写:道人-金丹服用关系按业务主键建立
+	newAgent := &model.DaoAgent{Name: "新道人"}
+	if err := db.Create(newAgent).Error; err != nil {
+		t.Fatalf("建新道人失败: %v", err)
+	}
+	var builtinPill model.ElixirPill
+	if err := db.Where("is_builtin = ?", true).First(&builtinPill).Error; err != nil {
+		t.Fatalf("读内置金丹失败: %v", err)
+	}
+	ap := &model.AgentPill{AgentID: newAgent.DaoAgentID, PillID: builtinPill.ElixirPillID}
+	if err := db.Create(ap).Error; err != nil {
+		t.Fatalf("UUID 外键写入失败(重建 schema 缺 FK 或列类型错误): %v", err)
 	}
 }

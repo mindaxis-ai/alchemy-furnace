@@ -12,9 +12,18 @@ python-multipart==0.0.9
 pydantic==2.9.2
 pydantic-settings==2.5.2
 
-# LLM
-openai==1.12.0
-httpx==0.26.0
+# LLM(与 requirements.txt 钉死同版:langchain-openai 0.3.35 要求新于 1.12.0 的 openai)
+openai==1.109.1
+httpx==0.28.1
 
 # 环境变量
 python-dotenv==1.0.1
+
+# LangGraph 编排(与 requirements.txt 钉死同版;Task 15 起为对话权威引擎,必须进桌面包)
+langgraph==0.6.11
+langgraph-checkpoint-sqlite==2.0.11
+langchain-core==0.3.86
+langchain-openai==0.3.35
+langchain-deepseek==0.1.4
+langchain-ollama==0.3.10
+aiosqlite==0.20.0

@@ -14,11 +14,11 @@ import (
 	"github.com/google/uuid"
 )
 
-// recipeListOut 丹方列表项（UUID 在模型上是 json:"-"，此处显式携带）
+// recipeListOut 丹方列表项（UUID 在模型上是 json:"-"，此处显式携带；主键统一为 uuid 文本）
 type recipeListOut struct {
-	ID                uuid.UUID  `json:"id"`
+	ID                string     `json:"id"`
 	Name              string     `json:"name"`
-	CurrentRevisionID uuid.UUID  `json:"current_revision_id"`
+	CurrentRevisionID string     `json:"current_revision_id"`
 	ArchivedAt        *time.Time `json:"archived_at,omitempty"`
 	CreatedAt         time.Time  `json:"created_at"`
 	AvailableCount    int64      `json:"available_count"` // 可用金丹实例数（GROUP BY 聚合）
@@ -27,7 +27,7 @@ type recipeListOut struct {
 
 // recipeDetailOut 丹方详情（含当前版本内容）
 type recipeDetailOut struct {
-	ID                uuid.UUID      `json:"id"`
+	ID                string         `json:"id"`
 	Name              string         `json:"name"`
 	Description       string         `json:"description"`
 	SkillSchema       model.JSONMap  `json:"skill_schema"`
@@ -35,14 +35,14 @@ type recipeDetailOut struct {
 	Author            string         `json:"author"`
 	VersionLabel      string         `json:"version_label"`
 	Revision          int            `json:"revision"`
-	CurrentRevisionID uuid.UUID      `json:"current_revision_id"`
+	CurrentRevisionID string         `json:"current_revision_id"`
 	ArchivedAt        *time.Time     `json:"archived_at,omitempty"`
 	CreatedAt         time.Time      `json:"created_at"`
 }
 
 // revisionOut 不可变版本输出
 type revisionOut struct {
-	ID           uuid.UUID      `json:"id"`
+	ID           string         `json:"id"`
 	Revision     int            `json:"revision"`
 	Name         string         `json:"name"`
 	Description  string         `json:"description"`
@@ -66,13 +66,13 @@ type saveRecipeBody struct {
 
 // updateRecipeBody 编辑丹方生成新版本（expected_revision_id 提交竞争检查）
 type updateRecipeBody struct {
-	ExpectedRevisionID string        `json:"expected_revision_id" binding:"required"`
-	Name               string        `json:"name" binding:"required"`
-	Description        string        `json:"description"`
-	SkillSchema        model.JSONMap `json:"skill_schema"`
+	ExpectedRevisionID string         `json:"expected_revision_id" binding:"required"`
+	Name               string         `json:"name" binding:"required"`
+	Description        string         `json:"description"`
+	SkillSchema        model.JSONMap  `json:"skill_schema"`
 	Tags               model.JSONList `json:"tags"`
-	Author             string        `json:"author"`
-	VersionLabel       string        `json:"version_label"`
+	Author             string         `json:"author"`
+	VersionLabel       string         `json:"version_label"`
 }
 
 // craftBody 按不可变版本炼制一枚
@@ -94,12 +94,12 @@ func (h *Handler) ListRecipes(c *gin.Context) (response.Code, any, error) {
 	out := make([]recipeListOut, 0, len(recipes))
 	for _, item := range recipes {
 		out = append(out, recipeListOut{
-			ID:                item.PillRecipe.UUID,
+			ID:                item.PillRecipe.PillRecipeID,
 			Name:              item.Name,
-			CurrentRevisionID: item.CurrentRevisionUUID,
+			CurrentRevisionID: item.CurrentRevisionUUID.String(),
 			ArchivedAt:        item.PillRecipe.ArchivedAt,
 			CreatedAt:         item.PillRecipe.CreatedAt,
-			AvailableCount:    counts[item.PillRecipe.ID],
+			AvailableCount:    counts[item.PillRecipe.PillRecipeID],
 			Revision:          item.Revision,
 		})
 	}
@@ -289,7 +289,7 @@ func operationResultOut(r *service.PillOperationResult) map[string]any {
 
 func recipeDetailFrom(recipe *model.PillRecipe, rev *model.PillRecipeRevision) recipeDetailOut {
 	out := recipeDetailOut{
-		ID:           recipe.UUID,
+		ID:           recipe.PillRecipeID,
 		Name:         rev.Name,
 		Description:  rev.Description,
 		SkillSchema:  rev.SkillSchema,
@@ -301,14 +301,14 @@ func recipeDetailFrom(recipe *model.PillRecipe, rev *model.PillRecipeRevision) r
 		CreatedAt:    recipe.CreatedAt,
 	}
 	if recipe.CurrentRevisionID != nil {
-		out.CurrentRevisionID = rev.UUID
+		out.CurrentRevisionID = rev.PillRecipeRevisionID
 	}
 	return out
 }
 
 func revisionFrom(rev *model.PillRecipeRevision) revisionOut {
 	return revisionOut{
-		ID:           rev.UUID,
+		ID:           rev.PillRecipeRevisionID,
 		Revision:     rev.Revision,
 		Name:         rev.Name,
 		Description:  rev.Description,

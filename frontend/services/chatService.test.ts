@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { streamChatMessage, type StreamHandlers } from '@/services/chatService'
+import { resumeChatRun, streamChatMessage, type StreamHandlers } from '@/services/chatService'
 
 function handlers(overrides: Partial<StreamHandlers> = {}): StreamHandlers {
   return {
@@ -19,6 +19,10 @@ function sseResponse(body: string): Response {
     headers: { 'Content-Type': 'text/event-stream' },
   })
 }
+
+/** 资源身份一律 UUID 字符串；禁止 Number()/parseInt() 数字化（011 契约回归守卫） */
+const SESSION_UUID = '11111111-1111-4111-8111-111111111111'
+const RUN_UUID = '22222222-2222-4222-8222-222222222222'
 
 describe('chat SSE transport boundaries', () => {
   afterEach(() => vi.unstubAllGlobals())
@@ -70,6 +74,20 @@ describe('chat SSE transport boundaries', () => {
     })
   })
 
+  it('embeds the session UUID verbatim in the SSE endpoint URL (no numeric coercion)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(sseResponse('event: done\ndata: {}\n\n'))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await streamChatMessage(SESSION_UUID, 'question', handlers())
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url] = fetchMock.mock.calls[0]
+    expect(url).toBe(`/api/v1/chat/sse/${SESSION_UUID}`)
+    const request = fetchMock.mock.calls[0][1] as RequestInit
+    expect(request.method).toBe('POST')
+    expect(JSON.parse(String(request.body))).toEqual({ content: 'question' })
+  })
+
   it('serializes the explicit retry contract', async () => {
     const fetchMock = vi.fn().mockResolvedValue(sseResponse('event: done\ndata: {}\n\n'))
     vi.stubGlobal('fetch', fetchMock)
@@ -83,6 +101,49 @@ describe('chat SSE transport boundaries', () => {
 
     const request = fetchMock.mock.calls[0][1] as RequestInit
     expect(JSON.parse(String(request.body))).toEqual({ content: 'same question', retry: true })
+  })
+
+  it('opts into prompt debugging only when requested', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(sseResponse('event: done\ndata: {}\n\n'))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await (streamChatMessage as unknown as (
+      sessionId: string,
+      content: string,
+      handlers: StreamHandlers,
+      options: { debugPrompt: boolean },
+    ) => Promise<void>)('session', 'inspect me', handlers(), { debugPrompt: true })
+
+    const request = fetchMock.mock.calls[0][1] as RequestInit
+    expect(JSON.parse(String(request.body))).toEqual({ content: 'inspect me', debug_prompt: true })
+  })
+
+  it('delivers prompt_debug before the answer chunks', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse([
+      'event: prompt_debug',
+      'data: {"agent_id":"agent-a","agent_name":"Alpha","model":"test-model","messages":[{"role":"system","content":"STRICT_DEBUG_SYSTEM_PROMPT"}],"generation":{"max_tokens":128,"max_sentences":2}}',
+      '',
+      'event: chunk',
+      'data: {"content":"answer"}',
+      '',
+      'event: done',
+      'data: {}',
+      '',
+      '',
+    ].join('\n'))))
+    const onPromptDebug = vi.fn()
+    const onChunk = vi.fn()
+
+    await streamChatMessage('session', 'question', handlers({
+      onChunk,
+      ...({ onPromptDebug } as Record<string, unknown>),
+    } as Partial<StreamHandlers>))
+
+    expect(onPromptDebug).toHaveBeenCalledWith(expect.objectContaining({
+      agent_name: 'Alpha',
+      model: 'test-model',
+    }))
+    expect(onPromptDebug.mock.invocationCallOrder[0]).toBeLessThan(onChunk.mock.invocationCallOrder[0])
   })
 
   it('acknowledges persisted user state before later stream events', async () => {
@@ -119,5 +180,45 @@ describe('chat SSE transport boundaries', () => {
       terminal: true,
       recovery: 'none',
     }))
+  })
+})
+
+describe('run-aware resume transport', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('resumes the interrupted run without resending a new user message', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(sseResponse('event: done\ndata: {}\n\n'))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await resumeChatRun(RUN_UUID, handlers())
+
+    // run_id 为 UUID 字符串:原样进 resume 路径,禁止数字化
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url] = fetchMock.mock.calls[0]
+    expect(url).toBe(`/api/v1/chat/runs/${RUN_UUID}/resume`)
+    const request = fetchMock.mock.calls[0][1] as RequestInit
+    expect(request.method).toBe('POST')
+    expect(request.body).toBeUndefined()
+  })
+
+  it('delivers run_id from accepted and stopped events to the control callbacks', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse([
+      'event: accepted',
+      'data: {"run_id":"run-1"}',
+      '',
+      'event: stopped',
+      'data: {"run_id":"run-1"}',
+      '',
+      '',
+    ].join('\n'))))
+    const onAccepted = vi.fn()
+    const onStopped = vi.fn()
+    const onInterrupted = vi.fn()
+
+    await resumeChatRun('run-1', handlers({ onAccepted, onStopped, onInterrupted }))
+
+    expect(onAccepted).toHaveBeenCalledWith('run-1')
+    expect(onStopped).toHaveBeenCalledWith('run-1')
+    expect(onInterrupted).not.toHaveBeenCalled()
   })
 })

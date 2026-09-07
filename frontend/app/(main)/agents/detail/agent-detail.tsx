@@ -163,8 +163,8 @@ function LocalMemorySection({ agent }: { agent: AgentDetail }) {
   const handlePin = async (memory: AgentMemory, pinned: boolean) => {
     setNotice('')
     try {
-      const updated = await agentService.updateAgentMemory(agent.id, memory.uuid, { pinned })
-      setMemories(prev => prev.map(m => (m.uuid === memory.uuid ? updated : m)))
+      const updated = await agentService.updateAgentMemory(agent.id, memory.id, { pinned })
+      setMemories(prev => prev.map(m => (m.id === memory.id ? updated : m)))
       setNotice(tMem('saved'))
     } catch {
       setNotice(tMem('op_failed'))
@@ -179,8 +179,8 @@ function LocalMemorySection({ agent }: { agent: AgentDetail }) {
   const doDeleteMemory = async (memory: AgentMemory) => {
     setNotice('')
     try {
-      await agentService.deleteAgentMemory(agent.id, memory.uuid)
-      setMemories(prev => prev.filter(m => m.uuid !== memory.uuid))
+      await agentService.deleteAgentMemory(agent.id, memory.id)
+      setMemories(prev => prev.filter(m => m.id !== memory.id))
       setNotice(tMem('saved'))
     } catch {
       setNotice(tMem('op_failed'))
@@ -213,8 +213,8 @@ function LocalMemorySection({ agent }: { agent: AgentDetail }) {
     setFormError('')
     try {
       if (editingMemory) {
-        const updated = await agentService.updateAgentMemory(agent.id, editingMemory.uuid, input)
-        setMemories(prev => prev.map(m => (m.uuid === editingMemory.uuid ? updated : m)))
+        const updated = await agentService.updateAgentMemory(agent.id, editingMemory.id, input)
+        setMemories(prev => prev.map(m => (m.id === editingMemory.id ? updated : m)))
       } else {
         const created = await agentService.createAgentMemory(agent.id, input)
         setMemories(prev => [created, ...prev])
@@ -343,7 +343,7 @@ function LocalMemorySection({ agent }: { agent: AgentDetail }) {
                     : null
                   return (
                     <li
-                      key={memory.uuid}
+                      key={memory.id}
                       className="rounded-lg border border-border/70 bg-muted px-3 py-2.5"
                     >
                       <div className="mb-1 flex flex-wrap items-center gap-2">
@@ -419,7 +419,7 @@ function LocalMemorySection({ agent }: { agent: AgentDetail }) {
 
           {formOpen !== null && (
             <MemoryForm
-              key={formOpen === 'new' ? 'new' : formOpen.uuid}
+              key={formOpen === 'new' ? 'new' : formOpen.id}
               initial={formOpen === 'new' ? null : formOpen}
               saving={saving}
               error={formError}
@@ -680,11 +680,9 @@ export default function AgentDetailPage({ agentId }: AgentDetailPageProps) {
 
   // 挂载恢复:读会话级 pending 记录到状态。不能改用 state 初始化——SSR/水合期无
   // sessionStorage,初始值必须与服务器一致(结果未知提示只能水合后浮现)
-  /* eslint-disable react-hooks/set-state-in-effect -- 外部存储一次性读取,非派生可算 */
   useEffect(() => {
     refreshPending()
   }, [refreshPending])
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   // 道人 ID 变化：关闭弹窗、丢弃旧响应写入（operation 恢复记录保留，回到该道人时提示仍在）
   const lastPageAgentIdRef = useRef(agentId)

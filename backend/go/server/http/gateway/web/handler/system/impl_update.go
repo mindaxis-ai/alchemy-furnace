@@ -29,6 +29,7 @@ var updateProgress atomic.Int32
 
 // CheckUpdateResponse 检查更新响应 DTO
 type CheckUpdateResponse struct {
+	Enabled       bool   `json:"enabled"`
 	HasUpdate     bool   `json:"has_update"`
 	LatestVersion string `json:"latest_version"`
 	CurrentVer    string `json:"current_version"`
@@ -45,6 +46,7 @@ func (cls *System) CheckUpdate(c *gin.Context) (response.Code, any, error) {
 	if err != nil {
 		if errors.Is(err, updater.ErrUpdateDisabled) {
 			return response.Ok, &CheckUpdateResponse{
+				Enabled:   false,
 				HasUpdate: false,
 				Notes:     "开发构建未启用更新",
 			}, nil
@@ -52,10 +54,11 @@ func (cls *System) CheckUpdate(c *gin.Context) (response.Code, any, error) {
 		return response.ServerInternalError, nil, err
 	}
 
-	current := "v" + buildinfo.Version
+	current := buildinfo.Version
 	has := updater.IsNewer(rel.Version, current)
 	asset := updater.SelectAsset(rel, runtime.GOOS, runtime.GOARCH)
 	resp := &CheckUpdateResponse{
+		Enabled:       true,
 		HasUpdate:     has,
 		LatestVersion: rel.Version,
 		CurrentVer:    current,
@@ -81,7 +84,7 @@ func (cls *System) ApplyUpdate(c *gin.Context) (response.Code, any, error) {
 	if asset == nil {
 		return response.ServerInternalError, nil, errors.New("无匹配当前平台的资产")
 	}
-	current := "v" + buildinfo.Version
+	current := buildinfo.Version
 	if !updater.IsNewer(rel.Version, current) {
 		return response.Ok, gin.H{"message": "已是最新版本,无需更新"}, nil
 	}

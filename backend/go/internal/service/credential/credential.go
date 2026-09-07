@@ -16,6 +16,10 @@ type ModelCredentials struct {
 	Model   string `json:"model"`
 	BaseURL string `json:"base_url,omitempty"`
 	APIKey  string `json:"api_key,omitempty"`
+	// ProviderName/ProviderType 非敏感元数据(供应商名/协议):供编排快照填 model_ref
+	// 路由信息,不参与解密链;未登记模型的回退凭证两者为空(向后兼容)。
+	ProviderName string `json:"provider_name,omitempty"`
+	ProviderType string `json:"provider_type,omitempty"`
 }
 
 // ErrNoSecret 未配置 MODEL_KEY_SECRET（创建/更新供应商 API Key 时返回，服务层映射为 HTTP 400）。

@@ -11,7 +11,8 @@
  * - 请求级生命周期，无长驻连接，无需重连
  */
 import { get, post, put, del, buildApiUrl, authHeaders } from './api'
-import type { ChatSession, ChatMessage, ChatReadiness, ChatRecoveryMode, GroupMember, CreateSessionRequest, PagedList, ListParams } from './types'
+import type { ChatSession, ChatMessage, ChatReadiness, ChatRecoveryMode, GroupMember, CreateSessionRequest, PagedList, ListParams, PromptDebugPayload } from './types'
+export type { PromptDebugPayload } from './types'
 
 /**
  * 获取后端权威的可对话就绪状态(active 道人数 / 通过正式凭证校验的道人名单 / 可创建类型)
@@ -105,6 +106,8 @@ export interface StreamErrorInfo extends Partial<StreamSpeakerInfo> {
 export interface StreamOptions {
   /** 重试最近一次同内容用户消息；服务端不得重复保存用户行。 */
   retry?: boolean
+  /** 请求服务端返回本轮实际发送给模型的 Prompt；默认关闭。 */
+  debugPrompt?: boolean
 }
 
 /** 流式对话回调 */
@@ -113,14 +116,16 @@ export interface StreamHandlers {
   onChunk: (chunk: StreamChunk) => void
   /** 流式输出完成（完整回复已入库） */
   onDone: () => void
-  /** 已被本地停止（abort；此前内容服务端已保存） */
-  onStopped: () => void
+  /** 已被停止:本地 abort(无 run_id)或服务端 stopped 事件(携带 run_id) */
+  onStopped: (runId?: string) => void
   /** 服务端错误（可读中文描述），需恢复输入状态 */
   onError: (error: string, info: StreamErrorInfo) => void
   /** 流式生成中网络中断（已收到部分内容，该条回复可能不完整） */
   onInterrupted: () => void
-  /** 服务端已保存或确认复用用户消息；后续传输中断可安全走 persisted_retry。 */
-  onAccepted?: () => void
+  /** 服务端已保存或确认复用用户消息并携带本轮 run_id(编排回合标识)。 */
+  onAccepted?: (runId?: string) => void
+  /** 调试模式: 模型调用前收到实际 Prompt 快照。 */
+  onPromptDebug?: (payload: PromptDebugPayload) => void
   /** 群聊: 某道人开始发言(气泡身份头) */
   onSpeakerStart?: (info: StreamSpeakerInfo) => void
   /** 群聊: 某道人发言完毕(已入库) */
@@ -150,11 +155,11 @@ export function stopStream(): void {
  * 发送消息并以标准 SSE 流式接收回复
  * 同一时间只允许一条流式请求（重复调用会先中断上一条）
  */
-export async function streamChatMessage(
-  sessionId: string,
-  content: string,
+/** 发送一条对话请求并按同一收尾纪律消费 SSE 响应体。
+ * streamChatMessage 与 resumeChatRun 共用(公开 SSE 契约一致,仅发起路径不同)。 */
+async function requestEventStream(
+  run: () => Promise<Response>,
   handlers: StreamHandlers,
-  options: StreamOptions = {},
 ): Promise<void> {
   stopStream()
   const controller = new AbortController()
@@ -169,17 +174,7 @@ export async function streamChatMessage(
   }
 
   try {
-    const response = await fetch(buildApiUrl(`/chat/sse/${sessionId}`), {
-      method: 'POST',
-      headers: {
-        'Accept': 'text/event-stream',
-        'Content-Type': 'application/json',
-        ...authHeaders(),
-      },
-      body: JSON.stringify(options.retry ? { content, retry: true } : { content }),
-      signal: controller.signal,
-    })
-
+    const response = await run()
     if (!response.ok || !response.body) {
       const errorData = await response.json().catch(() => ({}))
       terminate(() => handlers.onError(errorData.message || `请求失败（HTTP ${response.status}）`, { terminal: true, recovery: 'none' }))
@@ -212,6 +207,10 @@ export async function streamChatMessage(
         handlers.onChunk(payload as unknown as StreamChunk)
       } else if (type === 'done') {
         terminate(handlers.onDone)
+      } else if (type === 'stopped') {
+        // 服务端判定中断(run 保留可续跑状态):run_id 供前端定位续跑控件
+        const runId = typeof payload.run_id === 'string' ? payload.run_id : undefined
+        terminate(() => handlers.onStopped(runId))
       } else if (type === 'error') {
         const terminal = payload.terminal !== false
         const recovery: ChatRecoveryMode = payload.recovery === 'resend' || payload.recovery === 'persisted_retry'
@@ -222,7 +221,10 @@ export async function streamChatMessage(
         if (terminal) terminate(report)
         else report()
       } else if (type === 'accepted') {
-        handlers.onAccepted?.()
+        const runId = typeof payload.run_id === 'string' ? payload.run_id : ''
+        handlers.onAccepted?.(runId)
+      } else if (type === 'prompt_debug') {
+        handlers.onPromptDebug?.(payload as unknown as PromptDebugPayload)
       } else if (type === 'speaker_start') {
         handlers.onSpeakerStart?.(payload as unknown as StreamSpeakerInfo)
       } else if (type === 'speaker_done') {
@@ -272,4 +274,43 @@ export async function streamChatMessage(
       activeController = null
     }
   }
+}
+
+/**
+ * 发送消息并以标准 SSE 流式接收回复
+ * 同一时间只允许一条流式请求（重复调用会先中断上一条）
+ */
+export async function streamChatMessage(
+  sessionId: string,
+  content: string,
+  handlers: StreamHandlers,
+  options: StreamOptions = {},
+): Promise<void> {
+  await requestEventStream(() => fetch(buildApiUrl(`/chat/sse/${sessionId}`), {
+    method: 'POST',
+    headers: {
+      'Accept': 'text/event-stream',
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+    body: JSON.stringify({
+      content,
+      ...(options.retry ? { retry: true } : {}),
+      ...(options.debugPrompt ? { debug_prompt: true } : {}),
+    }),
+  }), handlers)
+}
+
+/**
+ * 续跑 interrupted run(Task 14):POST /api/v1/chat/runs/:run_id/resume,
+ * 以同一事件契约消费 Python Resume 流;不重发用户消息(无请求体)。
+ */
+export async function resumeChatRun(runId: string, handlers: StreamHandlers): Promise<void> {
+  await requestEventStream(() => fetch(buildApiUrl(`/chat/runs/${runId}/resume`), {
+    method: 'POST',
+    headers: {
+      'Accept': 'text/event-stream',
+      ...authHeaders(),
+    },
+  }), handlers)
 }

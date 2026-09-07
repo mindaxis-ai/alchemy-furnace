@@ -225,7 +225,7 @@ const modelOptions = [
 
 // 本地记忆 fixture(来源会话为合法 UUID 供 chatSessionHref 校验)
 const memoryA: AgentMemory = {
-  uuid: MEMORY_A_ID,
+  id: MEMORY_A_ID,
   kind: 'user_fact',
   content: '用户喜欢围棋',
   keywords: ['围棋'],
@@ -492,6 +492,22 @@ describe('AgentDetailPage', () => {
       const avatar = screen.getByLabelText('头像 URL')
       await user.type(avatar, 'https://example.com/laojun.png')
       expect(avatar).toHaveValue('https://example.com/laojun.png')
+    })
+
+    it('表达欲说明使用导演层新语义:不暗示越健谈越写长文', async () => {
+      setDetailState({ agent: baseAgent })
+      const user = userEvent.setup()
+      renderPage()
+      await enterEditing(user)
+
+      // 新文案:控制群聊参与/追问意愿,不默认写长文,用户当轮要求优先
+      expect(
+        screen.getByText(
+          '控制道人在群聊中主动参与和自然追问的意愿，不会让单条回复默认变成长文；用户当轮要求始终优先。',
+        ),
+      ).toBeInTheDocument()
+      // 旧「越高越健谈」文案不得残留
+      expect(screen.queryByText(/越高越健谈/)).not.toBeInTheDocument()
     })
 
     it('保存成功:基础资料 → 重读能力 → 全量编排 → GET 回读,顺序与新编排正确', async () => {
@@ -1173,7 +1189,7 @@ describe('AgentDetailPage', () => {
     it('新建记忆:提交表单后调用 createAgentMemory 并更新列表', async () => {
       const created: AgentMemory = {
         ...memoryA,
-        uuid: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
         content: '用户喜欢喝茶',
         keywords: ['茶'],
         importance: 3,

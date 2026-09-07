@@ -89,7 +89,10 @@
       "loadFailed": "Could not read diagnostic status",
       "recentFailures": "Recent API failures",
       "noFailures": "No recent API failures",
-      "unknownError": "Unknown error"
+      "unknownError": "Unknown error",
+      "promptDebugTitle": "Prompt debugging",
+      "promptDebugLabel": "Enable prompt debugging",
+      "promptDebugDescription": "When enabled, each daoist reply can reveal the exact prompt sent to its model. Debug data stays in the current view and is not saved to chat history."
     },
     "fire": {
       "title": "Furnace",
@@ -703,6 +706,7 @@
     "empty": "Send a message to start the discourse",
     "emptyHint": "The daoist will reply in a persona shaped by bound pills",
     "retry": "Retry",
+    "continue": "Continue",
     "copy": "Copy",
     "copied": "Copied",
     "error": "Error: {message}",
@@ -710,7 +714,11 @@
     "userLabel": "You",
     "assistantLabel": "Daoist",
     "incomplete": "Possibly incomplete",
-    "stopped": "Stopped"
+    "stopped": "Stopped",
+    "promptDebugShow": "View this prompt",
+    "promptDebugHide": "Hide this prompt",
+    "promptDebugModel": "Model",
+    "promptDebugBudget": "Generation budget"
   },
   "firePanel": {},
   "modelsPanel": {
@@ -863,7 +871,7 @@
   "agentDetail": {
     "editor": {
       "proactivity": "Proactivity",
-      "proactivityHint": "Willingness to speak in group chats (0-100)",
+      "proactivityHint": "Controls willingness to join group conversations and ask a natural follow-up. It does not make each reply longer by default, and the user's current request always takes priority.",
       "consume": {
         "open": "Consume pill",
         "title": "Consume a pill for {name}",

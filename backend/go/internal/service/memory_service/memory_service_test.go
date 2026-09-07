@@ -2,6 +2,7 @@ package memory_service
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 
 	"github.com/alchemy-furnace/server/internal/dao"
@@ -12,9 +13,13 @@ import (
 	"gorm.io/gorm"
 )
 
+const testAgentUID = "0197a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b"
+
 func newTestService(t *testing.T) (*MemoryService, *dao.MemoryDao) {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	// 蒸馏 worker 在独立 goroutine 中访问数据库。SQLite 的 :memory: 按连接隔离，
+	// 连接池切换连接后会看不到已迁移的表；每个测试使用独立临时文件来保持一致视图。
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "memory-service.db")), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -27,11 +32,11 @@ func newTestService(t *testing.T) (*MemoryService, *dao.MemoryDao) {
 	return NewMemoryService(d, nil, nil), d
 }
 
-func seed(t *testing.T, d *dao.MemoryDao, agentID uint, m *model.AgentMemory) {
+func seed(t *testing.T, d *dao.MemoryDao, agentID string, m *model.AgentMemory) {
 	t.Helper()
 	m.AgentID = agentID
-	if m.UUID == uuid.Nil {
-		m.UUID = uuid.New()
+	if m.AgentMemoryID == "" {
+		m.AgentMemoryID = uuid.New().String()
 	}
 	if err := d.SaveMemory(context.Background(), m); err != nil {
 		t.Fatalf("seed: %v", err)
@@ -42,25 +47,25 @@ func TestCreateMemoryValidation(t *testing.T) {
 	svc, _ := newTestService(t)
 	ctx := context.Background()
 	// 非法 kind
-	if _, err := svc.CreateMemory(ctx, 7, service.MemoryInput{Kind: "bogus", Content: "x"}); err == nil {
+	if _, err := svc.CreateMemory(ctx, testAgentUID, service.MemoryInput{Kind: "bogus", Content: "x"}); err == nil {
 		t.Fatal("非法 kind 应拒绝")
 	}
 	// 内容超 500 字
 	long := string(make([]rune, 501))
-	if _, err := svc.CreateMemory(ctx, 7, service.MemoryInput{Kind: "user_fact", Content: long}); err == nil {
+	if _, err := svc.CreateMemory(ctx, testAgentUID, service.MemoryInput{Kind: "user_fact", Content: long}); err == nil {
 		t.Fatal("超长内容应拒绝")
 	}
 	// 空内容
-	if _, err := svc.CreateMemory(ctx, 7, service.MemoryInput{Kind: "user_fact", Content: "  "}); err == nil {
+	if _, err := svc.CreateMemory(ctx, testAgentUID, service.MemoryInput{Kind: "user_fact", Content: "  "}); err == nil {
 		t.Fatal("空内容应拒绝")
 	}
 	// importance 越界
 	i := 9
-	if _, err := svc.CreateMemory(ctx, 7, service.MemoryInput{Kind: "user_fact", Content: "ok", Importance: &i}); err == nil {
+	if _, err := svc.CreateMemory(ctx, testAgentUID, service.MemoryInput{Kind: "user_fact", Content: "ok", Importance: &i}); err == nil {
 		t.Fatal("importance>5 应拒绝")
 	}
 	// 合法创建
-	m, err := svc.CreateMemory(ctx, 7, service.MemoryInput{Kind: "user_fact", Content: "用户喜欢围棋", Keywords: []string{"围棋"}})
+	m, err := svc.CreateMemory(ctx, testAgentUID, service.MemoryInput{Kind: "user_fact", Content: "用户喜欢围棋", Keywords: []string{"围棋"}})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -72,18 +77,18 @@ func TestCreateMemoryValidation(t *testing.T) {
 func TestCreateMemorySameHashMergesImportance(t *testing.T) {
 	svc, _ := newTestService(t)
 	ctx := context.Background()
-	m1, _ := svc.CreateMemory(ctx, 7, service.MemoryInput{Kind: "user_fact", Content: "用户喜欢围棋", Importance: intPtr(2), Confidence: floatPtr(0.6)})
-	m2, err := svc.CreateMemory(ctx, 7, service.MemoryInput{Kind: "user_fact", Content: "用户喜欢围棋", Importance: intPtr(4), Confidence: floatPtr(0.9)})
+	m1, _ := svc.CreateMemory(ctx, testAgentUID, service.MemoryInput{Kind: "user_fact", Content: "用户喜欢围棋", Importance: intPtr(2), Confidence: floatPtr(0.6)})
+	m2, err := svc.CreateMemory(ctx, testAgentUID, service.MemoryInput{Kind: "user_fact", Content: "用户喜欢围棋", Importance: intPtr(4), Confidence: floatPtr(0.9)})
 	if err != nil {
 		t.Fatalf("同哈希再创建: %v", err)
 	}
-	if m2.ID != m1.ID {
-		t.Fatalf("同哈希应合并到同一记录: id1=%d id2=%d", m1.ID, m2.ID)
+	if m2.AgentMemoryID != m1.AgentMemoryID {
+		t.Fatalf("同哈希应合并到同一记录: id1=%s id2=%s", m1.AgentMemoryID, m2.AgentMemoryID)
 	}
 	if m2.Importance != 4 || m2.Confidence != 0.9 {
 		t.Fatalf("合并后 importance/confidence 应取新值: %+v", m2)
 	}
-	list, _ := svc.ListMemories(ctx, 7, "", true)
+	list, _ := svc.ListMemories(ctx, testAgentUID, "", true)
 	if len(list) != 1 {
 		t.Fatalf("应只有 1 条记录: %d", len(list))
 	}
@@ -92,13 +97,13 @@ func TestCreateMemorySameHashMergesImportance(t *testing.T) {
 func TestCreateMemoryConflictSupersedesOld(t *testing.T) {
 	svc, d := newTestService(t)
 	ctx := context.Background()
-	seed(t, d, 7, &model.AgentMemory{Kind: "user_preference", Content: "用户喜欢安静交流,不喜欢太热闹", ContentHash: "old", Importance: 3})
+	seed(t, d, testAgentUID, &model.AgentMemory{Kind: "user_preference", Content: "用户喜欢安静交流,不喜欢太热闹", ContentHash: "old", Importance: 3})
 	// 同 kind、内容 bigram ≥0.85(仅末尾多一个"了")→ 冲突:旧 active 置替为新 superseded
-	_, err := svc.CreateMemory(ctx, 7, service.MemoryInput{Kind: "user_preference", Content: "用户喜欢安静交流,不喜欢太热闹了"})
+	_, err := svc.CreateMemory(ctx, testAgentUID, service.MemoryInput{Kind: "user_preference", Content: "用户喜欢安静交流,不喜欢太热闹了"})
 	if err != nil {
 		t.Fatalf("create conflicting: %v", err)
 	}
-	all, _ := svc.ListMemories(ctx, 7, "", false)
+	all, _ := svc.ListMemories(ctx, testAgentUID, "", false)
 	activeCount, supersededCount := 0, 0
 	for _, m := range all {
 		if m.Status == "active" {
@@ -116,13 +121,13 @@ func TestCreateMemoryConflictSupersedesOld(t *testing.T) {
 func TestCreateMemoryPinnedNeverSuperseded(t *testing.T) {
 	svc, d := newTestService(t)
 	ctx := context.Background()
-	seed(t, d, 7, &model.AgentMemory{Kind: "user_preference", Content: "用户喜欢安静交流,不喜欢太热闹", ContentHash: "old", Pinned: true, Importance: 3})
+	seed(t, d, testAgentUID, &model.AgentMemory{Kind: "user_preference", Content: "用户喜欢安静交流,不喜欢太热闹", ContentHash: "old", Pinned: true, Importance: 3})
 	// 同内容冲突 + 旧记忆 pinned → 旧记忆保留 active,新记忆照常创建,不产生 superseded
-	_, err := svc.CreateMemory(ctx, 7, service.MemoryInput{Kind: "user_preference", Content: "用户喜欢安静交流,不喜欢太热闹了"})
+	_, err := svc.CreateMemory(ctx, testAgentUID, service.MemoryInput{Kind: "user_preference", Content: "用户喜欢安静交流,不喜欢太热闹了"})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	all, _ := svc.ListMemories(ctx, 7, "", false)
+	all, _ := svc.ListMemories(ctx, testAgentUID, "", false)
 	supersededCount, activePinned := 0, 0
 	for _, m := range all {
 		if m.Status == "superseded" {
@@ -141,15 +146,15 @@ func TestRetrieveRankingAndCaps(t *testing.T) {
 	svc, d := newTestService(t)
 	ctx := context.Background()
 	// 7 条:1 pinned + 6 普通(importance 各异,含 1 条关键词命中)
-	seed(t, d, 7, &model.AgentMemory{Kind: "user_fact", Content: "用户喜欢围棋,每周复盘", ContentHash: "k", Importance: 1, Pinned: true})
-	seed(t, d, 7, &model.AgentMemory{Kind: "episode", Content: "上周用户提到工作压力大", ContentHash: "e1", Importance: 5})
-	seed(t, d, 7, &model.AgentMemory{Kind: "episode", Content: "上个月一起喝了茶", ContentHash: "e2", Importance: 4})
-	seed(t, d, 7, &model.AgentMemory{Kind: "user_preference", Content: "用户喜欢喝茶", ContentHash: "e3", Importance: 3})
-	seed(t, d, 7, &model.AgentMemory{Kind: "user_preference", Content: "用户喜欢爬山", ContentHash: "e4", Importance: 3})
-	seed(t, d, 7, &model.AgentMemory{Kind: "relationship", Content: "用户与老君交好", ContentHash: "e5", Importance: 2})
-	seed(t, d, 7, &model.AgentMemory{Kind: "open_loop", Content: "答应帮用户查棋谱", ContentHash: "e6", Importance: 1})
+	seed(t, d, testAgentUID, &model.AgentMemory{Kind: "user_fact", Content: "用户喜欢围棋,每周复盘", ContentHash: "k", Importance: 1, Pinned: true})
+	seed(t, d, testAgentUID, &model.AgentMemory{Kind: "episode", Content: "上周用户提到工作压力大", ContentHash: "e1", Importance: 5})
+	seed(t, d, testAgentUID, &model.AgentMemory{Kind: "episode", Content: "上个月一起喝了茶", ContentHash: "e2", Importance: 4})
+	seed(t, d, testAgentUID, &model.AgentMemory{Kind: "user_preference", Content: "用户喜欢喝茶", ContentHash: "e3", Importance: 3})
+	seed(t, d, testAgentUID, &model.AgentMemory{Kind: "user_preference", Content: "用户喜欢爬山", ContentHash: "e4", Importance: 3})
+	seed(t, d, testAgentUID, &model.AgentMemory{Kind: "relationship", Content: "用户与老君交好", ContentHash: "e5", Importance: 2})
+	seed(t, d, testAgentUID, &model.AgentMemory{Kind: "open_loop", Content: "答应帮用户查棋谱", ContentHash: "e6", Importance: 1})
 
-	snips, err := svc.Retrieve(ctx, 7, "聊聊围棋的布局")
+	snips, err := svc.Retrieve(ctx, testAgentUID, "聊聊围棋的布局")
 	if err != nil {
 		t.Fatalf("retrieve: %v", err)
 	}
@@ -172,9 +177,9 @@ func TestRetrieveRankingAndCaps(t *testing.T) {
 func TestRetrieveEmptyMessageFallsBackToImportance(t *testing.T) {
 	svc, d := newTestService(t)
 	ctx := context.Background()
-	seed(t, d, 7, &model.AgentMemory{Kind: "episode", Content: "低重要度记忆", ContentHash: "l", Importance: 1})
-	seed(t, d, 7, &model.AgentMemory{Kind: "episode", Content: "高重要度记忆", ContentHash: "h", Importance: 5})
-	snips, err := svc.Retrieve(ctx, 7, "")
+	seed(t, d, testAgentUID, &model.AgentMemory{Kind: "episode", Content: "低重要度记忆", ContentHash: "l", Importance: 1})
+	seed(t, d, testAgentUID, &model.AgentMemory{Kind: "episode", Content: "高重要度记忆", ContentHash: "h", Importance: 5})
+	snips, err := svc.Retrieve(ctx, testAgentUID, "")
 	if err != nil {
 		t.Fatalf("retrieve: %v", err)
 	}
@@ -186,16 +191,16 @@ func TestRetrieveEmptyMessageFallsBackToImportance(t *testing.T) {
 func TestMemoryCRUDAndClear(t *testing.T) {
 	svc, _ := newTestService(t)
 	ctx := context.Background()
-	m, _ := svc.CreateMemory(ctx, 7, service.MemoryInput{Kind: "episode", Content: "一次对话"})
+	m, _ := svc.CreateMemory(ctx, testAgentUID, service.MemoryInput{Kind: "episode", Content: "一次对话"})
 	pinned := true
-	updated, err := svc.UpdateMemory(ctx, 7, m.UUID, service.MemoryInput{Content: "一次重要对话", Pinned: &pinned})
+	updated, err := svc.UpdateMemory(ctx, testAgentUID, uuid.MustParse(m.AgentMemoryID), service.MemoryInput{Content: "一次重要对话", Pinned: &pinned})
 	if err != nil || !updated.Pinned || updated.Content != "一次重要对话" {
 		t.Fatalf("update: %+v err=%v", updated, err)
 	}
-	if err := svc.DeleteMemory(ctx, 7, m.UUID); err != nil {
+	if err := svc.DeleteMemory(ctx, testAgentUID, uuid.MustParse(m.AgentMemoryID)); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	left, _ := svc.ListMemories(ctx, 7, "", false)
+	left, _ := svc.ListMemories(ctx, testAgentUID, "", false)
 	if len(left) != 0 {
 		t.Fatalf("删除后应无记录: %d", len(left))
 	}

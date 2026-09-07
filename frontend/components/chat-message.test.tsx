@@ -14,6 +14,7 @@ const doubles = vi.hoisted(() => ({
   getSession: vi.fn(),
   getMessages: vi.fn(),
   streamChatMessage: vi.fn(),
+  resumeChatRun: vi.fn(),
   stopStream: vi.fn(),
   fetchAgents: vi.fn(),
   listProviders: vi.fn(),
@@ -34,6 +35,7 @@ vi.mock('@/services/chatService', () => ({
   getSession: doubles.getSession,
   getMessages: doubles.getMessages,
   streamChatMessage: doubles.streamChatMessage,
+  resumeChatRun: doubles.resumeChatRun,
   stopStream: doubles.stopStream,
   createSession: vi.fn(),
   createGroupSession: vi.fn(),
@@ -135,10 +137,26 @@ describe('recoverable chat history and streaming', () => {
     doubles.listSessions.mockResolvedValue({ list: [singleSession], total: 1 })
     doubles.getSession.mockResolvedValue(singleSession)
     doubles.getMessages.mockResolvedValue({ list: [], total: 0 })
+    const localValues = new Map<string, string>()
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => localValues.get(key) ?? null,
+        setItem: (key: string, value: string) => localValues.set(key, value),
+        removeItem: (key: string) => localValues.delete(key),
+        clear: () => localValues.clear(),
+      },
+    })
     doubles.streamChatMessage.mockImplementation(async (_sessionId: string, _content: string, handlers: StreamHandlers) => {
       handlers.onDone()
     })
     Element.prototype.scrollIntoView = vi.fn()
+  })
+
+  it('uses the daoist model without showing a composer model selector', async () => {
+    renderSession(singleSession.id)
+    await screen.findByRole('textbox', { name: 'input.messageLabel' })
+    expect(screen.queryByRole('combobox')).toBeNull()
   })
 
   it('shows loading and then a retryable back-to-lobby state for a missing session', async () => {
@@ -413,6 +431,99 @@ describe('recoverable chat history and streaming', () => {
     )
   })
 
+
+  it('resumes the interrupted run without resending a new user message', async () => {
+    doubles.streamChatMessage.mockImplementationOnce(async (_sessionId: string, _content: string, handlers: StreamHandlers) => {
+      handlers.onAccepted?.('run-1')
+      handlers.onChunk({ content: 'partial answer' })
+      handlers.onInterrupted()
+    })
+    doubles.resumeChatRun.mockImplementationOnce(async (_runId: string, handlers: StreamHandlers) => {
+      handlers.onChunk({ content: 'resumed tail' })
+      handlers.onDone()
+    })
+    const user = userEvent.setup()
+    renderSession(singleSession.id)
+    const input = await screen.findByRole('textbox')
+
+    await user.type(input, 'original question')
+    await user.click(screen.getByRole('button', { name: 'input.send' }))
+
+    expect(await screen.findByText('partial answer')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'continue' }))
+
+    await waitFor(() => expect(doubles.resumeChatRun).toHaveBeenCalledWith('run-1', expect.any(Object)))
+    expect(doubles.streamChatMessage).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText('partial answer')).not.toBeInTheDocument()
+    expect(await screen.findByText('resumed tail')).toBeInTheDocument()
+    expect(screen.getAllByText('original question')).toHaveLength(1)
+  })
+
+  it('keeps completed group replies and removes only the interrupted fragment on continue', async () => {
+    doubles.agents = [activeAgent('agent-a', 'Alpha'), activeAgent('agent-b', 'Beta')]
+    doubles.listSessions.mockResolvedValue({ list: [groupSession], total: 1 })
+    doubles.getSession.mockResolvedValue(groupSession)
+    doubles.streamChatMessage.mockImplementationOnce(async (_sessionId: string, _content: string, handlers: StreamHandlers) => {
+      handlers.onAccepted?.('run-g')
+      handlers.onSpeakerStart?.({ agent_id: 'agent-a', agent_name: 'Alpha' })
+      handlers.onChunk({ agent_id: 'agent-a', agent_name: 'Alpha', content: 'alpha full' })
+      handlers.onSpeakerDone?.({ agent_id: 'agent-a', agent_name: 'Alpha', message_id: 'message-a' })
+      handlers.onSpeakerStart?.({ agent_id: 'agent-b', agent_name: 'Beta' })
+      handlers.onChunk({ agent_id: 'agent-b', agent_name: 'Beta', content: 'half b' })
+      handlers.onInterrupted()
+    })
+    doubles.resumeChatRun.mockImplementationOnce(async (_runId: string, handlers: StreamHandlers) => {
+      handlers.onSpeakerStart?.({ agent_id: 'agent-b', agent_name: 'Beta' })
+      handlers.onChunk({ agent_id: 'agent-b', agent_name: 'Beta', content: 'rest b' })
+      handlers.onSpeakerDone?.({ agent_id: 'agent-b', agent_name: 'Beta', message_id: 'message-b2' })
+      handlers.onTurnDone?.({ spoke: 2 })
+    })
+    const user = userEvent.setup()
+    renderSession(groupSession.id)
+    const input = await screen.findByRole('textbox')
+
+    await user.type(input, 'group question')
+    await user.click(screen.getByRole('button', { name: 'input.send' }))
+
+    expect(await screen.findByText('alpha full')).toBeInTheDocument()
+    expect(await screen.findByText('half b')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'continue' }))
+
+    await waitFor(() => expect(doubles.resumeChatRun).toHaveBeenCalledWith('run-g', expect.any(Object)))
+    expect(screen.getByText('alpha full')).toBeInTheDocument()
+    expect(screen.queryByText('half b')).not.toBeInTheDocument()
+    expect(await screen.findByText('rest b')).toBeInTheDocument()
+  })
+
+  it('cancels the old run control when a new user message starts a new run', async () => {
+    doubles.streamChatMessage
+      .mockImplementationOnce(async (_sessionId: string, _content: string, handlers: StreamHandlers) => {
+        handlers.onAccepted?.('run-1')
+        handlers.onChunk({ content: 'old partial' })
+        handlers.onInterrupted()
+      })
+      .mockImplementationOnce(async (_sessionId: string, _content: string, handlers: StreamHandlers) => {
+        handlers.onAccepted?.('run-2')
+        handlers.onChunk({ content: 'new answer' })
+        handlers.onDone()
+      })
+    const user = userEvent.setup()
+    renderSession(singleSession.id)
+    const input = await screen.findByRole('textbox')
+
+    await user.type(input, 'first question')
+    await user.click(screen.getByRole('button', { name: 'input.send' }))
+    expect(await screen.findByText('old partial')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'continue' })).toBeInTheDocument()
+
+    await user.type(input, 'second question')
+    await user.click(screen.getByRole('button', { name: 'input.send' }))
+
+    await waitFor(() => expect(doubles.streamChatMessage).toHaveBeenCalledTimes(2))
+    expect(screen.queryByRole('button', { name: 'continue' })).not.toBeInTheDocument()
+    expect(screen.queryByText('old partial')).toBeInTheDocument()
+  })
+
   it('resends a single pre-persist failure normally without duplicating the optimistic user bubble', async () => {
     let attempt = 0
     doubles.streamChatMessage.mockImplementation(async (_sessionId: string, _content: string, handlers: StreamHandlers) => {
@@ -603,6 +714,131 @@ describe('recoverable chat history and streaming', () => {
     expect(screen.getByText('beta reply')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Alpha' }).querySelector('img')).toHaveAttribute('src', 'https://example.com/alpha.png')
     expect(screen.getByRole('button', { name: 'Beta' }).querySelector('img')).toHaveAttribute('src', 'https://example.com/beta.png')
+  })
+
+  it('attaches the actual prompt to its answer when prompt debugging is enabled', async () => {
+    window.localStorage.setItem('alchemy.promptDebug', 'true')
+    doubles.streamChatMessage.mockImplementation(async (
+      _sessionId: string,
+      _content: string,
+      handlers: StreamHandlers,
+      options: { debugPrompt?: boolean },
+    ) => {
+      expect(options.debugPrompt).toBe(true)
+      handlers.onPromptDebug?.({
+        agent_id: 'agent-1',
+        agent_name: 'Agent One',
+        model: 'model-agent-1',
+        messages: [{ role: 'system', content: 'STRICT_DEBUG_SYSTEM_PROMPT' }],
+        generation: { max_tokens: 128, max_sentences: 2 },
+      })
+      handlers.onChunk({ content: 'debuggable answer' })
+      handlers.onDone()
+    })
+    const user = userEvent.setup()
+    renderSession(singleSession.id)
+    const input = await screen.findByRole('textbox')
+
+    await user.type(input, 'inspect this turn')
+    await user.click(screen.getByRole('button', { name: 'input.send' }))
+
+    expect(await screen.findByText('debuggable answer')).toBeInTheDocument()
+    const disclosure = screen.getByText('promptDebugShow')
+    expect(screen.queryByText('STRICT_DEBUG_SYSTEM_PROMPT')).not.toBeInTheDocument()
+    await user.click(disclosure)
+    expect(screen.getByText('STRICT_DEBUG_SYSTEM_PROMPT')).toBeInTheDocument()
+    expect(screen.getByText('model-agent-1')).toBeInTheDocument()
+  })
+
+  it('expands the prompt panel without crashing when generation is absent', async () => {
+    // 回归锚点(2026-09-04):后端曾裸透传 Python 内部形状(无 generation/model 平铺),
+    // 面板渲染 generation.max_tokens 抛 TypeError;缺失 generation 必须安全渲染。
+    window.localStorage.setItem('alchemy.promptDebug', 'true')
+    doubles.streamChatMessage.mockImplementation(async (_sessionId: string, _content: string, handlers: StreamHandlers) => {
+      handlers.onPromptDebug?.({
+        agent_id: 'agent-1',
+        model: 'model-agent-1',
+        messages: [{ role: 'system', content: 'PROMPT_WITHOUT_GENERATION' }],
+      })
+      handlers.onChunk({ content: 'answer' })
+      handlers.onDone()
+    })
+    const user = userEvent.setup()
+    renderSession(singleSession.id)
+    const input = await screen.findByRole('textbox')
+
+    await user.type(input, 'inspect this turn')
+    await user.click(screen.getByRole('button', { name: 'input.send' }))
+
+    await user.click(await screen.findByText('promptDebugShow'))
+    expect(screen.getByText('PROMPT_WITHOUT_GENERATION')).toBeInTheDocument()
+    expect(screen.getByText('model-agent-1')).toBeInTheDocument()
+    expect(screen.queryByText('promptDebugBudget')).not.toBeInTheDocument()
+  })
+
+  it('hides the budget row when generation is zero (LangGraph has no budget)', async () => {
+    window.localStorage.setItem('alchemy.promptDebug', 'true')
+    doubles.streamChatMessage.mockImplementation(async (_sessionId: string, _content: string, handlers: StreamHandlers) => {
+      handlers.onPromptDebug?.({
+        agent_id: 'agent-1',
+        model: 'model-agent-1',
+        messages: [{ role: 'system', content: 'ZERO_BUDGET_PROMPT' }],
+        generation: { max_tokens: 0, max_sentences: 0 },
+      })
+      handlers.onChunk({ content: 'answer' })
+      handlers.onDone()
+    })
+    const user = userEvent.setup()
+    renderSession(singleSession.id)
+    const input = await screen.findByRole('textbox')
+
+    await user.type(input, 'inspect this turn')
+    await user.click(screen.getByRole('button', { name: 'input.send' }))
+
+    await user.click(await screen.findByText('promptDebugShow'))
+    expect(screen.getByText('ZERO_BUDGET_PROMPT')).toBeInTheDocument()
+    expect(screen.queryByText('promptDebugBudget')).not.toBeInTheDocument()
+  })
+
+  it('keeps each group prompt attached to the matching daoist answer', async () => {
+    window.localStorage.setItem('alchemy.promptDebug', 'true')
+    doubles.agents = [activeAgent('agent-a', 'Alpha'), activeAgent('agent-b', 'Beta')]
+    doubles.listSessions.mockResolvedValue({ list: [groupSession], total: 1 })
+    doubles.getSession.mockResolvedValue(groupSession)
+    doubles.streamChatMessage.mockImplementation(async (_sessionId: string, _content: string, handlers: StreamHandlers) => {
+      // 后端真实事件顺序: speaker_started 先于 prompt_debug。
+      handlers.onSpeakerStart?.({ agent_id: 'agent-a', agent_name: 'Alpha' })
+      handlers.onPromptDebug?.({
+        agent_id: 'agent-a', agent_name: 'Alpha', model: 'model-alpha',
+        messages: [{ role: 'system', content: 'ALPHA_SYSTEM_PROMPT' }],
+        generation: { max_tokens: 128, max_sentences: 2 },
+      })
+      handlers.onChunk({ agent_id: 'agent-a', agent_name: 'Alpha', content: 'alpha answer' })
+      handlers.onSpeakerDone?.({ agent_id: 'agent-a', agent_name: 'Alpha', message_id: 'message-a' })
+      handlers.onSpeakerStart?.({ agent_id: 'agent-b', agent_name: 'Beta' })
+      handlers.onPromptDebug?.({
+        agent_id: 'agent-b', agent_name: 'Beta', model: 'model-beta',
+        messages: [{ role: 'system', content: 'BETA_SYSTEM_PROMPT' }],
+        generation: { max_tokens: 128, max_sentences: 2 },
+      })
+      handlers.onChunk({ agent_id: 'agent-b', agent_name: 'Beta', content: 'beta answer' })
+      handlers.onSpeakerDone?.({ agent_id: 'agent-b', agent_name: 'Beta', message_id: 'message-b' })
+      handlers.onTurnDone?.({ spoke: 2 })
+    })
+    const user = userEvent.setup()
+    renderSession(groupSession.id)
+    const input = await screen.findByRole('textbox')
+
+    await user.type(input, 'inspect group prompts')
+    await user.click(screen.getByRole('button', { name: 'input.send' }))
+
+    const disclosures = await screen.findAllByText('promptDebugShow')
+    expect(disclosures).toHaveLength(2)
+    await user.click(disclosures[0])
+    expect(screen.getByText('ALPHA_SYSTEM_PROMPT')).toBeInTheDocument()
+    expect(screen.queryByText('BETA_SYSTEM_PROMPT')).not.toBeInTheDocument()
+    await user.click(disclosures[1])
+    expect(screen.getByText('BETA_SYSTEM_PROMPT')).toBeInTheDocument()
   })
 
   it('prefers message.agent_avatar over agent profile and member avatars in group chat', async () => {

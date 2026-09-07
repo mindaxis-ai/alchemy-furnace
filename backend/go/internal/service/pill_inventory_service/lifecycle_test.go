@@ -1,6 +1,6 @@
 // 任务 7 测试：全链路生命周期 + 故障矩阵 + 旧行为回归
 // 覆盖：单条生命周期（炼丹→服用→再炼→融合，库存/能力去向全程断言）、
-// 重开 SQLite 重跑迁移/种子库存不复活、三处写失败点 trigger 回滚
+// 重开 SQLite 重跑种子/赠送库存不复活、三处写失败点 trigger 回滚
 // （效果插入在 consume_test.go TestConsumeTriggerRejection，此处补产物插入与
 // operation 结果写入）、双连接并发矩阵（两个 consume 抢一枚、同 preview 不同 key、
 // 同 key 不同 payload；consume/fusion 抢一枚在 fusion_confirm_test.go 已覆盖）。
@@ -47,8 +47,8 @@ func countAvailableForRevision(t *testing.T, db *gorm.DB, revUUID uuid.UUID) int
 	t.Helper()
 	var n int64
 	if err := db.Model(&model.PillItem{}).
-		Joins("JOIN pill_recipe_revisions r ON r.id = pill_items.recipe_revision_id").
-		Where("r.uuid = ? AND pill_items.state = ?", revUUID.String(), model.PillAvailable).
+		Joins("JOIN pill_recipe_revisions r ON r.pill_recipe_revision_id = pill_items.recipe_revision_id").
+		Where("r.pill_recipe_revision_id = ? AND pill_items.state = ?", revUUID.String(), model.PillAvailable).
 		Count(&n).Error; err != nil {
 		t.Fatalf("统计版本库存失败: %v", err)
 	}
@@ -59,7 +59,7 @@ func countAvailableForRevision(t *testing.T, db *gorm.DB, revUUID uuid.UUID) int
 func loadItem(t *testing.T, db *gorm.DB, uid uuid.UUID) *model.PillItem {
 	t.Helper()
 	var it model.PillItem
-	if err := db.Where("uuid = ?", uid.String()).First(&it).Error; err != nil {
+	if err := db.Where("pill_item_id = ?", uid.String()).First(&it).Error; err != nil {
 		t.Fatalf("查实例 %s 失败: %v", uid, err)
 	}
 	return &it
@@ -89,7 +89,7 @@ func TestLifecycleConsumeThenCraftThenFusion(t *testing.T) {
 
 	// 2) 服用 A 实例：A 库存 0、能力 1
 	consumeRes, err := svc.Consume(ctx, service.ConsumePillRequest{
-		OperationID: uuid.New(), AgentID: agent.UUID, ItemID: aItem, Weight: 2, SortOrder: 1,
+		OperationID: uuid.New(), AgentID: uuid.MustParse(agent.DaoAgentID), ItemID: aItem, Weight: 2, SortOrder: 1,
 	})
 	if err != nil {
 		t.Fatalf("Consume: %v", err)
@@ -153,8 +153,8 @@ func TestLifecycleConsumeThenCraftThenFusion(t *testing.T) {
 	if err := db.Find(&effects).Error; err != nil {
 		t.Fatal(err)
 	}
-	if len(effects) != 1 || effects[0].UUID != effectID {
-		t.Fatalf("融合后能力=%d 且 UUID=%v, want 1 且 %v（融合不触碰能力）", len(effects), effects[0].UUID, effectID)
+	if len(effects) != 1 || effects[0].AgentPillEffectID != effectID.String() {
+		t.Fatalf("融合后能力=%d 且 id=%v, want 1 且 %v（融合不触碰能力）", len(effects), effects[0].AgentPillEffectID, effectID)
 	}
 	if loadPreview(t, db, pID).ConfirmedOperationID == nil {
 		t.Fatal("预览应绑定成功操作")
@@ -163,19 +163,16 @@ func TestLifecycleConsumeThenCraftThenFusion(t *testing.T) {
 
 // ---------- 2) 重开 SQLite 库存不复活 ----------
 
-// TestReopenSQLiteInventoryPersists 关闭并重开 SQLite，重跑迁移与种子：
-// 迁移幂等跳过、种子查重不重写、启动赠送凭持久化标记不再补货。
+// TestReopenSQLiteInventoryPersists 关闭并重开 SQLite，重跑种子与赠送：
+// 种子查重不重写、启动赠送凭 PillStarterGrant 持久化标记不再补货（赠送幂等）。
 // 这是防止「重启自动复活」的必测项：已消耗实例保持终态，可用库存数量不变。
 func TestReopenSQLiteInventoryPersists(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "reopen.db")
 	fixed := func() time.Time { return confirmFixedNow }
 
-	// 第一程：完整启动链（迁移 → 内置丹方种子 → 一次性赠送）
+	// 第一程：完整启动链（内置丹方种子 → 一次性赠送）
 	db1 := openInventoryDBAt(t, path)
 	svc1 := New(db1, fixed)
-	if err := dao.MigratePillInventory(db1); err != nil {
-		t.Fatalf("迁移: %v", err)
-	}
 	if err := dao.SeedBuiltinRecipes(db1); err != nil {
 		t.Fatalf("内置种子: %v", err)
 	}
@@ -189,7 +186,7 @@ func TestReopenSQLiteInventoryPersists(t *testing.T) {
 		t.Fatalf("找赠送金丹: %v", err)
 	}
 	if _, err := svc1.Consume(context.Background(), service.ConsumePillRequest{
-		OperationID: uuid.New(), AgentID: agent.UUID, ItemID: first.UUID, Weight: 1, SortOrder: 1,
+		OperationID: uuid.New(), AgentID: uuid.MustParse(agent.DaoAgentID), ItemID: uuid.MustParse(first.PillItemID), Weight: 1, SortOrder: 1,
 	}); err != nil {
 		t.Fatalf("服用: %v", err)
 	}
@@ -207,11 +204,8 @@ func TestReopenSQLiteInventoryPersists(t *testing.T) {
 	}
 	_ = raw.Close()
 
-	// 第二程：重开 + 重跑同一链
+	// 第二程：重开 + 重跑同一链（种子查重不重写、赠送凭 PillStarterGrant 标记不补货）
 	db2 := openInventoryDBAt(t, path)
-	if err := dao.MigratePillInventory(db2); err != nil {
-		t.Fatalf("二次迁移: %v", err)
-	}
 	if err := dao.SeedBuiltinRecipes(db2); err != nil {
 		t.Fatalf("二次种子: %v", err)
 	}
@@ -394,7 +388,7 @@ func TestTwoConsumeRaceSingleItem(t *testing.T) {
 		t.Fatalf("实例状态=%s, want consumed_by_agent", got)
 	}
 	var ag model.DaoAgent
-	if err := db1.First(&ag, "uuid = ?", agent.String()).Error; err != nil {
+	if err := db1.Where("dao_agent_id = ?", agent.String()).First(&ag).Error; err != nil {
 		t.Fatal(err)
 	}
 	if ag.EffectsRevision != 1 {

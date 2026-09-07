@@ -21,7 +21,7 @@ func NewPillDao() *PillDao {
 // TakePillByUUID 按对外 UUID 查询金丹
 func (d *PillDao) TakePillByUUID(ctx context.Context, uid uuid.UUID) (*model.ElixirPill, errors.Error) {
 	var pill model.ElixirPill
-	if err := GetDB().WithContext(ctx).Where("uuid = ?", uid.String()).First(&pill).Error; err != nil {
+	if err := GetDB().WithContext(ctx).Where("elixir_pill_id = ?", uid.String()).First(&pill).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, errors.ErrorRecordNotFound("dao.pill.take_by_uuid")
 		}
@@ -40,7 +40,7 @@ func (d *PillDao) FindPillsByUUIDs(ctx context.Context, uids []uuid.UUID) ([]*mo
 		strs = append(strs, u.String())
 	}
 	var pills []*model.ElixirPill
-	if err := GetDB().WithContext(ctx).Where("uuid IN ?", strs).Find(&pills).Error; err != nil {
+	if err := GetDB().WithContext(ctx).Where("elixir_pill_id IN ?", strs).Find(&pills).Error; err != nil {
 		return nil, errors.ErrorServerInternalError("dao.pill.find_by_uuids")
 	}
 	return pills, nil
@@ -90,34 +90,38 @@ func (d *PillDao) UpdatePill(ctx context.Context, pill *model.ElixirPill, update
 // DeletePill 删除金丹及服用记录(事务)
 func (d *PillDao) DeletePill(ctx context.Context, pill *model.ElixirPill) errors.Error {
 	if err := Transaction(func(tx *gorm.DB) error {
-		if err := tx.WithContext(ctx).Where("pill_id = ?", pill.ID).Delete(&model.AgentPill{}).Error; err != nil {
+		// agent_pills 是 junction 表:物理删除(软删墓碑会被 idx_agent_pill 唯一约束挡住重新绑定)
+		if err := tx.WithContext(ctx).Where("pill_id = ?", pill.ElixirPillID).Unscoped().Delete(&model.AgentPill{}).Error; err != nil {
 			return err
 		}
-		return tx.WithContext(ctx).Delete(pill).Error
+		// 金丹本体物理删除(既有硬删语义;junction 已在上面显式清理)
+		return tx.WithContext(ctx).Unscoped().Delete(pill).Error
 	}); err != nil {
 		return errors.ErrorServerInternalError("dao.pill.delete_pill")
 	}
 	return nil
 }
 
-// FindAgentIDsByPillID 查询服用了指定金丹的道人内部 ID 列表
-func (d *PillDao) FindAgentIDsByPillID(ctx context.Context, pillID uint) ([]uint, errors.Error) {
-	var agentIDs []uint
+// FindAgentIDsByPillID 查询服用了指定金丹的道人 UUID 文本列表
+// (agent_pills.agent_id/pill_id 列即 UUID 文本,无内部 ID 换算)
+func (d *PillDao) FindAgentIDsByPillID(ctx context.Context, pillUID string) ([]string, errors.Error) {
+	var agentIDs []string
 	if err := GetDB().WithContext(ctx).Model(&model.AgentPill{}).
-		Where("pill_id = ?", pillID).
+		Where("pill_id = ?", pillUID).
 		Pluck("agent_id", &agentIDs).Error; err != nil {
 		return nil, errors.ErrorServerInternalError("dao.pill.find_agent_ids")
 	}
 	return agentIDs, nil
 }
 
-// InvalidateLanguagePatternsByAgentIDs 批量失效道人的语言模式缓存
-func (d *PillDao) InvalidateLanguagePatternsByAgentIDs(ctx context.Context, agentIDs []uint) errors.Error {
-	if len(agentIDs) == 0 {
+// InvalidateLanguagePatternsByAgentIDs 批量失效道人(按 UUID 文本)的语言模式缓存
+// (language_patterns.agent_id 列即 UUID 文本,无内部 ID 换算)
+func (d *PillDao) InvalidateLanguagePatternsByAgentIDs(ctx context.Context, agentUIDs []string) errors.Error {
+	if len(agentUIDs) == 0 {
 		return nil
 	}
 	if err := GetDB().WithContext(ctx).Model(&model.LanguagePattern{}).
-		Where("agent_id IN ?", agentIDs).
+		Where("agent_id IN ?", agentUIDs).
 		Update("is_valid", false).Error; err != nil {
 		return errors.ErrorServerInternalError("dao.pill.invalidate_patterns")
 	}

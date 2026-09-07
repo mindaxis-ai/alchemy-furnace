@@ -4,6 +4,9 @@
 package dao
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -93,7 +96,7 @@ func SeedDefaultLLMModels(db *gorm.DB) error {
 	}
 
 	defaultEntry := model.LLMModel{
-		ProviderID:  provider.ID,
+		ProviderID:  provider.LLMProviderID,
 		Name:        cfg.LLM.DefaultModel,
 		DisplayName: cfg.LLM.DefaultModel,
 		Temperature: 0.7,
@@ -119,7 +122,7 @@ func SeedDefaultLLMModels(db *gorm.DB) error {
 		return fmt.Errorf("写入默认模型种子失败: %w", err)
 	}
 	synthesisEntry := model.LLMModel{
-		ProviderID:  provider.ID,
+		ProviderID:  provider.LLMProviderID,
 		Name:        synthesisModel,
 		DisplayName: synthesisModel,
 		Temperature: 0.7,
@@ -137,7 +140,7 @@ func SeedDefaultLLMModels(db *gorm.DB) error {
 
 // ---------- 内置丹方初始化与一次性赠送（金丹消耗品重构） ----------
 // 旧 SeedBuiltinPills（写 ElixirPill）仅保留给 serve 模式零回归；
-// 桌面启动链改为：MigratePillInventory → SeedBuiltinRecipes → GrantStarterPills。
+// 桌面启动链改为：SeedBuiltinRecipes → GrantStarterPills。
 // 顺序约束：必须先 SeedBuiltinRecipes 再 GrantStarterPills（赠送依赖丹方存在）。
 
 // SeedBuiltinRecipes 确保内置丹方存在（幂等，按 v1 名称查重）
@@ -159,7 +162,7 @@ func SeedBuiltinRecipes(db *gorm.DB) error {
 				return err
 			}
 			rev := model.PillRecipeRevision{
-				RecipeID:     recipe.ID,
+				RecipeID:     recipe.PillRecipeID,
 				Revision:     1,
 				Name:         src.Name,
 				Description:  src.Description,
@@ -171,7 +174,7 @@ func SeedBuiltinRecipes(db *gorm.DB) error {
 			if err := tx.Create(&rev).Error; err != nil {
 				return err
 			}
-			return tx.Model(&recipe).Update("current_revision_id", rev.ID).Error
+			return tx.Model(&recipe).Update("current_revision_id", rev.PillRecipeRevisionID).Error
 		})
 		if err != nil {
 			return fmt.Errorf("写入内置丹方「%s」失败: %w", src.Name, err)
@@ -182,75 +185,101 @@ func SeedBuiltinRecipes(db *gorm.DB) error {
 	return nil
 }
 
-// GrantStarterPills 一次性赠送（持久化标记，重启不自动补货）：
-//   - 新用户（迁移报告 is_fresh_install=true）：每个内置丹方赠送 1 枚可用金丹，disposition=granted
-//   - 迁移用户：只写 legacy_accounted 标记，不赠送（旧数据已按迁移规则核算）
-// 幂等：PillStarterGrant.RecipeID 唯一，重复调用不重复产出。
-func GrantStarterPills(db *gorm.DB) error {
-	var st model.PillMigrationState
-	if err := db.Where("key = ?", PillInventoryMigrationKey).First(&st).Error; err != nil {
-		return fmt.Errorf("读取迁移状态失败(请先执行 MigratePillInventory): %w", err)
+// deepCopyJSON 深拷贝 SkillSchema,避免种子源 map 与库行共享引用
+// (原为 pill_inventory_migration.go 内部助手,迁移子系统删除后随调用迁至此处)
+func deepCopyJSON(v model.JSONMap) model.JSONMap {
+	if v == nil {
+		return model.JSONMap{}
 	}
-	isFresh, _ := st.ReportJSON["is_fresh_install"].(bool)
+	raw, err := json.Marshal(v)
+	if err != nil {
+		// 结构上不可能失败(调用方已从库中读出);兜底直接拷贝引用
+		out := model.JSONMap{}
+		for k, val := range v {
+			out[k] = val
+		}
+		return out
+	}
+	var out model.JSONMap
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return model.JSONMap{}
+	}
+	return out
+}
 
+// SeedAll 全量种子链（reset 重建后调用）：内置金丹（旧契约）→ 默认模型 →
+// 内置丹方 → 一次性赠送。顺序约束：丹方必须先于赠送（赠送依赖丹方存在）；
+// LLM 种子在未配置 API Key 时幂等跳过；各子步骤自身幂等，整链可安全重跑。
+func SeedAll(db *gorm.DB) error {
+	if err := SeedBuiltinPills(db); err != nil {
+		return fmt.Errorf("写入内置金丹种子失败: %w", err)
+	}
+	if err := SeedDefaultLLMModels(db); err != nil {
+		return fmt.Errorf("写入默认模型种子失败: %w", err)
+	}
+	if err := SeedBuiltinRecipes(db); err != nil {
+		return fmt.Errorf("写入内置丹方种子失败: %w", err)
+	}
+	if err := GrantStarterPills(db); err != nil {
+		return fmt.Errorf("写入内置金丹赠送失败: %w", err)
+	}
+	return nil
+}
+
+// GrantStarterPills 一次性赠送：每个内置丹方赠送 1 枚可用金丹（持久化标记，重启不自动补货）。
+// 幂等：PillStarterGrant.RecipeID 唯一，重复调用靠唯一约束不重复产出。
+func GrantStarterPills(db *gorm.DB) error {
 	var recipes []model.PillRecipe
 	if err := db.Where("is_builtin = ?", true).Find(&recipes).Error; err != nil {
 		return fmt.Errorf("查询内置丹方失败: %w", err)
 	}
 
-	granted, accounted := 0, 0
+	granted := 0
 	err := db.Transaction(func(tx *gorm.DB) error {
 		for _, r := range recipes {
 			var existing int64
-			if err := tx.Model(&model.PillStarterGrant{}).Where("recipe_id = ?", r.ID).Count(&existing).Error; err != nil {
+			if err := tx.Model(&model.PillStarterGrant{}).Where("recipe_id = ?", r.PillRecipeID).Count(&existing).Error; err != nil {
 				return err
 			}
 			if existing > 0 {
-				continue // 已有赠送/核算记录（重启不自动补货）
+				continue // 已有赠送记录（重启不自动补货）
 			}
-			if isFresh {
-				if r.CurrentRevisionID == nil {
-					return fmt.Errorf("内置丹方「%s」缺少当前版本，无法赠送", r.UUID.String())
-				}
-				// 来源操作：每枚一次赠送独立操作，提供 OriginOperationID
-				op := model.PillOperation{
-					Kind:        "starter_grant",
-					PayloadHash: migrationPayloadHash(model.ElixirPill{UUID: r.UUID, ID: r.ID}),
-					ResultJSON:  model.JSONMap{"kind": "starter_grant", "recipe_uuid": r.UUID.String()},
-				}
-				if err := tx.Create(&op).Error; err != nil {
-					return err
-				}
-				item := model.PillItem{
-					RecipeRevisionID:  *r.CurrentRevisionID,
-					State:             model.PillAvailable,
-					OriginOperationID: op.ID,
-					OriginIndex:       0,
-				}
-				if err := tx.Create(&item).Error; err != nil {
-					return err
-				}
-				if err := tx.Create(&model.PillStarterGrant{
-					RecipeID: r.ID, Disposition: "granted", ItemID: &item.ID,
-				}).Error; err != nil {
-					return err
-				}
-				granted++
-			} else {
-				if err := tx.Create(&model.PillStarterGrant{
-					RecipeID: r.ID, Disposition: "legacy_accounted",
-				}).Error; err != nil {
-					return err
-				}
-				accounted++
+			if r.CurrentRevisionID == nil {
+				return fmt.Errorf("内置丹方「%s」缺少当前版本，无法赠送", r.PillRecipeID)
 			}
+			// 来源操作：每枚一次赠送独立操作，提供 OriginOperationID
+			sum := sha256.Sum256([]byte("starter_grant|" + r.PillRecipeID))
+			op := model.PillOperation{
+				Kind:        "starter_grant",
+				PayloadHash: hex.EncodeToString(sum[:]),
+				ResultJSON:  model.JSONMap{"kind": "starter_grant", "recipe_uuid": r.PillRecipeID},
+			}
+			if err := tx.Create(&op).Error; err != nil {
+				return err
+			}
+			item := model.PillItem{
+				RecipeRevisionID:  *r.CurrentRevisionID,
+				State:             model.PillAvailable,
+				OriginOperationID: op.PillOperationID,
+				OriginIndex:       0,
+			}
+			if err := tx.Create(&item).Error; err != nil {
+				return err
+			}
+			itemUID := item.PillItemID
+			if err := tx.Create(&model.PillStarterGrant{
+				RecipeID: r.PillRecipeID, ItemID: &itemUID,
+			}).Error; err != nil {
+				return err
+			}
+			granted++
 		}
 		return nil
 	})
 	if err != nil {
 		return fmt.Errorf("一次性赠送写入失败: %w", err)
 	}
-	log.Printf("[炼丹炉] 内置丹方一次性赠送完成：新用户赠送 %d 枚，迁移用户核算 %d 个", granted, accounted)
+	log.Printf("[炼丹炉] 内置丹方一次性赠送完成：赠送 %d 枚", granted)
 	return nil
 }
 
