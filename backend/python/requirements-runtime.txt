@@ -17,7 +17,7 @@ openai==1.109.1
 httpx==0.28.1
 
 # 环境变量
-python-dotenv==1.0.1
+python-dotenv==1.2.2
 
 # LangGraph 编排(与 requirements.txt 钉死同版;Task 15 起为对话权威引擎,必须进桌面包)
 langgraph==0.6.11
