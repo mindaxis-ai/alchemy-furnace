@@ -502,7 +502,10 @@
       "modelEmptySuffix": "中配置供应商",
       "defaultBadge": "默认",
       "cancel": "取消",
-      "submit": "招募"
+      "submit": "招募",
+      "avatarUpload": "本地上传",
+      "avatarPreviewAlt": "道人头像预览",
+      "avatarReadFailed": "读取本地头像失败，请重新选择"
     },
     "closeModal": "关闭弹窗"
   },
@@ -569,7 +572,10 @@
       "modelEmptySuffix": "中配置供应商",
       "modelCurrent": "（当前使用）",
       "modelInvalidSuffix": "（已失效）",
-      "defaultBadge": "默认"
+      "defaultBadge": "默认",
+      "avatarUpload": "本地上传",
+      "avatarPreviewAlt": "道人头像预览",
+      "avatarReadFailed": "读取本地头像失败，请重新选择"
     },
     "composer": {
       "empty": "尚未服用金丹，可从下方添加",
@@ -873,7 +879,9 @@
     "avatarSaveFailed": "群头像保存失败",
     "clearAvatar": "清除",
     "saveAvatar": "保存头像",
-    "savingAvatar": "保存中…"
+    "savingAvatar": "保存中…",
+    "avatarUpload": "本地上传",
+    "avatarReadFailed": "读取本地头像失败，请重新选择"
   },
   "agentDetail": {
     "editor": {
@@ -919,7 +927,7 @@
     "bioHint": "1-500 字。Markdown 暂不支持。",
     "avatarLabel": "头像",
     "avatarPlaceholder": "https://example.com/avatar.png",
-    "avatarHint": "只支持完整 URL 或 data:image 数据 URI（相对路径不可用）",
+    "avatarHint": "可粘贴完整图片链接，或从本地上传 PNG、JPEG、WebP、GIF",
     "avatarPreviewAlt": "我的头像",
     "avatarInvalid": "头像仅支持完整 http/https URL 或 data:image 数据 URI",
     "avatarTooLong": "头像过长（URL 上限 2048 字符，data URI 上限 1500000 字符）",
@@ -929,7 +937,9 @@
     "saveError": "保存失败,请重试",
     "loadError": "加载简介失败",
     "required": "显示名不能为空",
-    "tooLong": "不能超过 {max} 个字符"
+    "tooLong": "不能超过 {max} 个字符",
+    "avatarUpload": "本地上传",
+    "avatarReadFailed": "读取本地头像失败，请重新选择"
   },
   "chatView": {
     "newSession": "新建对话",
@@ -991,7 +1001,15 @@
       "topicLabel": "围炉主题",
       "topicPlaceholder": "为这场围炉起个主题(可选)",
       "topicHint": "留空则由首问答自动命名,最长 200 字",
-      "topicTooLong": "主题最长 200 字"
+      "topicTooLong": "主题最长 200 字",
+      "avatarLabel": "群头像链接",
+      "avatarPlaceholder": "https://example.com/group.png",
+      "avatarUpload": "本地上传",
+      "avatarPreviewAlt": "群头像预览",
+      "avatarHint": "可粘贴图片链接或选择本地图片，留空则显示默认头像",
+      "avatarInvalid": "头像地址格式不正确",
+      "avatarTooLong": "头像数据过长",
+      "avatarReadFailed": "读取本地头像失败，请重新选择"
     },
     "gate": {
       "noAgentsTitle": "道人府尚无可用道人",

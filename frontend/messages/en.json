@@ -502,7 +502,10 @@
       "modelEmptySuffix": "first.",
       "defaultBadge": "default",
       "cancel": "Cancel",
-      "submit": "Recruit"
+      "submit": "Recruit",
+      "avatarUpload": "Upload local",
+      "avatarPreviewAlt": "Daoist avatar preview",
+      "avatarReadFailed": "Could not read the local image. Choose it again"
     },
     "closeModal": "Close dialog"
   },
@@ -569,7 +572,10 @@
       "modelEmptySuffix": "first.",
       "modelCurrent": "(currently used)",
       "modelInvalidSuffix": "(unavailable)",
-      "defaultBadge": "default"
+      "defaultBadge": "default",
+      "avatarUpload": "Upload local",
+      "avatarPreviewAlt": "Daoist avatar preview",
+      "avatarReadFailed": "Could not read the local image. Choose it again"
     },
     "composer": {
       "empty": "No pills bound yet; add one below",
@@ -873,7 +879,9 @@
     "avatarSaveFailed": "Failed to save group avatar",
     "clearAvatar": "Clear",
     "saveAvatar": "Save avatar",
-    "savingAvatar": "Saving…"
+    "savingAvatar": "Saving…",
+    "avatarUpload": "Upload local",
+    "avatarReadFailed": "Could not read the local image. Choose it again"
   },
   "agentDetail": {
     "editor": {
@@ -919,7 +927,7 @@
     "bioHint": "1-500 chars. Markdown not supported yet.",
     "avatarLabel": "Avatar",
     "avatarPlaceholder": "https://example.com/avatar.png",
-    "avatarHint": "Only full URLs or data:image data URIs are supported (relative paths are not)",
+    "avatarHint": "Paste a full image link or upload a local PNG, JPEG, WebP, or GIF",
     "avatarPreviewAlt": "My avatar",
     "avatarInvalid": "Avatar must be a full http/https URL or a data:image data URI",
     "avatarTooLong": "Avatar is too long (URL limit 2048 chars, data URI limit 1500000 chars)",
@@ -929,7 +937,9 @@
     "saveError": "Save failed, please retry",
     "loadError": "Failed to load profile",
     "required": "Display name cannot be empty",
-    "tooLong": "Cannot exceed {max} characters"
+    "tooLong": "Cannot exceed {max} characters",
+    "avatarUpload": "Upload local",
+    "avatarReadFailed": "Could not read the local image. Choose it again"
   },
   "chatView": {
     "newSession": "New Session",
@@ -991,7 +1001,15 @@
       "topicLabel": "Discussion topic",
       "topicPlaceholder": "Give this discussion a topic (optional)",
       "topicHint": "Leave empty to auto-name after the first exchange. Max 200 characters.",
-      "topicTooLong": "Topic must be at most 200 characters"
+      "topicTooLong": "Topic must be at most 200 characters",
+      "avatarLabel": "Group avatar link",
+      "avatarPlaceholder": "https://example.com/group.png",
+      "avatarUpload": "Upload local",
+      "avatarPreviewAlt": "Group avatar preview",
+      "avatarHint": "Paste an image link or choose a local image. Leave blank for the default avatar.",
+      "avatarInvalid": "Invalid avatar address",
+      "avatarTooLong": "Avatar data is too long",
+      "avatarReadFailed": "Could not read the local image. Choose it again"
     },
     "gate": {
       "noAgentsTitle": "No agents available yet",

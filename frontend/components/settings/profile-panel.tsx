@@ -9,8 +9,8 @@ import { useEffect, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { User, Check, AlertCircle, Loader2 } from 'lucide-react'
 import { useUser } from '@/contexts/UserContext'
-import { EntityAvatar } from '@/components/avatar/entity-avatar'
-import { avatarInputMaxLength, validateAvatarField } from '@/lib/avatar-validation'
+import { AvatarSourceInput } from '@/components/avatar-source-input'
+import { validateAvatarField } from '@/lib/avatar-validation'
 import type { UserProfile } from '@/services/userService'
 
 const DISPLAY_NAME_MAX = 32
@@ -146,27 +146,24 @@ export function ProfilePanel() {
 
         {/* 头像 */}
         <div>
-          <label htmlFor="profile-avatar" className="block text-xs font-medium text-foreground mb-1.5">
-            {t('avatarLabel')}
-          </label>
-          <div className="flex items-center gap-3">
-            <EntityAvatar
-              name={displayName.trim() || t('defaultUser')}
-              src={avatar}
-              size="lg"
-              shape="circle"
-              alt={t('avatarPreviewAlt')}
-            />
-            <input
-              id="profile-avatar"
-              type="text"
-              value={avatar}
-              onChange={event => setAvatar(event.target.value)}
-              placeholder={t('avatarPlaceholder')}
-              maxLength={avatarInputMaxLength(avatar)}
-              className="dao-input w-full"
-            />
-          </div>
+          <AvatarSourceInput
+            inputId="profile-avatar"
+            name={displayName.trim() || t('defaultUser')}
+            value={avatar}
+            onChange={setAvatar}
+            onError={(error) => setValidationError(error
+              ? error === 'tooLong'
+                ? t('avatarTooLong')
+                : error === 'readFailed'
+                  ? t('avatarReadFailed')
+                  : t('avatarInvalid')
+              : null)}
+            label={t('avatarLabel')}
+            linkPlaceholder={t('avatarPlaceholder')}
+            uploadLabel={t('avatarUpload')}
+            previewAlt={t('avatarPreviewAlt')}
+            previewSize="lg"
+          />
           <p className="text-[10px] text-muted-foreground mt-1">{t('avatarHint')}</p>
         </div>
 

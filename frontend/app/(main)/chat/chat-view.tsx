@@ -42,12 +42,14 @@ import { ChatMessage } from '@/components/chat-message'
 import { ConversationDirectory } from '@/components/chat/conversation-directory'
 import { GroupTopicEditor } from '@/components/chat/group-topic-editor'
 import { EntityAvatar } from '@/components/avatar/entity-avatar'
+import { AvatarSourceInput, type AvatarSourceError } from '@/components/avatar-source-input'
 import { GroupMembersPanel } from '@/components/group-members-panel'
 import { TopTabs } from '@/components/interaction/top-tabs'
 import { MentionSuggest, EVERYONE_AGENT_ID } from '@/components/mention-suggest'
 import { ActionFeedback } from '@/components/interaction/action-feedback'
 import { useChatLaunchFlow, type LaunchState } from '@/hooks/use-chat-launch-flow'
 import { chatSessionHref } from '@/lib/chat-route'
+import { validateAvatarField } from '@/lib/avatar-validation'
 import { getChatReadiness } from '@/services/chatService'
 import type { Agent, ChatReadiness } from '@/services/types'
 
@@ -241,8 +243,8 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
     return launched
   }
 
-  const handleCreateGroupSession = async (memberAgentIds: string[], title?: string) => {
-    const launched = await launchFlow.launchGroup(memberAgentIds, title)
+  const handleCreateGroupSession = async (memberAgentIds: string[], title?: string, avatar?: string) => {
+    const launched = await launchFlow.launchGroup(memberAgentIds, title, avatar)
     if (launched) {
       setShowAgentSelect(false)
     }
@@ -827,7 +829,7 @@ function AgentSelectModal({
   launchState: LaunchState
   onClose: () => void
   onSelectSingle: (agentId: string) => Promise<boolean>
-  onSelectGroup: (agentIds: string[], title?: string) => Promise<boolean>
+  onSelectGroup: (agentIds: string[], title?: string, avatar?: string) => Promise<boolean>
   onRetry: () => Promise<boolean>
   onRetryAgents: () => void | Promise<void>
   onRetryReadiness: () => void | Promise<void>
@@ -838,6 +840,8 @@ function AgentSelectModal({
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [topic, setTopic] = useState('')
   const [topicError, setTopicError] = useState<string | null>(null)
+  const [avatar, setAvatar] = useState('')
+  const [avatarError, setAvatarError] = useState<AvatarSourceError | null>(null)
   const submitting = launchState.status === 'submitting'
   /** 后端权威就绪名单;loading/error 时为 null → 所有道人不可发起 */
   const readyIds = readiness.status === 'ready' ? new Set(readiness.readiness.ready_agent_ids) : null
@@ -861,6 +865,12 @@ function AgentSelectModal({
     setTopic(value)
   }
 
+  const handleAvatarChange = (value: string) => {
+    onSelectionChange()
+    setAvatarError(null)
+    setAvatar(value)
+  }
+
   const handleConfirm = async () => {
     if (mode === 'single') {
       const id = [...selected][0]
@@ -871,7 +881,15 @@ function AgentSelectModal({
         setTopicError(t('mode.topicTooLong'))
         return
       }
-      if (selected.size >= 2) await onSelectGroup([...selected], trimmedTopic || undefined)
+      const trimmedAvatar = avatar.trim()
+      const validation = validateAvatarField(trimmedAvatar)
+      if (validation) {
+        setAvatarError(validation)
+        return
+      }
+      if (selected.size >= 2) {
+        await onSelectGroup([...selected], trimmedTopic || undefined, trimmedAvatar || undefined)
+      }
     }
   }
 
@@ -884,6 +902,8 @@ function AgentSelectModal({
     onSelectionChange()
     setMode(nextMode)
     setSelected(new Set())
+    setAvatar('')
+    setAvatarError(null)
   }
 
   return (
@@ -956,7 +976,8 @@ function AgentSelectModal({
 
         {/* 群模式:主题输入(仅 group 显示;提交时按 200 Unicode 字符校验) */}
         {mode === 'group' && (
-          <div className="mb-3">
+          <div className="mb-3 space-y-3">
+            <div>
             <label htmlFor="group-topic" className="block text-[10px] font-medium text-muted-foreground mb-1">
               {t('mode.topicLabel')}
             </label>
@@ -972,6 +993,30 @@ function AgentSelectModal({
             {topicError && (
               <p role="alert" className="text-[10px] text-primary mt-1">{topicError}</p>
             )}
+            </div>
+            <div>
+              <AvatarSourceInput
+                inputId="group-create-avatar"
+                name={topic.trim() || t('directory.untitledGroup')}
+                value={avatar}
+                onChange={handleAvatarChange}
+                onError={setAvatarError}
+                label={t('mode.avatarLabel')}
+                linkPlaceholder={t('mode.avatarPlaceholder')}
+                uploadLabel={t('mode.avatarUpload')}
+                previewAlt={t('mode.avatarPreviewAlt')}
+              />
+              <p className="mt-1 text-[10px] text-muted-foreground">{t('mode.avatarHint')}</p>
+              {avatarError && (
+                <p role="alert" className="mt-1 text-[10px] text-primary">
+                  {avatarError === 'tooLong'
+                    ? t('mode.avatarTooLong')
+                    : avatarError === 'readFailed'
+                      ? t('mode.avatarReadFailed')
+                      : t('mode.avatarInvalid')}
+                </p>
+              )}
+            </div>
           </div>
         )}
 

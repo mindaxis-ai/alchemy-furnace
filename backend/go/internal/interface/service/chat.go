@@ -97,7 +97,7 @@ type Chat interface {
 	UpdateGroupAvatar(ctx context.Context, sessionUID uuid.UUID, avatar string) errors.Error
 
 	// CreateGroupSession 建群:成员≥2、去重、全部 active;title 可选,trim 后为空则待自动命名
-	CreateGroupSession(ctx context.Context, agentUIDs []uuid.UUID, title string) (*model.ChatSession, errors.Error)
+	CreateGroupSession(ctx context.Context, agentUIDs []uuid.UUID, title, avatar string) (*model.ChatSession, errors.Error)
 
 	// ListMembers 列群成员(按发言顺序,预加载道人)
 	ListMembers(ctx context.Context, sessionUID uuid.UUID) ([]*model.SessionMember, errors.Error)

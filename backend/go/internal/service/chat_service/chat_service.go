@@ -436,10 +436,14 @@ func (s *Chat) GenerateSessionTitle(ctx context.Context, sessionUID uuid.UUID, u
 }
 
 // CreateGroupSession 建群:成员≥2、去重、全部 active;title 可选(trim 后空则待自动命名),校验失败不落库
-func (s *Chat) CreateGroupSession(ctx context.Context, agentUIDs []uuid.UUID, title string) (*model.ChatSession, ierr.Error) {
+func (s *Chat) CreateGroupSession(ctx context.Context, agentUIDs []uuid.UUID, title, avatarValue string) (*model.ChatSession, ierr.Error) {
 	title, err := normalizeSessionTitle(title, true)
 	if err != nil {
 		return nil, err
+	}
+	avatarValue = strings.TrimSpace(avatarValue)
+	if err := avatar.Validate(avatarValue); err != nil {
+		return nil, ierr.New(ierr.ErrorTypeInvalidRequest, "service.chat.avatar_invalid", err.Error())
 	}
 	// 去重(保序)
 	seen := map[uuid.UUID]bool{}
@@ -463,7 +467,7 @@ func (s *Chat) CreateGroupSession(ctx context.Context, agentUIDs []uuid.UUID, ti
 		agents = append(agents, a)
 	}
 
-	session := &model.ChatSession{Type: model.SessionTypeGroup, Title: title}
+	session := &model.ChatSession{Type: model.SessionTypeGroup, Title: title, Avatar: avatarValue}
 	members := make([]*model.SessionMember, 0, len(agents))
 	for i, a := range agents {
 		// 携带已验证道人,响应直接从成员取 UUID/昵称/状态,无需二次查询

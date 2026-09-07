@@ -122,7 +122,7 @@ func newLangGraphGroupFixture(t *testing.T) (*Chat, *fakeChatDao, *groupMemory, 
 		agentByID: byID,
 	}
 	svc := New(chats, agents, fakePattern{}, availableCredentialResolver("test-model"), "unused")
-	session, err := svc.CreateGroupSession(context.Background(), uids, "初始标题")
+	session, err := svc.CreateGroupSession(context.Background(), uids, "初始标题", "")
 	if err != nil {
 		t.Fatalf("建群: %v", err)
 	}
