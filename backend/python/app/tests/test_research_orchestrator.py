@@ -136,6 +136,23 @@ def test_standard_domestic_evidence_skips_global_lane():
     assert report.evidence_level == EvidenceLevel.STANDARD
 
 
+def test_avatar_request_continues_to_wikipedia_when_domestic_evidence_has_no_image():
+    wikipedia = StubProvider(
+        "wikipedia",
+        documents=[ResearchDocument(
+            "人物", "https://wikipedia.org/person", "x" * 100,
+            "reference", "https://upload.wikimedia.org/person.jpg",
+        )],
+    )
+    report = ResearchOrchestrator(
+        domestic=[fixed_provider(two_domains=True, total_characters=5000)],
+        global_providers=[wikipedia],
+    ).collect("人物", "提炼基础性格并查找头像", "zh-CN")
+
+    assert wikipedia.calls == 1
+    assert any(doc.image_url for doc in report.documents)
+
+
 def test_unavailable_global_provider_is_circuit_broken_for_ten_minutes():
     provider = CountingTimeoutProvider("wikipedia")
     orchestrator = ResearchOrchestrator(domestic=[], global_providers=[provider], clock=FakeClock())

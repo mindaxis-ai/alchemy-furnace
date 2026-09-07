@@ -147,6 +147,7 @@ class DistillResponse(BaseModel):
     name: str
     description: str
     persona_summary: str
+    avatar: str = Field(default="", description="公开资料中的人物头像 URL")
     tags: List[str] = Field(default_factory=list)
     skill_schema: Dict[str, Any]
     sources: List[DistillSource] = Field(default_factory=list)

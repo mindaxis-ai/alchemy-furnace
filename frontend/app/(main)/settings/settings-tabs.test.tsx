@@ -24,7 +24,9 @@ vi.mock('next-intl', () => ({
   useTranslations: () => {
     const t = (key: string) => key
     // AboutPanel 的 techList 走 t.raw(),mock 补上
-    return Object.assign(t, { raw: (key: string) => [key] })
+    return Object.assign(t, { raw: (key: string) => key === 'techList'
+      ? ['Wails 2', 'Go 1.25 · Gin · GORM', 'Python · FastAPI · LangGraph', 'Next.js 16 · React 19', 'TypeScript 5.7 · Tailwind CSS 4', 'SQLite']
+      : [key] })
   },
 }))
 
@@ -68,5 +70,13 @@ describe('SettingsTabs about panel external link', () => {
     fireEvent.click(screen.getByText('githubRepo'))
     expect(td.openExternalUrl).toHaveBeenCalledTimes(1)
     expect(td.openExternalUrl).toHaveBeenCalledWith(REPO_URL)
+  })
+
+  it('shows the current desktop stack', () => {
+    render(<SettingsTabs />)
+    expect(screen.getByText('Wails 2')).toBeInTheDocument()
+    expect(screen.getByText('Python · FastAPI · LangGraph')).toBeInTheDocument()
+    expect(screen.getByText('SQLite')).toBeInTheDocument()
+    expect(screen.queryByText('PostgreSQL')).toBeNull()
   })
 })

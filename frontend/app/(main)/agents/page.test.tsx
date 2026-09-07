@@ -12,6 +12,7 @@ const td = vi.hoisted(() => ({
   listAgents: vi.fn(),
   createAgent: vi.fn(),
   listModelOptions: vi.fn(),
+  distillNuwa: vi.fn(),
 }))
 
 // 女娲面板探针:道人创建页必须不再渲染女娲(唯一入口在金丹创建弹窗)
@@ -70,6 +71,11 @@ vi.mock('@/services/agentService', async (importOriginal) => {
 vi.mock('@/services/modelService', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/services/modelService')>()
   return { ...actual, options: td.listModelOptions }
+})
+
+vi.mock('@/services/distillationService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/services/distillationService')>()
+  return { ...actual, distillNuwa: td.distillNuwa }
 })
 
 const activeAgent: Agent = {
@@ -189,6 +195,33 @@ describe('AgentsPage', () => {
     expect(screen.getByRole('heading', { name: '招募道人' })).toBeInTheDocument()
     expect(NuwaDistillPanelSpy).not.toHaveBeenCalled()
     expect(screen.queryByTestId('nuwa-panel')).toBeNull()
+  })
+
+  it('输入道号后网络填充头像与基础性格', async () => {
+    td.listAgents.mockResolvedValue({ list: [activeAgent], total: 1, page: 1, page_size: 100 })
+    td.distillNuwa.mockResolvedValue({
+      avatar: 'https://upload.wikimedia.org/laozi.jpg',
+      persona_summary: '沉静克制，善用朴素比喻，从事物本源推演判断。',
+    })
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByText('太上老君·active')
+    await user.click(screen.getByRole('button', { name: '招募道人' }))
+
+    const fillButton = screen.getByRole('button', { name: '网络填充' })
+    expect(fillButton).toBeDisabled()
+    await user.type(screen.getByPlaceholderText('如：太虚真人'), '太上老君')
+    await user.click(fillButton)
+
+    await waitFor(() => expect(td.distillNuwa).toHaveBeenCalledWith({
+      subject: '太上老君',
+      brief: expect.stringContaining('基础性格'),
+      locale: 'zh-CN',
+    }))
+    expect(screen.getByLabelText('头像 URL')).toHaveValue('https://upload.wikimedia.org/laozi.jpg')
+    expect(screen.getByPlaceholderText('描述这位道人的性格特点和语言风格...')).toHaveValue(
+      '沉静克制，善用朴素比喻，从事物本源推演判断。',
+    )
   })
 
   it('创建入口保留:提交创建请求并关闭弹窗', async () => {

@@ -97,6 +97,8 @@ class WikipediaResearchProvider(ResearchProvider):
                     full_url,
                     extract[:MAX_EXCERPT_CHARACTERS],
                     "reference",
+                    ((page.get("thumbnail") or {}).get("source") or
+                     (page.get("original") or {}).get("source") or ""),
                 )
             )
         return documents, len(hits)
@@ -113,7 +115,8 @@ class WikipediaResearchProvider(ResearchProvider):
     def _extract(self, lang: str, title: str) -> dict:
         url = (
             WIKI_BASE_URL.format(lang=lang)
-            + "?action=query&prop=extracts&explaintext=1&redirects=1"
+            + "?action=query&prop=extracts%7Cpageimages&explaintext=1&redirects=1"
+            + "&piprop=thumbnail%7Coriginal&pithumbsize=512"
             + f"&titles={quote(title)}&format=json&utf8=1"
         )
         response = self._get(url)

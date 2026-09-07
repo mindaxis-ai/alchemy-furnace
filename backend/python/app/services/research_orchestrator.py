@@ -138,11 +138,15 @@ class ResearchOrchestrator(ResearchProvider):
     ) -> ResearchReport:
         attempts: list[ResearchAttempt] = []
         documents: list[ResearchDocument] = []
+        needs_image = "头像" in brief or "avatar" in brief.lower()
         if locale.startswith("zh"):
             domestic_attempts = self._run_lane(
                 self.domestic, subject, brief, locale, credentials, attempts, documents
             )
-            if classify_evidence(documents) is EvidenceLevel.STANDARD:
+            if (
+                classify_evidence(documents) is EvidenceLevel.STANDARD
+                and (not needs_image or any(doc.image_url for doc in documents))
+            ):
                 return self._finish(documents, attempts, [], domestic_attempts)
             global_attempts = self._run_global_budgeted(
                 subject, brief, locale, credentials, attempts, documents

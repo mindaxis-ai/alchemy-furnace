@@ -106,6 +106,7 @@ export interface DistillationDraft {
   name: string
   description: string
   persona_summary: string
+  avatar?: string
   tags: string[]
   skill_schema: SkillSchema
   sources: DistillationSource[]
