@@ -44,7 +44,6 @@ const testDoubles = vi.hoisted(() => ({
   fetchAgent: vi.fn(),
   editAgent: vi.fn(),
   agentDispatch: vi.fn(),
-  modelOptions: vi.fn(),
   getChatReadiness: vi.fn(),
   listEffects: vi.fn(),
   chatState: {
@@ -125,10 +124,6 @@ vi.mock('@/contexts/AgentContext', () => ({
   }),
 }))
 
-vi.mock('@/services/modelService', () => ({
-  options: testDoubles.modelOptions,
-}))
-
 vi.mock('@/services/chatService', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/services/chatService')>()
   return {
@@ -186,7 +181,6 @@ describe('chat launch surfaces', () => {
     testDoubles.fetchSessions.mockResolvedValue(undefined)
     testDoubles.fetchAgents.mockResolvedValue(undefined)
     testDoubles.fetchAgent.mockResolvedValue(undefined)
-    testDoubles.modelOptions.mockResolvedValue([])
     testDoubles.getChatReadiness.mockResolvedValue({
       active_agent_count: 2,
       ready_agent_ids: ['agent-1', 'agent-2'],

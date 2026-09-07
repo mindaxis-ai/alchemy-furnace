@@ -38,7 +38,6 @@ import {
 } from 'lucide-react'
 import { useChat } from '@/contexts/ChatContext'
 import { useAgent } from '@/contexts/AgentContext'
-import { ModelPicker } from '@/components/chat/model-picker'
 import { ChatMessage } from '@/components/chat-message'
 import { ConversationDirectory } from '@/components/chat/conversation-directory'
 import { GroupTopicEditor } from '@/components/chat/group-topic-editor'
@@ -84,8 +83,6 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
   const { state: agentState, fetchAgents } = useAgent()
 
   const [input, setInput] = useState('')
-  const [sessionModels, setSessionModels] = useState<Record<string, string>>({})
-  const selectedModel = sessionModels[activeSessionId || ''] || ''
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [showAgentSelect, setShowAgentSelect] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -194,7 +191,7 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
     // 发送时启用粘底(用户刚发了消息,理应看到 AI 回复)
     stickyToBottomRef.current = true
     setShowJumpToBottom(false)
-    await streamMessage(currentSession.id, content, { interruptedText: t('stream.interrupted'), modelName: selectedModel })
+    await streamMessage(currentSession.id, content, { interruptedText: t('stream.interrupted') })
   }
 
   const retryMessage = async (messageIndex: number) => {
@@ -213,7 +210,6 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
           stickyToBottomRef.current = true
           setShowJumpToBottom(false)
           await streamMessage(currentSession.id, messages[i].content, {
-            modelName: selectedModel,
             retry: persistedRetry,
             reuseUserMessage: true,
             interruptedText: t('stream.interrupted'),
@@ -684,8 +680,6 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
 
         {/* 输入框 */}
         <ChatInput
-          modelName={selectedModel}
-          onModelChange={model => setSessionModels(previous => ({ ...previous, [activeSessionId || currentSession.id]: model }))}
           value={input}
           onChange={setInput}
           onSend={handleSendOnce}
@@ -1109,8 +1103,6 @@ function AgentSelectModal({
 /* ========== 子组件:输入框(@ 补全集成) ========== */
 
 function ChatInput({
-  modelName,
-  onModelChange,
   value,
   onChange,
   onSend,
@@ -1121,8 +1113,6 @@ function ChatInput({
   disabled,
   disabledReason,
 }: {
-  modelName: string
-  onModelChange: (model: string) => void
   value: string
   onChange: (v: string) => void
   onSend: () => void
@@ -1282,7 +1272,6 @@ function ChatInput({
           )}
         </div>
         <div className="mt-2 flex items-center justify-end gap-2">
-          <ModelPicker value={modelName} onChange={onModelChange} disabled={disabled || streaming} />
           <button
             aria-label={streaming ? t('input.stop') : t('input.send')}
             onClick={streaming ? onStop : onSend}

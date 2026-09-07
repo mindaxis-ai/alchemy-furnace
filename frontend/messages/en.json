@@ -1015,14 +1015,6 @@
       "renameError": "Rename failed. Please try again.",
       "emptyError": "Topic cannot be empty",
       "tooLongError": "Topic must be at most 200 characters"
-    },
-    "model": {
-      "label": "Switch model",
-      "hint": "Applies to new messages in this conversation; agent defaults stay unchanged",
-      "agentDefault": "Agent default",
-      "loading": "Loading models…",
-      "retry": "Reload models",
-      "loadError": "Model list unavailable. You can still send with the current model."
     }
   },
   "mention": {

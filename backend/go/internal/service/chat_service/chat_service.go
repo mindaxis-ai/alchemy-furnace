@@ -80,7 +80,7 @@ func (s *Chat) EnqueueMemoryDistillation(ctx context.Context, spec service.Disti
 	return s.Memory.EnqueueDistillation(ctx, spec)
 }
 
-func (s *Chat) validateChatAgentAccess(ctx context.Context, agentUID uuid.UUID, modelOverride string) (*model.DaoAgent, *credential.ModelCredentials, ierr.Error) {
+func (s *Chat) validateChatAgentAccess(ctx context.Context, agentUID uuid.UUID) (*model.DaoAgent, *credential.ModelCredentials, ierr.Error) {
 	agent, err := s.agent.TakeAgentByUUID(ctx, agentUID)
 	if err != nil {
 		if err.IsType(ierr.ErrorTypeRecordNotFound) {
@@ -94,11 +94,7 @@ func (s *Chat) validateChatAgentAccess(ctx context.Context, agentUID uuid.UUID, 
 	if s.creds == nil {
 		return nil, nil, ierr.New(ierr.ErrorTypeInvalidRequest, "service.chat.model_unavailable", "道人使用的模型不可用")
 	}
-	modelName := agent.ModelName
-	if modelOverride != "" {
-		modelName = modelOverride
-	}
-	credentials, resolveErr := s.creds.ResolveCredentials(ctx, modelName)
+	credentials, resolveErr := s.creds.ResolveCredentials(ctx, agent.ModelName)
 	if resolveErr != nil || credentials == nil || credentials.APIKey == "" {
 		return nil, nil, ierr.New(ierr.ErrorTypeInvalidRequest, "service.chat.model_unavailable", "道人使用的模型不可用")
 	}
@@ -106,7 +102,7 @@ func (s *Chat) validateChatAgentAccess(ctx context.Context, agentUID uuid.UUID, 
 }
 
 func (s *Chat) validateChatAgent(ctx context.Context, agentUID uuid.UUID) (*model.DaoAgent, ierr.Error) {
-	agent, _, err := s.validateChatAgentAccess(ctx, agentUID, "")
+	agent, _, err := s.validateChatAgentAccess(ctx, agentUID)
 	return agent, err
 }
 
@@ -125,7 +121,7 @@ func (s *Chat) GetReadiness(ctx context.Context) (*service.ChatReadiness, ierr.E
 			if perr != nil {
 				continue // 主键异常文本不进入就绪名单,不影响整体
 			}
-			if _, _, verr := s.validateChatAgentAccess(ctx, uid, ""); verr == nil {
+			if _, _, verr := s.validateChatAgentAccess(ctx, uid); verr == nil {
 				readiness.ReadyAgentIDs = append(readiness.ReadyAgentIDs, uid)
 			}
 		}

@@ -106,8 +106,6 @@ export interface StreamErrorInfo extends Partial<StreamSpeakerInfo> {
 export interface StreamOptions {
   /** 重试最近一次同内容用户消息；服务端不得重复保存用户行。 */
   retry?: boolean
-  /** 仅覆盖本轮参与者模型，不修改道人默认模型。 */
-  modelName?: string
   /** 请求服务端返回本轮实际发送给模型的 Prompt；默认关闭。 */
   debugPrompt?: boolean
 }
@@ -297,7 +295,6 @@ export async function streamChatMessage(
     },
     body: JSON.stringify({
       content,
-      ...(options.modelName ? { model_name: options.modelName } : {}),
       ...(options.retry ? { retry: true } : {}),
       ...(options.debugPrompt ? { debug_prompt: true } : {}),
     }),

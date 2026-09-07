@@ -44,7 +44,7 @@ func mentionsFromSnapshot(m model.JSONMap) []string {
 
 // BuildOrchestrationRequest 组装一次编排用户轮的完整执行快照。
 // 参与者校验/模型停用等失败即整体失败:返回值不可作为可执行请求使用。
-func (s *Chat) BuildOrchestrationRequest(ctx context.Context, session *model.ChatSession, userMessage *model.ChatMessage, run *model.ChatRun, modelOverride string) (orchestration.Request, error) {
+func (s *Chat) BuildOrchestrationRequest(ctx context.Context, session *model.ChatSession, userMessage *model.ChatMessage, run *model.ChatRun) (orchestration.Request, error) {
 	req := orchestration.Request{
 		RunID:       run.ChatRunID,
 		SessionID:   session.ChatSessionID,
@@ -82,7 +82,7 @@ func (s *Chat) BuildOrchestrationRequest(ctx context.Context, session *model.Cha
 		if perr != nil {
 			return req, fmt.Errorf("编排快照道人标识无效: %w", perr)
 		}
-		got, creds, verr := s.validateChatAgentAccess(ctx, agentUID, modelOverride)
+		got, creds, verr := s.validateChatAgentAccess(ctx, agentUID)
 		if verr != nil {
 			return req, verr
 		}

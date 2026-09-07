@@ -88,7 +88,7 @@ func (s *Chat) runSingleConversation(ctx context.Context, session *model.ChatSes
 	}
 	runEmit("accepted", ConversationEventPayload{})
 
-	req, berr := s.BuildOrchestrationRequest(ctx, session, userMessage, run, cmd.ModelName)
+	req, berr := s.BuildOrchestrationRequest(ctx, session, userMessage, run)
 	if berr != nil {
 		s.settleRun(ctx, run, model.ChatRunStatusFailed)
 		runEmit("error", ConversationEventPayload{Content: "道人使用的模型不可用，请更换模型后重试", ErrorCode: "service.chat.model_unavailable", Terminal: true, Recovery: StreamRecoveryPersistedRetry})

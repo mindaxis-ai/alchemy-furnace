@@ -20,7 +20,6 @@ import (
 
 // sseChatRequest SSE 流式对话请求体
 type sseChatRequest struct {
-	ModelName   string `json:"model_name"`
 	Content     string `json:"content"`      // 用户问题
 	Retry       bool   `json:"retry"`        // 重试既有用户消息，不重复落库
 	DebugPrompt bool   `json:"debug_prompt"` // 返回本次实际模型输入；默认关闭
@@ -81,7 +80,7 @@ func (cls *Chat) SSEChat(c *gin.Context) {
 	}
 	// 群聊 Type=group 走专门通道(编排器驱动,带心跳保活)
 	if session.Type == model.SessionTypeGroup {
-		cls.runGroupSSE(c, sessionUID, content, body.Retry, body.DebugPrompt, strings.TrimSpace(body.ModelName))
+		cls.runGroupSSE(c, sessionUID, content, body.Retry, body.DebugPrompt)
 		return
 	}
 	// 群聊 AgentID=nil 走单聊入口视为错误(防御性兜底)
@@ -91,7 +90,7 @@ func (cls *Chat) SSEChat(c *gin.Context) {
 	}
 	// LangGraph 权威编排(Task 15 起唯一路径):handler 只做传输适配,
 	// 校验、编排、持久化、事件语义全权委托服务层 RunConversation。
-	cls.runLangGraphSSE(c, sessionUID, content, body.Retry, body.DebugPrompt, strings.TrimSpace(body.ModelName))
+	cls.runLangGraphSSE(c, sessionUID, content, body.Retry, body.DebugPrompt)
 }
 
 func sseErrorPayload(err ierr.Error, sessionLookup bool, recovery chatservice.StreamRecoveryMode) ssePayload {
@@ -112,7 +111,7 @@ func sseErrorPayload(err ierr.Error, sessionLookup bool, recovery chatservice.St
 
 // runLangGraphSSE LangGraph 单聊路径:handler 只做传输适配(头/心跳承载/事件写回),
 // 校验、编排、持久化、事件语义全权委托服务层 RunConversation。
-func (cls *Chat) runLangGraphSSE(c *gin.Context, sessionUID uuid.UUID, content string, retry bool, debugPrompt bool, modelName string) {
+func (cls *Chat) runLangGraphSSE(c *gin.Context, sessionUID uuid.UUID, content string, retry bool, debugPrompt bool) {
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
 		response.InternalError(c, "当前服务不支持流式响应")
@@ -144,7 +143,6 @@ func (cls *Chat) runLangGraphSSE(c *gin.Context, sessionUID uuid.UUID, content s
 		Content:     content,
 		Retry:       retry,
 		DebugPrompt: debugPrompt,
-		ModelName:   modelName,
 	}, sw.event)
 }
 

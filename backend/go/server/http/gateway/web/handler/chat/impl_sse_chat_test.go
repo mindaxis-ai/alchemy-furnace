@@ -268,7 +268,7 @@ func TestSSEChatLangGraphDelegatesWithoutLegacyComposition(t *testing.T) {
 			Agent: model.DaoAgent{DaoAgentID: uuid.New().String(), Status: "active", ModelName: "test-model"},
 		},
 	}
-	w := performSSEChatBody(t, stub, sessionUID, `{"content":"hello","retry":true,"debug_prompt":true,"model_name":"alternate"}`)
+	w := performSSEChatBody(t, stub, sessionUID, `{"content":"hello","retry":true,"debug_prompt":true}`)
 
 	if stub.runConversationCalls != 1 {
 		t.Fatalf("RunConversation calls = %d, want 1", stub.runConversationCalls)
@@ -277,7 +277,7 @@ func TestSSEChatLangGraphDelegatesWithoutLegacyComposition(t *testing.T) {
 		t.Fatalf("SSE body = %q, want emit 透传 accepted/done", w.Body.String())
 	}
 	cmd := stub.lastCommand
-	if cmd.SessionUID != sessionUID || cmd.Content != "hello" || !cmd.Retry || !cmd.DebugPrompt || cmd.ModelName != "alternate" {
+	if cmd.SessionUID != sessionUID || cmd.Content != "hello" || !cmd.Retry || !cmd.DebugPrompt {
 		t.Fatalf("command = %+v, want session/content/retry/debug 完整透传", cmd)
 	}
 }
@@ -288,7 +288,7 @@ func TestSSEGroupLangGraphDelegatesToRunConversation(t *testing.T) {
 	stub := &sseChatStub{
 		session: &model.ChatSession{ChatSessionID: sessionUID.String(), Type: model.SessionTypeGroup},
 	}
-	w := performSSEChatBody(t, stub, sessionUID, `{"content":"报数","retry":true,"debug_prompt":true,"model_name":"alternate"}`)
+	w := performSSEChatBody(t, stub, sessionUID, `{"content":"报数","retry":true,"debug_prompt":true}`)
 
 	if stub.runConversationCalls != 1 {
 		t.Fatalf("RunConversation calls = %d, want 1", stub.runConversationCalls)
@@ -297,7 +297,7 @@ func TestSSEGroupLangGraphDelegatesToRunConversation(t *testing.T) {
 		t.Fatalf("SSE body = %q, want emit 透传 accepted/done", w.Body.String())
 	}
 	cmd := stub.lastCommand
-	if cmd.SessionUID != sessionUID || cmd.Content != "报数" || !cmd.Retry || !cmd.DebugPrompt || cmd.ModelName != "alternate" {
+	if cmd.SessionUID != sessionUID || cmd.Content != "报数" || !cmd.Retry || !cmd.DebugPrompt {
 		t.Fatalf("command = %+v, want 完整透传", cmd)
 	}
 }

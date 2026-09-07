@@ -36,7 +36,6 @@ type ConversationCommand struct {
 	SessionUID  uuid.UUID // 会话 UUID(公共标识)
 	Content     string    // 用户消息原文;Retry=true 时须与最近一条用户消息一致
 	Retry       bool      // 重试:复用最近同内容用户消息,不重复落库
-	ModelName   string    // 可选：仅本轮覆盖参与者模型，不修改道人默认配置
 	DebugPrompt bool      // 显式开启模型输入调试(prompt_debug 事件)
 }
 

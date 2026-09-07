@@ -1015,14 +1015,6 @@
       "renameError": "重命名失败,请重试",
       "emptyError": "主题不能为空",
       "tooLongError": "主题最长 200 字"
-    },
-    "model": {
-      "label": "切换模型",
-      "hint": "仅用于当前会话的后续消息，不修改道人默认模型",
-      "agentDefault": "跟随道人模型",
-      "loading": "加载模型…",
-      "retry": "重新加载模型",
-      "loadError": "模型列表暂不可用，仍可使用当前模型发送消息"
     }
   },
   "mention": {
