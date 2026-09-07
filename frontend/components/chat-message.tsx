@@ -44,6 +44,24 @@ export function ChatMessage({ message, streaming = false, members, onRetry }: Ch
   const avatarAnchorRef = useRef<HTMLButtonElement>(null)
 
   const isUser = message.role === 'user'
+  const createdAt = useMemo(() => {
+    const date = new Date(message.created_at)
+    if (Number.isNaN(date.getTime())) return null
+    return {
+      short: new Intl.DateTimeFormat(undefined, {
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23',
+      }).format(date),
+      full: new Intl.DateTimeFormat(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(date),
+    }
+  }, [message.created_at])
 
   // 头像 popover 数据
   const { profile: userProfile } = useUser()
@@ -132,7 +150,7 @@ export function ChatMessage({ message, streaming = false, members, onRetry }: Ch
 
   return (
     <div className={`
-      flex w-full items-start gap-3 min-w-0
+      group/message flex w-full items-start gap-3 min-w-0
       ${isUser ? 'flex-row-reverse' : 'flex-row'}
       animate-in fade-in duration-300
     `}>
@@ -212,6 +230,19 @@ export function ChatMessage({ message, streaming = false, members, onRetry }: Ch
             <span className="inline-block w-1.5 h-4 rounded-full bg-gold/80 ml-1 align-text-bottom animate-pulse" />
           )}
         </div>
+
+        {/* 消息时间沿用 Codex 的轻量操作区：悬停消息或聚焦其中控件时出现。 */}
+        {createdAt && (
+          <div className={`
+            mt-1 flex h-5 items-center px-1
+            text-xs tabular-nums text-muted-foreground/75
+            opacity-0 transition-opacity duration-150
+            group-hover/message:opacity-100 group-focus-within/message:opacity-100
+            ${isUser ? 'self-end justify-end' : 'self-start justify-start'}
+          `}>
+            <time dateTime={message.created_at} title={createdAt.full}>{createdAt.short}</time>
+          </div>
+        )}
 
         {!isUser && message.prompt_debug && (
           <div className="mt-1.5 w-full max-w-[82%] pl-1">
