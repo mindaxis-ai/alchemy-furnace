@@ -20,7 +20,7 @@ httpx==0.28.1
 python-dotenv==1.0.1
 
 # LangGraph 编排(与 requirements.txt 钉死同版;Task 15 起为对话权威引擎,必须进桌面包)
-langgraph==0.6.11
+langgraph==1.0.10rc1
 langgraph-checkpoint-sqlite==2.0.11
 langchain-core==0.3.86
 langchain-openai==0.3.35
