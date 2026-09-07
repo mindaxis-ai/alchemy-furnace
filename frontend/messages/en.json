@@ -287,11 +287,6 @@
       "empty": "Not written yet"
     },
     "editCta": "Edit new version",
-    "migrationBanner": {
-      "saved": "Saved {recipes} recipes, preserved {effects} absorbed abilities, {availableItems} pill(s) available; ",
-      "consumedNote": "consumed pills are no longer shown as inventory.",
-      "dismiss": "Dismiss migration summary"
-    },
     "exportSkillCta": "Export Skill",
     "craftCta": "Forge 1 pill",
     "crafting": "Forging...",
@@ -866,7 +861,16 @@
     "confirmInvite": "Invite ({count})",
     "noMembers": "No members yet",
     "close": "Close",
-    "proactivity": "Proactivity"
+    "proactivity": "Proactivity",
+    "avatarLabel": "Group avatar",
+    "avatarPlaceholder": "Image URL or data:image",
+    "avatarPreviewAlt": "Group avatar preview",
+    "avatarInvalid": "Invalid avatar address",
+    "avatarTooLong": "Avatar data is too long",
+    "avatarSaveFailed": "Failed to save group avatar",
+    "clearAvatar": "Clear",
+    "saveAvatar": "Save avatar",
+    "savingAvatar": "Saving…"
   },
   "agentDetail": {
     "editor": {

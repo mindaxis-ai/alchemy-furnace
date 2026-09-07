@@ -13,6 +13,7 @@ import { useChat } from '@/contexts/ChatContext'
 import { ProfilePopover } from '@/components/profile-popover'
 import { EntityAvatar } from '@/components/avatar/entity-avatar'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { avatarInputMaxLength, validateAvatarField } from '@/lib/avatar-validation'
 import type { Agent, ChatSession, GroupMember } from '@/services/types'
 
 export function GroupMembersPanel({
@@ -26,11 +27,14 @@ export function GroupMembersPanel({
 }) {
   const t = useTranslations('groupChat')
   const { state: agentState, fetchAgents } = useAgent()
-  const { inviteMembers, kickMember } = useChat()
+  const { inviteMembers, kickMember, updateGroupAvatar } = useChat()
   const [showInvite, setShowInvite] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   // 待踢出成员(WKWebView 不实现 window.confirm,用应用内确认框)
   const [kickTarget, setKickTarget] = useState<{ id: string; name: string } | null>(null)
+  const [avatarValue, setAvatarValue] = useState(session.avatar || '')
+  const [avatarError, setAvatarError] = useState<string | null>(null)
+  const [savingAvatar, setSavingAvatar] = useState(false)
 
   useEffect(() => {
     if (open) {
@@ -67,6 +71,20 @@ export function GroupMembersPanel({
     setShowInvite(false)
   }
 
+  const handleAvatarSave = async () => {
+    const value = avatarValue.trim()
+    const validation = validateAvatarField(value)
+    if (validation) {
+      setAvatarError(validation === 'tooLong' ? t('avatarTooLong') : t('avatarInvalid'))
+      return
+    }
+    setSavingAvatar(true)
+    setAvatarError(null)
+    const updated = await updateGroupAvatar(session.id, value)
+    if (!updated) setAvatarError(t('avatarSaveFailed'))
+    setSavingAvatar(false)
+  }
+
   return (
     <>
       {/* 遮罩 */}
@@ -78,7 +96,7 @@ export function GroupMembersPanel({
       {/* 抽屉 */}
       <div
         className={`
-          fixed z-40 bg-card border-border/70 shadow-2xl
+          fixed z-40 flex flex-col bg-card border-border/70 shadow-2xl
           inset-y-0 right-0 w-72 border-l
           max-md:inset-x-0 max-md:bottom-0 max-md:top-auto max-md:w-full max-md:rounded-t-2xl max-md:border-l-0 max-md:border-t
           animate-in slide-in-from-right duration-200 max-md:slide-in-from-bottom
@@ -95,6 +113,41 @@ export function GroupMembersPanel({
           >
             <X className="w-5 h-5" />
           </button>
+        </div>
+
+        <div className="space-y-2 border-b border-border/70 p-3">
+          <label htmlFor="group-avatar" className="text-xs font-medium text-foreground">
+            {t('avatarLabel')}
+          </label>
+          <div className="flex items-center gap-2">
+            <EntityAvatar
+              name={session.title || t('untitledGroup')}
+              src={avatarValue}
+              size="md"
+              shape="circle"
+              alt={t('avatarPreviewAlt')}
+            />
+            <input
+              id="group-avatar"
+              value={avatarValue}
+              onChange={(event) => {
+                setAvatarValue(event.target.value)
+                setAvatarError(null)
+              }}
+              maxLength={avatarInputMaxLength(avatarValue)}
+              placeholder={t('avatarPlaceholder')}
+              className="min-w-0 flex-1 rounded-lg border border-border/70 bg-muted px-2 py-1.5 text-xs text-foreground outline-none focus:border-gold/60"
+            />
+          </div>
+          {avatarError && <p className="text-xs text-destructive">{avatarError}</p>}
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setAvatarValue('')} className="flex-1 rounded-lg bg-muted py-1.5 text-xs text-muted-foreground">
+              {t('clearAvatar')}
+            </button>
+            <button type="button" onClick={handleAvatarSave} disabled={savingAvatar} className="flex-1 rounded-lg bg-gold/15 py-1.5 text-xs text-gold disabled:opacity-50">
+              {savingAvatar ? t('savingAvatar') : t('saveAvatar')}
+            </button>
+          </div>
         </div>
 
         {/* 邀请按钮 */}
@@ -159,7 +212,7 @@ export function GroupMembersPanel({
         </div>
 
         {/* 成员列表 */}
-        <div className="p-3 space-y-1 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 220px)' }}>
+        <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-3">
           {members.length === 0 ? (
             <div className="text-xs text-muted-foreground text-center py-6">
               {t('noMembers')}

@@ -22,6 +22,7 @@ import (
 	"github.com/alchemy-furnace/server/internal/interface/service"
 	"github.com/alchemy-furnace/server/internal/service/credential"
 	"github.com/alchemy-furnace/server/internal/service/engine"
+	"github.com/alchemy-furnace/server/internal/util/avatar"
 	"github.com/alchemy-furnace/server/model"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -295,6 +296,25 @@ func (s *Chat) UpdateSessionTitle(ctx context.Context, sessionUID uuid.UUID, tit
 	}
 	if err := s.chat.UpdateSession(ctx, session, map[string]any{"title": title}); err != nil {
 		return err.Relation(ierr.ErrorServerInternalError("service.chat.update_title"))
+	}
+	return nil
+}
+
+// UpdateGroupAvatar 更新或清空群聊头像。头像契约与道人、用户头像一致。
+func (s *Chat) UpdateGroupAvatar(ctx context.Context, sessionUID uuid.UUID, value string) ierr.Error {
+	value = strings.TrimSpace(value)
+	if err := avatar.Validate(value); err != nil {
+		return ierr.New(ierr.ErrorTypeInvalidRequest, "service.chat.avatar_invalid", err.Error())
+	}
+	session, err := s.chat.TakeSessionByUUID(ctx, sessionUID)
+	if err != nil {
+		return err.Relation(ierr.ErrorRecordNotFound("service.chat.update_avatar_take"))
+	}
+	if session.Type != model.SessionTypeGroup {
+		return ierr.New(ierr.ErrorTypeInvalidRequest, "service.chat.avatar_single", "仅群聊可设置会话头像")
+	}
+	if err := s.chat.UpdateSession(ctx, session, map[string]any{"avatar": value}); err != nil {
+		return err.Relation(ierr.ErrorServerInternalError("service.chat.update_avatar"))
 	}
 	return nil
 }

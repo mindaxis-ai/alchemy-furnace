@@ -81,6 +81,18 @@ describe('conversation directory', () => {
     expect(screen.queryByText('Alpha first')).not.toBeInTheDocument()
   })
 
+  it('shows a configured group avatar instead of the member stack', async () => {
+    const user = userEvent.setup()
+    const withAvatar = sessions.map(session => session.type === 'group'
+      ? { ...session, avatar: 'https://example.com/group.png' }
+      : session)
+    render(<ConversationDirectory sessions={withAvatar} onSelect={vi.fn()} />)
+
+    await user.click(screen.getByRole('tab', { name: 'tabs.group' }))
+    expect(screen.getByRole('img', { name: 'Furnace circle' })).toHaveAttribute('src', 'https://example.com/group.png')
+    expect(screen.queryByLabelText('Alpha')).not.toBeInTheDocument()
+  })
+
   it('selects the group tab for a deep-linked group session', () => {
     render(
       <ConversationDirectory

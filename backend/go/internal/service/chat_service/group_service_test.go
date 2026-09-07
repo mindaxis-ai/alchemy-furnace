@@ -133,6 +133,10 @@ func (f *fakeChatDao) UpdateSession(ctx context.Context, s *model.ChatSession, u
 				if str, ok := v.(string); ok {
 					stored.Title = str
 				}
+			case "avatar":
+				if str, ok := v.(string); ok {
+					stored.Avatar = str
+				}
 			}
 		}
 	}
@@ -523,6 +527,40 @@ func TestUpdateSessionTitleValidation(t *testing.T) {
 	}
 	if err := svc.UpdateSessionTitle(ctx, mustUID(t, s.ChatSessionID), "丹道夜话"); err != nil {
 		t.Fatalf("合法标题: %v", err)
+	}
+}
+
+func TestUpdateGroupAvatarValidationAndPersistence(t *testing.T) {
+	svc, chats, u1, u2, _ := newGroupTestSvc()
+	ctx := context.Background()
+	group, err := svc.CreateGroupSession(ctx, []uuid.UUID{u1, u2}, "丹道夜话")
+	if err != nil {
+		t.Fatalf("CreateGroupSession: %v", err)
+	}
+
+	const image = "https://cdn.example.com/group.png"
+	if err := svc.UpdateGroupAvatar(ctx, mustUID(t, group.ChatSessionID), image); err != nil {
+		t.Fatalf("UpdateGroupAvatar: %v", err)
+	}
+	if got := chats.sessions[group.ChatSessionID].Avatar; got != image {
+		t.Fatalf("avatar = %q, want %q", got, image)
+	}
+	if err := svc.UpdateGroupAvatar(ctx, mustUID(t, group.ChatSessionID), ""); err != nil {
+		t.Fatalf("clear avatar: %v", err)
+	}
+	if got := chats.sessions[group.ChatSessionID].Avatar; got != "" {
+		t.Fatalf("cleared avatar = %q", got)
+	}
+	if err := svc.UpdateGroupAvatar(ctx, mustUID(t, group.ChatSessionID), "javascript:alert(1)"); err == nil {
+		t.Fatal("invalid avatar should fail")
+	}
+
+	single, err := svc.CreateSession(ctx, u1)
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	if err := svc.UpdateGroupAvatar(ctx, mustUID(t, single.ChatSessionID), image); err == nil {
+		t.Fatal("single session avatar should fail")
 	}
 }
 

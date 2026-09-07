@@ -9,6 +9,7 @@ const doubles = vi.hoisted(() => ({
   fetchAgents: vi.fn(),
   inviteMembers: vi.fn(),
   kickMember: vi.fn(),
+  updateGroupAvatar: vi.fn(),
   agents: [] as Agent[],
 }))
 
@@ -37,6 +38,7 @@ vi.mock('@/contexts/ChatContext', () => ({
   useChat: () => ({
     inviteMembers: doubles.inviteMembers,
     kickMember: doubles.kickMember,
+    updateGroupAvatar: doubles.updateGroupAvatar,
   }),
 }))
 
@@ -57,6 +59,7 @@ describe('GroupMembersPanel avatar handling', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     doubles.fetchAgents.mockResolvedValue(undefined)
+    doubles.updateGroupAvatar.mockResolvedValue({ ...groupSession, avatar: 'https://example.com/group.png' })
     doubles.agents = [
       {
         id: 'agent-c',
@@ -101,6 +104,25 @@ describe('GroupMembersPanel avatar handling', () => {
     fireEvent.error(img)
     expect(screen.queryByRole('img', { name: 'Candidate' })).toBeNull()
     expect(screen.getByText('C')).toBeInTheDocument()
+  })
+
+  it('previews and saves the group avatar', async () => {
+    const user = userEvent.setup()
+    render(<GroupMembersPanel session={groupSession} open onClose={() => {}} />)
+    const input = screen.getByLabelText('avatarLabel')
+    await user.type(input, 'https://example.com/group.png')
+    expect(screen.getByRole('img', { name: 'avatarPreviewAlt' })).toHaveAttribute('src', 'https://example.com/group.png')
+    await user.click(screen.getByRole('button', { name: 'saveAvatar' }))
+    expect(doubles.updateGroupAvatar).toHaveBeenCalledWith(groupSession.id, 'https://example.com/group.png')
+  })
+
+  it('blocks an invalid group avatar', async () => {
+    const user = userEvent.setup()
+    render(<GroupMembersPanel session={groupSession} open onClose={() => {}} />)
+    await user.type(screen.getByLabelText('avatarLabel'), 'javascript:alert(1)')
+    await user.click(screen.getByRole('button', { name: 'saveAvatar' }))
+    expect(screen.getByText('avatarInvalid')).toBeInTheDocument()
+    expect(doubles.updateGroupAvatar).not.toHaveBeenCalled()
   })
 })
 

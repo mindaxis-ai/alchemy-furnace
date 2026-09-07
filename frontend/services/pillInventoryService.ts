@@ -10,7 +10,6 @@ import type {
   AgentEffect,
   AgentEffectsResponse,
   FusionPreview,
-  MigrationSummary,
   PillItemDetail,
   PillItemListItem,
   PillItemListParams,
@@ -157,16 +156,6 @@ export function confirmFusion(
  */
 export function getOperation(operationId: string): Promise<PillOperationResult> {
   return request(`/pill-operations/${encodeURIComponent(operationId)}`, { method: 'GET' })
-}
-
-// ---------- 迁移摘要（任务 8 升级用户展示） ----------
-
-/**
- * 读库存迁移完成标记（migrated=true 且 !is_fresh_install 时展示升级摘要条）。
- * 纯读：接口不触发迁移；失败时调用方静默隐藏摘要即可。
- */
-export function getMigrationSummary(): Promise<MigrationSummary> {
-  return request('/migration-summary', { method: 'GET' })
 }
 
 export type { AgentEffect }

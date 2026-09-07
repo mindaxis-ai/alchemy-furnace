@@ -334,6 +334,8 @@ export interface ChatSession {
   agent_name?: string
   /** single: 服务端预加载的道人头像;group 为空串 */
   agent_avatar?: string
+  /** group: 群聊自定义头像 */
+  avatar?: string
   title?: string
   created_at: string
   updated_at: string
@@ -587,24 +589,4 @@ export interface PillItemListParams {
   page?: number
   size?: number
   recipe_id?: string
-}
-
-/**
- * 库存迁移摘要（GET /migration-summary；升级用户展示，读迁移完成标记，非实时计数）
- * migrated=true 且 is_fresh_install=false 时前端展示升级摘要条
- */
-export interface MigrationSummary {
-  migrated: boolean
-  is_fresh_install: boolean
-  /** 旧金丹定义数 / 旧绑定数（迁移前存量） */
-  legacy_pills: number
-  legacy_binds: number
-  /** 已保存丹方数 / 可用金丹数 / 历史已服用数 / 已吸收能力数 */
-  recipes: number
-  available_items: number
-  history_items: number
-  effects: number
-  /** 迁移前一致性备份绝对路径（fresh 安装为空） */
-  backup_path: string
-  completed_at: string
 }

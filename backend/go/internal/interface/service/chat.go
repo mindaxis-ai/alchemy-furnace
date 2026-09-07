@@ -93,6 +93,9 @@ type Chat interface {
 	// UpdateSessionTitle 更新会话标题(trim 后空或 >200 字返 InvalidRequest)
 	UpdateSessionTitle(ctx context.Context, sessionUID uuid.UUID, title string) errors.Error
 
+	// UpdateGroupAvatar 更新或清空群聊头像，单聊不接受此字段
+	UpdateGroupAvatar(ctx context.Context, sessionUID uuid.UUID, avatar string) errors.Error
+
 	// CreateGroupSession 建群:成员≥2、去重、全部 active;title 可选,trim 后为空则待自动命名
 	CreateGroupSession(ctx context.Context, agentUIDs []uuid.UUID, title string) (*model.ChatSession, errors.Error)
 

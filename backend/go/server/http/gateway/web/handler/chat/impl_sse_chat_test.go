@@ -153,7 +153,8 @@ func TestSessionResponseIncludesStatusesAndCurrentMembers(t *testing.T) {
 	agentID := uuid.NewString()
 	session := &model.ChatSession{
 		ChatSessionID: uuid.New().String(), Type: model.SessionTypeGroup, AgentID: &agentID,
-		Agent: model.DaoAgent{DaoAgentID: uuid.New().String(), Status: "inactive"},
+		Avatar: "https://example.com/group.png",
+		Agent:  model.DaoAgent{DaoAgentID: uuid.New().String(), Status: "inactive"},
 		Members: []model.SessionMember{
 			{AgentID: uuid.NewString(), Agent: model.DaoAgent{DaoAgentID: uuid.New().String(), Name: "Alpha", Status: "active"}},
 			{AgentID: uuid.NewString(), Agent: model.DaoAgent{DaoAgentID: uuid.New().String(), Name: "Beta", Status: "inactive"}},
@@ -166,6 +167,7 @@ func TestSessionResponseIncludesStatusesAndCurrentMembers(t *testing.T) {
 	}
 	var response struct {
 		AgentStatus string `json:"agent_status"`
+		Avatar      string `json:"avatar"`
 		Members     []struct {
 			Status string `json:"status"`
 		} `json:"members"`
@@ -175,6 +177,9 @@ func TestSessionResponseIncludesStatusesAndCurrentMembers(t *testing.T) {
 	}
 	if response.AgentStatus != "inactive" {
 		t.Fatalf("agent_status = %q, want inactive", response.AgentStatus)
+	}
+	if response.Avatar != "https://example.com/group.png" {
+		t.Fatalf("avatar = %q, want group avatar", response.Avatar)
 	}
 	if len(response.Members) != 2 || response.Members[1].Status != "inactive" {
 		t.Fatalf("members = %+v, want current members with statuses", response.Members)

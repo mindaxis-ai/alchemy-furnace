@@ -39,6 +39,7 @@ type SessionResponse struct {
 	AgentAvatar string            `json:"agent_avatar,omitempty"`
 	AgentStatus string            `json:"agent_status,omitempty"`
 	Title       string            `json:"title"`
+	Avatar      string            `json:"avatar,omitempty"`
 	Members     []*MemberResponse `json:"members,omitempty"`
 	CreatedAt   time.Time         `json:"created_at"`
 	UpdatedAt   time.Time         `json:"updated_at"`
@@ -75,6 +76,7 @@ func toSessionResponse(s *model.ChatSession) *SessionResponse {
 		ID:        s.ChatSessionID,
 		Type:      typeStr,
 		Title:     s.Title,
+		Avatar:    s.Avatar,
 		CreatedAt: s.CreatedAt,
 		UpdatedAt: s.UpdatedAt,
 	}

@@ -71,6 +71,11 @@ export function renameSession(sessionId: string, title: string): Promise<ChatSes
   return put<ChatSession>(`/chat/sessions/${sessionId}`, { title })
 }
 
+/** 更新或清空群聊头像 */
+export function updateGroupAvatar(sessionId: string, avatar: string): Promise<ChatSession> {
+  return put<ChatSession>(`/chat/sessions/${sessionId}`, { avatar })
+}
+
 /**
  * 邀请入群(已在群静默跳过)
  */

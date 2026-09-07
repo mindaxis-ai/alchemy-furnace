@@ -287,11 +287,6 @@
       "empty": "尚未书写"
     },
     "editCta": "编辑新版本",
-    "migrationBanner": {
-      "saved": "已保存 {recipes} 份丹方、保留 {effects} 项已吸收能力、可用金丹 {availableItems} 枚；",
-      "consumedNote": "已服用金丹不再作为库存展示。",
-      "dismiss": "关闭迁移摘要"
-    },
     "exportSkillCta": "导出 Skill",
     "craftCta": "炼制 1 枚",
     "crafting": "炼制中...",
@@ -866,7 +861,16 @@
     "confirmInvite": "确认邀请 ({count})",
     "noMembers": "暂无群成员",
     "close": "关闭",
-    "proactivity": "表达欲"
+    "proactivity": "表达欲",
+    "avatarLabel": "群头像",
+    "avatarPlaceholder": "输入图片 URL 或 data:image",
+    "avatarPreviewAlt": "群头像预览",
+    "avatarInvalid": "头像地址格式不正确",
+    "avatarTooLong": "头像数据过长",
+    "avatarSaveFailed": "群头像保存失败",
+    "clearAvatar": "清除",
+    "saveAvatar": "保存头像",
+    "savingAvatar": "保存中…"
   },
   "agentDetail": {
     "editor": {

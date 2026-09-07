@@ -69,6 +69,7 @@ type ChatAction =
   /** 群聊:用服务端真实 message_id 替换本地临时 id，可附 mentions */
   | { type: 'FINALIZE_STREAM_WITH_ID'; payload: StreamSpeakerInfo & { message_id: string; mentions?: import('@/services/types').ChatMessage['mentions'] } }
   | { type: 'SET_SESSION_TITLE'; payload: { sessionId: string; title: string } }
+  | { type: 'SET_SESSION_AVATAR'; payload: { sessionId: string; avatar: string } }
   | { type: 'UPDATE_SESSION_MEMBERS'; payload: { sessionId: string; members: import('@/services/types').GroupMember[] } }
   | { type: 'ADD_SESSION'; payload: ChatSession }
   | { type: 'UPSERT_SESSION'; payload: ChatSession }
@@ -292,6 +293,12 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       const currentSession = state.currentSession?.id === sessionId ? { ...state.currentSession, title } : state.currentSession
       return { ...state, sessions, currentSession }
     }
+    case 'SET_SESSION_AVATAR': {
+      const { sessionId, avatar } = action.payload
+      const sessions = state.sessions.map(s => s.id === sessionId ? { ...s, avatar } : s)
+      const currentSession = state.currentSession?.id === sessionId ? { ...state.currentSession, avatar } : state.currentSession
+      return { ...state, sessions, currentSession }
+    }
     case 'UPDATE_SESSION_MEMBERS': {
       const { sessionId, members } = action.payload
       const sessions = state.sessions.map(s => s.id === sessionId ? { ...s, members } : s)
@@ -425,6 +432,7 @@ interface ChatContextType {
   createSession: (agentId: string, title?: string) => Promise<ChatSession>
   createGroupSession: (memberAgentIds: string[], title?: string) => Promise<ChatSession>
   renameSession: (sessionId: string, title: string) => Promise<ChatSession | null>
+  updateGroupAvatar: (sessionId: string, avatar: string) => Promise<ChatSession | null>
   inviteMembers: (sessionId: string, agentIds: string[]) => Promise<void>
   kickMember: (sessionId: string, agentId: string) => Promise<void>
   loadMessages: (sessionId: string) => Promise<void>
@@ -549,6 +557,18 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       return session
     } catch (error) {
       dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '改名失败' })
+      return null
+    }
+  }, [markSessionMutation])
+
+  const updateGroupAvatar = useCallback(async (sessionId: string, avatar: string): Promise<ChatSession | null> => {
+    try {
+      const session = await chatService.updateGroupAvatar(sessionId, avatar)
+      markSessionMutation(sessionId)
+      dispatch({ type: 'SET_SESSION_AVATAR', payload: { sessionId, avatar: session.avatar ?? avatar } })
+      return session
+    } catch (error) {
+      dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '群头像更新失败' })
       return null
     }
   }, [markSessionMutation])
@@ -911,6 +931,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         createSession,
         createGroupSession,
         renameSession,
+        updateGroupAvatar,
         inviteMembers,
         kickMember,
         loadMessages,

@@ -15,7 +15,6 @@ import {
   AlertCircle,
   BookOpen,
   FlaskConical,
-  Info,
   Loader2,
   Plus,
   RefreshCw,
@@ -27,13 +26,12 @@ import { NuwaDistillPanel } from '@/components/nuwa-distill-panel'
 import { PillWorkspaceHeader, PillWorkspacePage } from '@/components/layout/pill-workspace-layout'
 import { recipeDetailHref } from '@/lib/entity-detail-route'
 import { listRecipes, saveRecipe } from '@/services/recipeService'
-import { getMigrationSummary } from '@/services/pillInventoryService'
 import {
   clearPendingOperation,
   recoverOperation,
   startPendingOperation,
 } from '@/lib/pending-operations'
-import type { DistillationDraft, MigrationSummary, RecipeListItem } from '@/services/types'
+import type { DistillationDraft, RecipeListItem } from '@/services/types'
 
 const PAGE_SIZE = 24
 
@@ -53,46 +51,6 @@ export default function RecipesPage() {
   const [createName, setCreateName] = useState('')
   const [createDescription, setCreateDescription] = useState('')
   const [distilledDraft, setDistilledDraft] = useState<DistillationDraft | null>(null)
-
-  /** 迁移摘要（任务 8）：升级用户展示一次；可关闭（localStorage 持久化） */
-  const [migrationSummary, setMigrationSummary] = useState<MigrationSummary | null>(null)
-  const [migrationBannerDismissed, setMigrationBannerDismissed] = useState(false)
-  const MIGRATION_BANNER_KEY = 'pill-migration-banner-dismissed'
-
-  useEffect(() => {
-    let cancelled = false
-    getMigrationSummary()
-      .then((s) => {
-        if (!cancelled) setMigrationSummary(s)
-      })
-      .catch(() => {
-        // 摘要读取失败静默：升级摘要条属增强信息，不阻塞丹方页
-      })
-    if (typeof window !== 'undefined') {
-      try {
-        if (window.localStorage.getItem(MIGRATION_BANNER_KEY) === '1') {
-          setMigrationBannerDismissed(true)
-        }
-      } catch {
-        // localStorage 不可用时每次展示
-      }
-    }
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  const dismissMigrationBanner = () => {
-    setMigrationBannerDismissed(true)
-    try {
-      window.localStorage.setItem(MIGRATION_BANNER_KEY, '1')
-    } catch {
-      // 忽略持久化失败
-    }
-  }
-
-  const showMigrationBanner =
-    migrationSummary?.migrated && !migrationSummary.is_fresh_install && !migrationBannerDismissed
 
   /** 按搜索条件加载丹方列表；append=true 追加下一页 */
   const loadRecipes = useCallback(async (keyword: string, page: number, append = false) => {
@@ -185,31 +143,6 @@ export default function RecipesPage() {
           </button>
         }
       />
-
-      {/* 迁移摘要条（任务 8：仅旧版升级用户展示；可关闭） */}
-      {showMigrationBanner && migrationSummary && (
-        <div className="mb-6 flex items-start gap-3 rounded-lg border border-gold/25 bg-gold/5 p-3 text-sm text-foreground">
-          <Info className="mt-0.5 h-4 w-4 shrink-0 text-gold" aria-hidden />
-          <p className="min-w-0 flex-1">
-            <span className="font-medium">
-              {t('migrationBanner.saved', {
-                recipes: migrationSummary.recipes,
-                effects: migrationSummary.effects,
-                availableItems: migrationSummary.available_items,
-              })}
-            </span>
-            <span className="text-muted-foreground">{t('migrationBanner.consumedNote')}</span>
-          </p>
-          <button
-            type="button"
-            onClick={dismissMigrationBanner}
-            aria-label={t('migrationBanner.dismiss')}
-            className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      )}
 
       {/* 搜索栏 */}
       <div className="mb-6">
