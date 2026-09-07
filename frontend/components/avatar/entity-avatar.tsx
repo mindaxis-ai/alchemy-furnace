@@ -3,6 +3,7 @@
 /**
  * 统一头像展示组件：所有头像位置共用。
  * - src 经 normalizeAvatarUrl 校验后才进 <img src>；非法/空值直接渲染 fallback，不渲染 img
+ * - 外链图片不发送本地应用 Referer，兼容开启防盗链的头像 CDN
  * - onError 只标记 broken=true，绝不重设同一 src 触发重试循环
  * - broken 重置选 key 方案：图片子组件以 normalized src 为 key，src 变化时整棵子树重挂载，
  *   broken 状态随之归零（effect 方案会被 react-hooks/set-state-in-effect 拦截）
@@ -104,6 +105,7 @@ function AvatarImage({
       <img
         src={normalized}
         alt={label}
+        referrerPolicy="no-referrer"
         className={`h-full w-full object-cover ${SHAPE_CLASS[shape]}`}
         onError={() => setBroken(true)}
       />
