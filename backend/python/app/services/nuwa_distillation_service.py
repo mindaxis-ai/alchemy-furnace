@@ -254,6 +254,8 @@ class NuwaDistillationService:
                 {"title": d.title, "url": d.url, "dimension": d.dimension}
                 for d in documents
             ]
+            # 头像必须来自研究提供者返回的真实公开图片，绝不让模型编造 URL。
+            result["avatar"] = next((d.image_url for d in documents if d.image_url), "")
             result["model"] = research_credentials.model
             result["research"] = {
                 "evidence_level": report.evidence_level.value,

@@ -145,6 +145,22 @@ else
   printf 'FAIL - runtime_python 污染了调用方环境\n'
 fi
 
+# ─── 7. 复用 runtime 时刷新 engine/app，避免桌面包携带旧 Python 业务代码 ───
+mkdir -p "$TMP/source-app" "$TMP/runtime/engine/app/__pycache__"
+printf 'new-engine\n' > "$TMP/source-app/main.py"
+printf 'new-only\n' > "$TMP/source-app/profile.py"
+printf 'stale\n' > "$TMP/runtime/engine/app/stale.py"
+printf 'bytecode\n' > "$TMP/runtime/engine/app/__pycache__/main.pyc"
+runtime_sync_engine "$TMP/source-app" "$TMP/runtime"
+check "runtime 同步最新 main.py" "$(cat "$TMP/runtime/engine/app/main.py")" "new-engine"
+if [[ -f "$TMP/runtime/engine/app/profile.py" && ! -e "$TMP/runtime/engine/app/stale.py" && ! -e "$TMP/runtime/engine/app/__pycache__" ]]; then
+  PASS=$((PASS + 1))
+  printf 'ok   - runtime engine 原子替换并清除旧文件/字节码\n'
+else
+  FAILED=$((FAILED + 1))
+  printf 'FAIL - runtime engine 未完整刷新\n'
+fi
+
 # ─── 7. 版本字节断言(ldflags -X 注入防回归)───
 # 根因: CI 上 wails 双 build 导致 -ldflags 失效,产物丢失版本字节,
 # Windows verifier 拦截,但 macOS verifier 只看 Info.plist 查不出——

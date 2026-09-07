@@ -104,6 +104,29 @@ runtime_python() {
   )
 }
 
+# runtime_sync_engine <backend/python/app> <runtime-root>
+# 已安装依赖的 runtime 可离线复用，但业务源码必须每次打包都刷新。
+# 通过同目录暂存后替换 engine/app，避免拷贝中断留下半套源码。
+runtime_sync_engine() {
+  local source_app="${1:?用法: runtime_sync_engine <source-app> <runtime-root>}"
+  local runtime_root="${2:?用法: runtime_sync_engine <source-app> <runtime-root>}"
+  [[ -f "$source_app/main.py" ]] || fail "Python 引擎源码不完整: $source_app/main.py"
+  [[ -d "$runtime_root" ]] || fail "Python runtime 不存在: $runtime_root"
+
+  local engine_root="$runtime_root/engine"
+  local target="$engine_root/app"
+  mkdir -p "$engine_root"
+  local staged
+  staged="$(mktemp -d "$engine_root/.app.tmp.XXXXXX")"
+  if ! cp -R "$source_app"/. "$staged"/; then
+    rm -rf "$staged"
+    fail "同步 Python 引擎源码失败"
+  fi
+  find "$staged" -type d -name '__pycache__' -prune -exec rm -rf {} + 2>/dev/null || true
+  rm -rf "$target"
+  mv "$staged" "$target"
+}
+
 # assert_version_embedded <binary> <version-tag>
 # 断言二进制内包含版本字节(ldflags -X 注入的产物)。
 # tag 形如 v0.1.1-rc.3,带 v 与不带 v 两种形态都算数

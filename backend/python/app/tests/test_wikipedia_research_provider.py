@@ -13,6 +13,7 @@ def test_wikipedia_maps_search_and_extract_to_documents(fake_http):
                         "title": "Paul Graham",
                         "fullurl": "https://en.wikipedia.org/wiki/Paul_Graham",
                         "extract": "x" * 2200,
+                        "thumbnail": {"source": "https://upload.wikimedia.org/paul.jpg"},
                     }
                 }
             }
@@ -23,6 +24,7 @@ def test_wikipedia_maps_search_and_extract_to_documents(fake_http):
     )
     assert len(report.documents) == 1
     assert report.attempts[0].status == "ok"
+    assert report.documents[0].image_url == "https://upload.wikimedia.org/paul.jpg"
 
 
 def test_wikipedia_timeout_is_provider_unavailable_not_content_insufficient(fake_http):

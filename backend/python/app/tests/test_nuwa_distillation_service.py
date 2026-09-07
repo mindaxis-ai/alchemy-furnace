@@ -43,6 +43,18 @@ def standard_report():
     return report(level="standard", lengths=(2500, 2500), warnings=[])
 
 
+def standard_report_with_avatar():
+    current = standard_report()
+    current.documents[0] = ResearchDocument(
+        "人物资料",
+        "https://example.com/person",
+        "x" * 2500,
+        "reference",
+        "https://upload.wikimedia.org/person.jpg",
+    )
+    return current
+
+
 class FixedResearchProvider(ResearchProvider):
     def __init__(self, report_obj):
         self.report_obj = report_obj
@@ -123,6 +135,16 @@ def test_deepseek_distillation_disables_thinking_and_requests_json(monkeypatch):
     assert captured["create"]["extra_body"] == {
         "thinking": {"type": "disabled"}
     }
+
+
+def test_distillation_returns_evidence_backed_avatar(monkeypatch):
+    factory, _ = recording_openai(VALID_PAYLOAD)
+    monkeypatch.setattr(distillation_module, "OpenAI", factory)
+    service = NuwaDistillationService(FixedResearchProvider(standard_report_with_avatar()))
+
+    result = service.distill("人物", "提炼基础性格", api_key="sk-test")
+
+    assert result["avatar"] == "https://upload.wikimedia.org/person.jpg"
 
 
 def test_openai_distillation_requests_json_without_vendor_extra_body(monkeypatch):

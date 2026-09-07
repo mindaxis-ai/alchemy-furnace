@@ -16,6 +16,8 @@ set -euo pipefail
 PLATFORM="${1:?用法: $0 <darwin-arm64|darwin-amd64|windows-amd64> [version]}"
 VERSION="${2:-dev}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=lib/runtime-common.sh
+source "$ROOT/scripts/lib/runtime-common.sh"
 
 # ─── 颜色 ───
 say()  { printf '\033[36m[package]\033[0m %s\n' "$*"; }
@@ -68,6 +70,8 @@ if eval "[[ $RUNTIME_READY ]]"; then
 else
   "$ROOT/scripts/build-python-runtime.sh" "$PLATFORM" "$RUNTIME_DIR"
 fi
+say "同步最新 Python 引擎源码"
+runtime_sync_engine "$ROOT/backend/python/app" "$RUNTIME_DIR"
 
 # ─── 3. Wails 编译(注入 ldflags) ───
 cd "$ROOT/backend/go"

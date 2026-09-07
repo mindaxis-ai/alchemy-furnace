@@ -39,6 +39,7 @@ type Response struct {
 	Name           string          `json:"name"`
 	Description    string          `json:"description"`
 	PersonaSummary string          `json:"persona_summary"`
+	Avatar         string          `json:"avatar"`
 	Tags           model.JSONList  `json:"tags"`
 	SkillSchema    model.JSONMap   `json:"skill_schema"`
 	Sources        []Source        `json:"sources"`
@@ -101,14 +102,14 @@ func (c *HTTPClient) Distill(ctx context.Context, subject, brief, locale string,
 
 // skillExportPayload Python 引擎 skill-export 请求体(snake_case,与 app/models/schemas.py 对齐)
 type skillExportPayload struct {
-	Name          string       `json:"name"`
-	Description   string       `json:"description"`
+	Name          string        `json:"name"`
+	Description   string        `json:"description"`
 	SkillSchema   model.JSONMap `json:"skill_schema"`
-	Tags          []string     `json:"tags"`
-	Sources       []Source     `json:"sources"`
-	GeneratedAt   string       `json:"generated_at"`
-	EvidenceLevel string       `json:"evidence_level"`
-	Format        string       `json:"format"`
+	Tags          []string      `json:"tags"`
+	Sources       []Source      `json:"sources"`
+	GeneratedAt   string        `json:"generated_at"`
+	EvidenceLevel string        `json:"evidence_level"`
+	Format        string        `json:"format"`
 }
 
 // SkillExport 请求 Python 引擎 skill_export 渲染并打包 ZIP(二进制响应)。

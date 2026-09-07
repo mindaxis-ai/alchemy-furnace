@@ -29,6 +29,7 @@ class ResearchDocument:
     url: str
     excerpt: str
     dimension: str
+    image_url: str = ""
 
 
 @dataclass(frozen=True)

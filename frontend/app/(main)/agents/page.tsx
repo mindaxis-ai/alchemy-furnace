@@ -8,7 +8,7 @@
  */
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import {
   Plus,
   Users,
@@ -20,11 +20,13 @@ import {
   Search,
   AlertCircle,
   RefreshCw,
+  Globe2,
 } from 'lucide-react'
 import { useAgent } from '@/contexts/AgentContext'
 import { AgentCard } from '@/components/agent-card'
 import { avatarInputMaxLength, validateAvatarField } from '@/lib/avatar-validation'
 import * as modelService from '@/services/modelService'
+import * as distillationService from '@/services/distillationService'
 import type { ModelOption } from '@/services/modelService'
 import type { AgentListParams, AgentStatus } from '@/services/types'
 
@@ -37,6 +39,7 @@ function paramsFor(filter: StatusFilter): AgentListParams | undefined {
 
 export default function AgentsPage() {
   const t = useTranslations('agents')
+  const locale = useLocale() === 'en' ? 'en' : 'zh-CN'
   const { state, fetchAgents, addAgent } = useAgent()
   const [showCreate, setShowCreate] = useState(false)
   const [name, setName] = useState('')
@@ -47,6 +50,8 @@ export default function AgentsPage() {
   const [modelName, setModelName] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('active')
+  const [networkFilling, setNetworkFilling] = useState(false)
+  const [networkFillError, setNetworkFillError] = useState('')
 
   // 初始化加载 + 筛选切换:状态筛选走 API 参数,不做前端过滤
   useEffect(() => {
@@ -97,6 +102,30 @@ export default function AgentsPage() {
       setAvatar('')
       const def = modelOptions.find(o => o.is_default) || modelOptions[0]
       setModelName(def?.name || '')
+    }
+  }
+
+  /** 复用女娲公开资料蒸馏，只将头像与基础性格写入当前表单草稿。 */
+  const handleNetworkFill = async () => {
+    const subject = name.trim()
+    if (!subject || networkFilling) return
+    setNetworkFilling(true)
+    setNetworkFillError('')
+    try {
+      const draft = await distillationService.distillNuwa({
+        subject,
+        brief: t('modal.networkFillBrief'),
+        locale,
+      })
+      if (draft.persona_summary.trim()) setPersonality(draft.persona_summary.trim())
+      if (draft.avatar?.trim()) {
+        setAvatar(draft.avatar.trim())
+        setAvatarError(null)
+      }
+    } catch (error) {
+      setNetworkFillError(error instanceof Error ? error.message : t('modal.networkFillFailed'))
+    } finally {
+      setNetworkFilling(false)
     }
   }
 
@@ -190,6 +219,23 @@ export default function AgentsPage() {
                   autoFocus
                   required
                 />
+                <div className="mt-2 flex items-center justify-between gap-3">
+                  <p className="text-[10px] text-sage">{t('modal.networkFillHint')}</p>
+                  <button
+                    type="button"
+                    onClick={handleNetworkFill}
+                    disabled={!name.trim() || networkFilling}
+                    className="dao-btn-ghost shrink-0 px-3 py-1.5 text-xs disabled:opacity-50"
+                  >
+                    {networkFilling
+                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      : <Globe2 className="h-3.5 w-3.5" />}
+                    {networkFilling ? t('modal.networkFilling') : t('modal.networkFill')}
+                  </button>
+                </div>
+                {networkFillError && (
+                  <p role="alert" className="mt-1 text-xs text-primary">{networkFillError}</p>
+                )}
               </div>
 
               <div>
