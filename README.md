@@ -12,7 +12,7 @@
     <a href="#local-development">Development</a>
   </p>
 
-  <p><a href="README.zh.md">中文</a> · <a href="https://github.com/yusanwen-code/alchemy-furnace">GitHub</a></p>
+  <p><a href="README.zh.md">中文</a> · <a href="https://github.com/mindaxis-ai/alchemy-furnace">GitHub</a></p>
 </div>
 
 ---
