@@ -422,6 +422,7 @@ interface ChatContextType {
   loadOlderMessages: (sessionId: string) => Promise<void>
   clearCurrent: () => void
   streamMessage: (sessionId: string, content: string, opts?: {
+    modelName?: string
     retry?: boolean
     reuseUserMessage?: boolean
     retryBoundaryText?: string
@@ -843,7 +844,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const streamMessage = useCallback(async (
     sessionId: string,
     content: string,
-    opts?: { retry?: boolean; reuseUserMessage?: boolean; retryBoundaryText?: string; interruptedText?: string },
+    opts?: { modelName?: string; retry?: boolean; reuseUserMessage?: boolean; retryBoundaryText?: string; interruptedText?: string },
   ) => {
     const session = currentSessionRef.current?.id === sessionId
       ? currentSessionRef.current
@@ -868,6 +869,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
     await runStreamPipeline(sessionId, isGroup, (handlers) => chatService.streamChatMessage(sessionId, content, handlers, {
       retry: opts?.retry,
+      ...(opts?.modelName ? { modelName: opts.modelName } : {}),
       ...(getPromptDebugEnabled() ? { debugPrompt: true } : {}),
     }), { interruptedText: opts?.interruptedText })
   }, [runStreamPipeline])

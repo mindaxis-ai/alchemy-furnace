@@ -113,7 +113,7 @@ function AboutPanel() {
           </div>
 
           <div className="flex flex-col items-center text-center py-4">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-b from-primary/15 to-muted border-2 border-gold/30 flex items-center justify-center mb-3 shadow-[0_15px_30px_-12px_rgba(201,169,110,0.5)]">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-b from-primary/15 to-muted border-2 border-gold/30 flex items-center justify-center mb-3 shadow-[0_15px_30px_-12px_rgba(59,130,246,0.5)]">
               <Flame className="w-8 h-8 text-primary" />
             </div>
             <h3 className="text-lg font-serif font-bold text-gold mb-1">{tAbout('productName')}</h3>

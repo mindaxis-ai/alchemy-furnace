@@ -2,8 +2,8 @@ package chat_service
 
 // BuildOrchestrationRequest 组装一次编排用户轮的完整执行快照(LangGraph 权威执行体,Task 11)。
 //
-// 职责边界:快照只携带结构化事实——成员序、模型引用、按请求凭据、记忆原文;
-// 不在 Go 侧拼装 system prompt(道人人格由 Python 图按 agent_id 组合)。
+// 职责边界:快照携带成员序、语言模式服务合成的 system prompt、模型引用、
+// 按请求凭据与记忆原文;Python 图消费该快照,不重复拼装人设与金丹效果。
 // 凭据键约定(对齐 Python supervisor.py):道人=agent_id(UUID 字符串),
 // Supervisor=默认模型名,两键并存于同一 map。
 //
@@ -44,7 +44,7 @@ func mentionsFromSnapshot(m model.JSONMap) []string {
 
 // BuildOrchestrationRequest 组装一次编排用户轮的完整执行快照。
 // 参与者校验/模型停用等失败即整体失败:返回值不可作为可执行请求使用。
-func (s *Chat) BuildOrchestrationRequest(ctx context.Context, session *model.ChatSession, userMessage *model.ChatMessage, run *model.ChatRun) (orchestration.Request, error) {
+func (s *Chat) BuildOrchestrationRequest(ctx context.Context, session *model.ChatSession, userMessage *model.ChatMessage, run *model.ChatRun, modelOverride string) (orchestration.Request, error) {
 	req := orchestration.Request{
 		RunID:       run.ChatRunID,
 		SessionID:   session.ChatSessionID,
@@ -82,14 +82,23 @@ func (s *Chat) BuildOrchestrationRequest(ctx context.Context, session *model.Cha
 		if perr != nil {
 			return req, fmt.Errorf("编排快照道人标识无效: %w", perr)
 		}
-		got, creds, verr := s.validateChatAgentAccess(ctx, agentUID)
+		got, creds, verr := s.validateChatAgentAccess(ctx, agentUID, modelOverride)
 		if verr != nil {
 			return req, verr
 		}
+		pattern, patternErr := s.pattern.GetOrBuildPattern(ctx, got.DaoAgentID)
+		if patternErr != nil {
+			return req, fmt.Errorf("编排快照构建道人语言模式失败: %w", patternErr)
+		}
+		systemPrompt := ""
+		if pattern != nil {
+			systemPrompt = pattern.SystemPrompt
+		}
 		agentID := got.DaoAgentID
 		req.Agents = append(req.Agents, orchestration.Agent{
-			AgentID: agentID,
-			Name:    got.Name,
+			AgentID:      agentID,
+			Name:         got.Name,
+			SystemPrompt: systemPrompt,
 			ModelRef: orchestration.ModelRef{
 				ProviderType: creds.ProviderType,
 				Name:         creds.Model,

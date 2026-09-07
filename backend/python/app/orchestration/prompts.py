@@ -44,16 +44,18 @@ def compile_messages(
 ) -> list[BaseMessage]:
     """编译一次 Daoist 调用的完整消息列表。
 
-    :param agent: 当前发言道人（身份名进入系统提示）。
+    :param agent: 当前发言道人（system_prompt 已含人设与启用金丹效果）。
     :param user_turn: 当前用户轮（永远作为最后一条 user 消息）。
     :param history_snapshot: 权威历史（取最近窗口，逐条截尾）。
     :param selected_memories: 已筛选的当前道人记忆（原样注入，不做改写）。
     :param task: 机械任务文本（可空 = 常规回应）；原样进入系统提示。
     :return: [system, *history, user_turn] 的消息列表。
     """
-    system_lines = [f"你是{agent.name}。"]
+    composed_prompt = agent.system_prompt.strip()
+    system_lines: list[str] = []
     if task:
         system_lines.append(f"【回合任务】{task}")
+    system_lines.append(composed_prompt or f"你是{agent.name}。")
     if selected_memories:
         system_lines.append("相关记忆：")
         system_lines.extend(f"- {_trim(m.text, MAX_MEMORY_CHARS)}" for m in selected_memories)

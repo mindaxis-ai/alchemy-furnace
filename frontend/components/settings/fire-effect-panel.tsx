@@ -112,7 +112,7 @@ export function FireEffectPanel() {
                   className={cn(
                     'flex flex-col items-start gap-1.5 rounded-2xl border p-3.5 text-left transition-all duration-200 min-w-0',
                     isOn
-                      ? 'border-gold/60 bg-gold/5 ring-1 ring-gold/40 shadow-[0_15px_30px_-12px_rgba(201,169,110,0.35)]'
+                      ? 'border-gold/60 bg-gold/5 ring-1 ring-gold/40 shadow-[0_15px_30px_-12px_rgba(59,130,246,0.35)]'
                       : 'border-border/70 bg-card/60 hover:border-gold/30 hover:bg-gold/5'
                   )}
                 >

@@ -126,7 +126,6 @@ export function ConsumeInventoryPillModal({
 
   // 挂载/道人变化时重置并加载首页（取数副作用；同步 setState 是加载态起点）
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 弹窗每次打开都是一次全新取数,按挂载语义重置
     void loadFirstPage()
   }, [agentId, loadFirstPage])
 

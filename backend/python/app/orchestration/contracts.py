@@ -71,6 +71,7 @@ class AgentSnapshot(BaseModel):
 
     agent_id: str
     name: str
+    system_prompt: str = ""
     model_ref: ModelRef
 
 

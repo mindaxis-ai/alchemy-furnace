@@ -80,7 +80,7 @@ func (s *Chat) EnqueueMemoryDistillation(ctx context.Context, spec service.Disti
 	return s.Memory.EnqueueDistillation(ctx, spec)
 }
 
-func (s *Chat) validateChatAgentAccess(ctx context.Context, agentUID uuid.UUID) (*model.DaoAgent, *credential.ModelCredentials, ierr.Error) {
+func (s *Chat) validateChatAgentAccess(ctx context.Context, agentUID uuid.UUID, modelOverride string) (*model.DaoAgent, *credential.ModelCredentials, ierr.Error) {
 	agent, err := s.agent.TakeAgentByUUID(ctx, agentUID)
 	if err != nil {
 		if err.IsType(ierr.ErrorTypeRecordNotFound) {
@@ -94,7 +94,11 @@ func (s *Chat) validateChatAgentAccess(ctx context.Context, agentUID uuid.UUID) 
 	if s.creds == nil {
 		return nil, nil, ierr.New(ierr.ErrorTypeInvalidRequest, "service.chat.model_unavailable", "道人使用的模型不可用")
 	}
-	credentials, resolveErr := s.creds.ResolveCredentials(ctx, agent.ModelName)
+	modelName := agent.ModelName
+	if modelOverride != "" {
+		modelName = modelOverride
+	}
+	credentials, resolveErr := s.creds.ResolveCredentials(ctx, modelName)
 	if resolveErr != nil || credentials == nil || credentials.APIKey == "" {
 		return nil, nil, ierr.New(ierr.ErrorTypeInvalidRequest, "service.chat.model_unavailable", "道人使用的模型不可用")
 	}
@@ -102,7 +106,7 @@ func (s *Chat) validateChatAgentAccess(ctx context.Context, agentUID uuid.UUID) 
 }
 
 func (s *Chat) validateChatAgent(ctx context.Context, agentUID uuid.UUID) (*model.DaoAgent, ierr.Error) {
-	agent, _, err := s.validateChatAgentAccess(ctx, agentUID)
+	agent, _, err := s.validateChatAgentAccess(ctx, agentUID, "")
 	return agent, err
 }
 
@@ -121,7 +125,7 @@ func (s *Chat) GetReadiness(ctx context.Context) (*service.ChatReadiness, ierr.E
 			if perr != nil {
 				continue // 主键异常文本不进入就绪名单,不影响整体
 			}
-			if _, _, verr := s.validateChatAgentAccess(ctx, uid); verr == nil {
+			if _, _, verr := s.validateChatAgentAccess(ctx, uid, ""); verr == nil {
 				readiness.ReadyAgentIDs = append(readiness.ReadyAgentIDs, uid)
 			}
 		}
@@ -240,20 +244,6 @@ func (s *Chat) GetSessionAgentInfo(ctx context.Context, sessionUID uuid.UUID) (*
 		return nil, err.Relation(ierr.ErrorRecordNotFound("service.chat.get_session_agent_info"))
 	}
 	return session, nil
-}
-
-// GetOrBuildPattern 获取道人语言模式(委托 LanguagePatternProvider);agentUID 为道人 UUID 文本
-func (s *Chat) GetOrBuildPattern(ctx context.Context, agentUID string) (*model.LanguagePattern, ierr.Error) {
-	return s.pattern.GetOrBuildPattern(ctx, agentUID)
-}
-
-// ResolveCredentials 解析模型调用凭证(委托 credential.Resolver)
-func (s *Chat) ResolveCredentials(ctx context.Context, modelName string) (*credential.ModelCredentials, ierr.Error) {
-	creds, err := s.creds.ResolveCredentials(ctx, modelName)
-	if err != nil {
-		return nil, ierr.New(ierr.ErrorTypeServerInternalError, "service.chat.resolve_credentials", err.Error())
-	}
-	return creds, nil
 }
 
 // SaveMessage 写入消息并刷新所属会话 updated_at(sources 字段已废弃,不再写入);sessionUID 为会话 UUID 文本
@@ -381,7 +371,10 @@ func (s *Chat) generateSessionTitle(ctx context.Context, session *model.ChatSess
 	} else if fresh.AgentID != nil {
 		modelName = fresh.Agent.ModelName
 	}
-	creds, rerr := s.ResolveCredentials(ctx, modelName)
+	if s.creds == nil {
+		return ""
+	}
+	creds, rerr := s.creds.ResolveCredentials(ctx, modelName)
 	if rerr != nil {
 		return ""
 	}

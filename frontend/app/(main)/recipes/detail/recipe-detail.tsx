@@ -195,6 +195,7 @@ export default function RecipeDetailPage({ recipeId, initialEdit }: RecipeDetail
   const [craftMessage, setCraftMessage] = useState<string | null>(null)
 
   const flow = useRecipeEditorFlow(recipe, { onSaved: (r) => setRecipe(r) })
+  const { mode: editorMode, beginEdit } = flow
   useUnsavedChanges(flow.dirty, t('unsavedConfirm'))
   // 编辑态行 key 仓库：必须在任何条件返回之前调用（hooks 顺序约束）
   const { keysFor, removeAt } = useRowKeyStore()
@@ -225,11 +226,11 @@ export default function RecipeDetailPage({ recipeId, initialEdit }: RecipeDetail
   const initialEditFiredRef = useRef(false)
   useEffect(() => {
     if (!initialEdit || initialEditFiredRef.current) return
-    if (loadStatus !== 'ready' || !recipe || flow.mode !== 'readonly') return
+    if (loadStatus !== 'ready' || !recipe || editorMode !== 'readonly') return
     if (recipe.archived_at) return
     initialEditFiredRef.current = true
-    flow.beginEdit()
-  }, [initialEdit, loadStatus, recipe, flow.mode, flow.beginEdit])
+    beginEdit()
+  }, [initialEdit, loadStatus, recipe, editorMode, beginEdit])
 
   /** 炼制 1 枚：每个明确动作一个幂等 key；断线恢复先查 operation 再同 key 重试 */
   const handleCraft = async () => {
@@ -353,7 +354,7 @@ export default function RecipeDetailPage({ recipeId, initialEdit }: RecipeDetail
 
         <div className="dao-card mb-6 p-5 md:p-6">
           <div className="flex flex-col gap-4 md:flex-row md:items-start">
-            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-gold/15 text-gold shadow-[0_0_18px_rgba(201,169,110,0.35)]">
+            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-gold/15 text-gold shadow-[0_0_18px_rgba(59,130,246,0.35)]">
               <BookOpen className="h-8 w-8" />
             </div>
             <div className="min-w-0 flex-1">
@@ -642,7 +643,7 @@ export default function RecipeDetailPage({ recipeId, initialEdit }: RecipeDetail
 
       <div className="dao-card mb-6 p-5 md:p-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-start">
-          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-gold/15 text-gold shadow-[0_0_18px_rgba(201,169,110,0.35)]">
+          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-gold/15 text-gold shadow-[0_0_18px_rgba(59,130,246,0.35)]">
             <BookOpen className="h-8 w-8" />
           </div>
 

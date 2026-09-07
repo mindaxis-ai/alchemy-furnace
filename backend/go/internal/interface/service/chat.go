@@ -5,7 +5,6 @@ import (
 	"context"
 
 	"github.com/alchemy-furnace/server/internal/errors"
-	"github.com/alchemy-furnace/server/internal/service/credential"
 	"github.com/alchemy-furnace/server/model"
 	"github.com/google/uuid"
 )
@@ -37,6 +36,7 @@ type ConversationCommand struct {
 	SessionUID  uuid.UUID // 会话 UUID(公共标识)
 	Content     string    // 用户消息原文;Retry=true 时须与最近一条用户消息一致
 	Retry       bool      // 重试:复用最近同内容用户消息,不重复落库
+	ModelName   string    // 可选：仅本轮覆盖参与者模型，不修改道人默认配置
 	DebugPrompt bool      // 显式开启模型输入调试(prompt_debug 事件)
 }
 
@@ -84,12 +84,6 @@ type Chat interface {
 
 	// GetSessionAgentInfo 按会话 UUID 取会话(预加载道人),供 SSE 构建对话请求(ChatSessionID/AgentID/Agent.ModelName)
 	GetSessionAgentInfo(ctx context.Context, sessionUID uuid.UUID) (*model.ChatSession, errors.Error)
-
-	// GetOrBuildPattern 获取道人语言模式(委托 LanguagePatternProvider);agentUID 为道人 UUID 文本
-	GetOrBuildPattern(ctx context.Context, agentUID string) (*model.LanguagePattern, errors.Error)
-
-	// ResolveCredentials 解析模型调用凭证(每轮解析,模型停用/换钥即时生效)
-	ResolveCredentials(ctx context.Context, modelName string) (*credential.ModelCredentials, errors.Error)
 
 	// SaveMessage 写入消息并刷新所属会话 updated_at(sources 字段已废弃,不再写入);sessionUID 为会话 UUID 文本
 	SaveMessage(ctx context.Context, sessionUID string, role string, content string) (*model.ChatMessage, errors.Error)

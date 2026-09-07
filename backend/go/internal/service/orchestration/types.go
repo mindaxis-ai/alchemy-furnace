@@ -11,14 +11,14 @@ import "encoding/json"
 
 // Request 一次编排用户轮的完整输入(镜像 OrchestrationRequest)。
 type Request struct {
-	RunID        string                `json:"run_id"`
-	SessionID    string                `json:"session_id"`
-	SessionType  string                `json:"session_type"`
-	UserTurn     UserTurn              `json:"user_turn"`
-	History      []Message             `json:"history_snapshot"`
-	Agents       []Agent               `json:"agent_snapshots"`
-	Memories     []Memory              `json:"memory_snapshots"`
-	Credentials  map[string]Credential `json:"credentials"`
+	RunID       string                `json:"run_id"`
+	SessionID   string                `json:"session_id"`
+	SessionType string                `json:"session_type"`
+	UserTurn    UserTurn              `json:"user_turn"`
+	History     []Message             `json:"history_snapshot"`
+	Agents      []Agent               `json:"agent_snapshots"`
+	Memories    []Memory              `json:"memory_snapshots"`
+	Credentials map[string]Credential `json:"credentials"`
 	// DefaultModelRef 当前默认模型引用:群聊 Supervisor(非人格模型)的解析来源;
 	// nil=无可用默认模型,Python 图走确定性回退(主成员发言)。
 	DefaultModelRef *ModelRef `json:"default_model_ref,omitempty"`
@@ -52,11 +52,12 @@ type Credential struct {
 	BaseURL string `json:"base_url,omitempty"`
 }
 
-// Agent 编排参与道人快照(镜像 AgentSnapshot)。
+// Agent 编排参与道人快照。SystemPrompt 已由语言模式服务合成人设与启用金丹效果。
 type Agent struct {
-	AgentID  string   `json:"agent_id"`
-	Name     string   `json:"name"`
-	ModelRef ModelRef `json:"model_ref"`
+	AgentID      string   `json:"agent_id"`
+	Name         string   `json:"name"`
+	SystemPrompt string   `json:"system_prompt"`
+	ModelRef     ModelRef `json:"model_ref"`
 }
 
 // Memory 道人记忆快照(镜像 MemorySnapshot;图只选择注入,不改写)。

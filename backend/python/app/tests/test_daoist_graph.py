@@ -106,10 +106,11 @@ def fake_gateway() -> ModelGateway:
 # ---------------------------------------------------------------------------
 
 
-def agent(agent_id: str, name: str) -> AgentSnapshot:
+def agent(agent_id: str, name: str, system_prompt: str = "") -> AgentSnapshot:
     return AgentSnapshot(
         agent_id=agent_id,
         name=name,
+        system_prompt=system_prompt,
         model_ref=ModelRef(provider_type="deepseek", name="deepseek-chat"),
     )
 
@@ -209,6 +210,35 @@ async def test_roll_call_constraint_overrides_persona(fake_gateway, roll_call_st
     assert "指定编号：2" in prompt[0].content
     assert "不得插入考研建议" in prompt[0].content
     assert final_content(events).strip().startswith("2")
+
+
+@pytest.mark.asyncio
+async def test_composed_persona_and_pill_prompt_reaches_real_model_input(fake_gateway):
+    composed = (
+        "你是云游道人。\n"
+        "【基础人设】说话简洁、温和，但会指出逻辑漏洞。\n"
+        "【能力模块：代码审查】先定位根因，再给最小修复。"
+    )
+    daoist = agent("daoist", "云游道人", composed)
+    plan = SpeakingPlan(
+        items=[SpeakingPlanItem(agent_id="daoist", ordinal=1, task="回答用户问题。")],
+        requires_supervisor=False,
+        reason="single",
+    )
+    state = build_state(
+        agents=[daoist],
+        user_text="请检查这段代码",
+        pending=["daoist"],
+        speaking_plan=plan,
+    )
+    fake_gateway.responses.append("1")
+
+    [event async for event in run_daoist_for_test(state, fake_gateway, debug_enabled=True)]
+
+    system = fake_gateway.calls[0].messages[0].content
+    assert "【基础人设】说话简洁、温和" in system
+    assert "【能力模块：代码审查】先定位根因" in system
+    assert system.count("你是云游道人") == 1
 
 
 @pytest.mark.asyncio

@@ -102,7 +102,7 @@ func mustJSON(t *testing.T, v any) string {
 func TestBuildOrchestrationRequestPreservesMemberOrderAndProviderType(t *testing.T) {
 	svc, _, byName, session, userMessage := buildSnapshotFixture(t)
 
-	req, err := svc.BuildOrchestrationRequest(context.Background(), session, userMessage, snapshotRun(session))
+	req, err := svc.BuildOrchestrationRequest(context.Background(), session, userMessage, snapshotRun(session), "")
 	if err != nil {
 		t.Fatalf("BuildOrchestrationRequest: %v", err)
 	}
@@ -123,6 +123,11 @@ func TestBuildOrchestrationRequestPreservesMemberOrderAndProviderType(t *testing
 	if req.Agents[0].ModelRef.Name != "deepseek" {
 		t.Fatalf("model name = %q, want deepseek", req.Agents[0].ModelRef.Name)
 	}
+	for _, agent := range req.Agents {
+		if !strings.Contains(agent.SystemPrompt, "你是道人") {
+			t.Fatalf("agent %s system prompt = %q, want composed personality and pill prompt", agent.Name, agent.SystemPrompt)
+		}
+	}
 	if strings.Join(req.UserTurn.Mentions, ",") != byName["zhang"].DaoAgentID {
 		t.Fatalf("mentions = %v, want [zhang]", req.UserTurn.Mentions)
 	}
@@ -140,7 +145,7 @@ func TestBuildOrchestrationRequestSingleChatUsesSessionAgent(t *testing.T) {
 	session := &model.ChatSession{ChatSessionID: uuid.New().String(), Type: model.SessionTypeSingle, AgentID: &agentUID, Agent: agent}
 	userMessage := &model.ChatMessage{ChatMessageID: uuid.New().String(), SessionID: session.ChatSessionID, Role: "user", Content: "你好"}
 
-	req, err := svc.BuildOrchestrationRequest(context.Background(), session, userMessage, snapshotRun(session))
+	req, err := svc.BuildOrchestrationRequest(context.Background(), session, userMessage, snapshotRun(session), "")
 	if err != nil {
 		t.Fatalf("BuildOrchestrationRequest: %v", err)
 	}
@@ -156,7 +161,7 @@ func TestBuildOrchestrationRequestSingleChatUsesSessionAgent(t *testing.T) {
 func TestBuildOrchestrationRequestResolvesDefaultSupervisor(t *testing.T) {
 	svc, _, _, session, userMessage := buildSnapshotFixture(t)
 
-	req, err := svc.BuildOrchestrationRequest(context.Background(), session, userMessage, snapshotRun(session))
+	req, err := svc.BuildOrchestrationRequest(context.Background(), session, userMessage, snapshotRun(session), "")
 	if err != nil {
 		t.Fatalf("BuildOrchestrationRequest: %v", err)
 	}
@@ -175,7 +180,7 @@ func TestBuildOrchestrationRequestResolvesDefaultSupervisor(t *testing.T) {
 func TestBuildOrchestrationRequestFiltersMemoryByEnabled(t *testing.T) {
 	svc, _, byName, session, userMessage := buildSnapshotFixture(t)
 
-	req, err := svc.BuildOrchestrationRequest(context.Background(), session, userMessage, snapshotRun(session))
+	req, err := svc.BuildOrchestrationRequest(context.Background(), session, userMessage, snapshotRun(session), "")
 	if err != nil {
 		t.Fatalf("BuildOrchestrationRequest: %v", err)
 	}
@@ -203,7 +208,7 @@ func TestBuildOrchestrationRequestExcludesUserTurnAndSystemFromHistory(t *testin
 	notification := &model.ChatMessage{ChatMessageID: uuid.New().String(), SessionID: session.ChatSessionID, Role: "system", Content: "系统通知"}
 	chats.messages = []*model.ChatMessage{olderUser, olderReply, notification, userMessage}
 
-	req, err := svc.BuildOrchestrationRequest(context.Background(), session, userMessage, snapshotRun(session))
+	req, err := svc.BuildOrchestrationRequest(context.Background(), session, userMessage, snapshotRun(session), "")
 	if err != nil {
 		t.Fatalf("BuildOrchestrationRequest: %v", err)
 	}
@@ -235,7 +240,7 @@ func TestBuildOrchestrationRequestWireNeverEmitsNullForEmptySnapshots(t *testing
 	userMessage := &model.ChatMessage{ChatMessageID: uuid.New().String(), SessionID: session.ChatSessionID, Role: "user", Content: "你好"}
 	chats.messages = []*model.ChatMessage{userMessage}
 
-	req, err := svc.BuildOrchestrationRequest(context.Background(), session, userMessage, snapshotRun(session))
+	req, err := svc.BuildOrchestrationRequest(context.Background(), session, userMessage, snapshotRun(session), "")
 	if err != nil {
 		t.Fatalf("BuildOrchestrationRequest: %v", err)
 	}
@@ -257,9 +262,36 @@ func TestBuildOrchestrationRequestFailsOnInactiveModel(t *testing.T) {
 	svc, _, _, session, userMessage := buildSnapshotFixture(t)
 	svc.creds = fakeCredentialResolver{errors: map[string]error{"deepseek": errors.New("该模型已停用，请更换模型")}}
 
-	if _, err := svc.BuildOrchestrationRequest(context.Background(), session, userMessage, snapshotRun(session)); err == nil {
+	if _, err := svc.BuildOrchestrationRequest(context.Background(), session, userMessage, snapshotRun(session), ""); err == nil {
 		t.Fatal("error = nil, want inactive-model failure")
 	} else if !strings.Contains(err.Error(), "不可用") {
 		t.Fatalf("error = %v, want model-unavailable signal", err)
+	}
+}
+
+func TestSnapshotModelOverrideDoesNotMutateAgentDefaults(t *testing.T) {
+	svc, _, agents, session, message := buildSnapshotFixture(t)
+	resolver := snapshotResolver()
+	resolver.credentials["alternate"] = &credential.ModelCredentials{Model: "alternate", ProviderType: "openai-compatible", APIKey: "override-test", BaseURL: "http://localhost:1234"}
+	svc.creds = resolver
+	// A stale default must not prevent selecting a healthy replacement.
+	agents["li"].ModelName = "removed-model"
+	req, err := svc.BuildOrchestrationRequest(context.Background(), session, message, snapshotRun(session), "alternate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, agent := range req.Agents {
+		if agent.ModelRef.Name != "alternate" || req.Credentials[agent.AgentID].BaseURL != "http://localhost:1234" {
+			t.Fatal("selected model and credentials not applied")
+		}
+	}
+	if agents["zhang"].ModelName != "deepseek" || agents["li"].ModelName != "removed-model" {
+		t.Fatal("override mutated agent defaults")
+	}
+	if req.DefaultModelRef.Name != "deepseek" {
+		t.Fatal("override changed supervisor default")
+	}
+	if _, err := svc.BuildOrchestrationRequest(context.Background(), session, message, snapshotRun(session), "unknown"); err == nil {
+		t.Fatal("unavailable override accepted")
 	}
 }

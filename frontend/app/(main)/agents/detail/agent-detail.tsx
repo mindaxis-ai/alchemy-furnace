@@ -680,11 +680,9 @@ export default function AgentDetailPage({ agentId }: AgentDetailPageProps) {
 
   // 挂载恢复:读会话级 pending 记录到状态。不能改用 state 初始化——SSR/水合期无
   // sessionStorage,初始值必须与服务器一致(结果未知提示只能水合后浮现)
-  /* eslint-disable react-hooks/set-state-in-effect -- 外部存储一次性读取,非派生可算 */
   useEffect(() => {
     refreshPending()
   }, [refreshPending])
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   // 道人 ID 变化：关闭弹窗、丢弃旧响应写入（operation 恢复记录保留，回到该道人时提示仍在）
   const lastPageAgentIdRef = useRef(agentId)

@@ -93,7 +93,7 @@ export function LanguageSwitcher({ className }: { className?: string }) {
         aria-expanded={open}
         aria-label={t('label')}
         className={cn(
-          'inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-card/80 px-3 py-1.5 text-xs font-medium text-foreground shadow-[0_4px_12px_-6px_rgba(60,40,20,0.12)] transition-colors duration-200 hover:border-primary/40 hover:text-primary',
+          'inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-card/80 px-3 py-1.5 text-xs font-medium text-foreground shadow-[0_4px_12px_-6px_rgba(30,64,100,0.12)] transition-colors duration-200 hover:border-primary/40 hover:text-primary',
           pending && 'opacity-60',
         )}
       >
@@ -112,7 +112,7 @@ export function LanguageSwitcher({ className }: { className?: string }) {
         <ul
           role="listbox"
           aria-label={t('label')}
-          className="absolute right-0 z-50 mt-2 min-w-[10rem] overflow-hidden rounded-xl border border-border/70 bg-card/95 p-1 shadow-[0_20px_40px_-12px_rgba(60,40,20,0.18)] backdrop-blur-md"
+          className="absolute right-0 z-50 mt-2 min-w-[10rem] overflow-hidden rounded-xl border border-border/70 bg-card/95 p-1 shadow-[0_20px_40px_-12px_rgba(30,64,100,0.18)] backdrop-blur-md"
         >
           {locales.map((loc) => {
             const active = loc === currentLocale

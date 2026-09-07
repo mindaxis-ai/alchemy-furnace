@@ -144,14 +144,14 @@ export function ChatMessage({ message, streaming = false, members, onRetry }: Ch
         onClick={() => setPopoverOpen(true)}
         className={`
           shrink-0 self-start
-          w-10 h-10 rounded-xl
+          w-7 h-7 rounded-full
           flex items-center justify-center
           transition-all duration-150
           hover:ring-2 hover:ring-gold/50 hover:ring-offset-2 hover:ring-offset-background
           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60
           ${isUser
-            ? 'bg-primary/10 text-primary border border-primary/30'
-            : 'bg-gold/15 text-gold border border-gold/30'
+            ? 'bg-secondary text-muted-foreground'
+            : 'bg-secondary text-primary'
           }
         `}
       >
@@ -166,7 +166,7 @@ export function ChatMessage({ message, streaming = false, members, onRetry }: Ch
         />
       </button>
 
-      {/* 名字 + 气泡(竖直堆叠,与头像独立列) */}
+      {/* 名字 + 正文(竖直堆叠,与头像独立列) */}
       <div className={`
         flex-1 min-w-0 flex flex-col
         ${isUser ? 'items-end' : 'items-start'}
@@ -175,34 +175,23 @@ export function ChatMessage({ message, streaming = false, members, onRetry }: Ch
         <span className={`
           block text-[11px] mb-1.5 px-1 whitespace-nowrap font-medium
           ${isUser ? 'self-end' : 'self-start'}
-          ${isUser
-            ? 'text-primary/75'
-            : 'text-gold/90'
-          }
+          text-muted-foreground
         `}>
           {isUser
             ? (userProfile?.display_name || t('userLabel'))
             : (message.agent_name || sessionAgentName || t('assistantLabel'))}
         </span>
 
-        {/* 消息气泡:block,宽由 max-w 控制,长内容自然换行 */}
+        {/* 用户消息使用浅蓝气泡，助手回复保持 Codex 式开放正文。 */}
         <div className={`
-          relative block w-fit max-w-[82%] text-left
-          px-4 py-3 rounded-2xl break-words shadow-sm
+          relative block text-left break-words
           ${isUser
-            ? 'bg-primary/[0.07] border border-primary/25 rounded-tr-md'
-            : 'bg-card border border-border/80 rounded-tl-md'
+            ? 'w-fit max-w-[90%] rounded-3xl bg-secondary px-5 py-3'
+            : 'w-full bg-transparent py-1'
           }
         `}>
-          {/* 丹色印记：一条克制的身份线，不参与正文宽度计算。 */}
-          {!isUser && (
-            <>
-              <div className="absolute left-0 top-3 bottom-3 w-0.5 bg-gradient-to-b from-gold/80 to-sage/50 rounded-full" />
-            </>
-          )}
-
           {/* 消息内容 */}
-          <div className={`md-selectable ${isUser ? '' : 'pl-2 pr-2'} min-w-0 break-words`}>
+          <div className="md-selectable min-w-0 break-words">
             {isUser ? (
               // 用户消息: 高亮 @名字 且 @ 文字可点击触发 popover
               <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">

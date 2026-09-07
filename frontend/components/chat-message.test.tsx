@@ -18,6 +18,7 @@ const doubles = vi.hoisted(() => ({
   stopStream: vi.fn(),
   fetchAgents: vi.fn(),
   listProviders: vi.fn(),
+  modelOptions: vi.fn(),
   agents: [] as Agent[],
   userProfile: null as UserProfile | null,
 }))
@@ -46,6 +47,7 @@ vi.mock('@/services/chatService', () => ({
 
 vi.mock('@/services/modelService', () => ({
   listProviders: doubles.listProviders,
+  options: doubles.modelOptions,
 }))
 
 vi.mock('@/services/api', () => ({
@@ -133,6 +135,7 @@ describe('recoverable chat history and streaming', () => {
     doubles.agents = [activeAgent('agent-1', 'Agent One')]
     doubles.userProfile = null
     doubles.fetchAgents.mockResolvedValue(undefined)
+    doubles.modelOptions.mockResolvedValue([{ name: 'alternate', display_name: 'Alternate', provider_name: 'local', provider_display_name: 'Local', is_default: false }])
     doubles.listProviders.mockResolvedValue({ list: [{}], total: 1 })
     doubles.listSessions.mockResolvedValue({ list: [singleSession], total: 1 })
     doubles.getSession.mockResolvedValue(singleSession)
@@ -151,6 +154,21 @@ describe('recoverable chat history and streaming', () => {
       handlers.onDone()
     })
     Element.prototype.scrollIntoView = vi.fn()
+  })
+
+  it('sends with the composer model and isolates the selection by session', async () => {
+    const view = renderSession(singleSession.id)
+    await screen.findByRole('option', { name: 'Alternate · Local' })
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'alternate' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'input.messageLabel' }), { target: { value: 'hello' } })
+    fireEvent.click(screen.getByRole('button', { name: 'input.send' }))
+    await waitFor(() => expect(doubles.streamChatMessage).toHaveBeenCalledWith(singleSession.id, 'hello', expect.any(Object), expect.objectContaining({ modelName: 'alternate' })))
+    doubles.getSession.mockResolvedValue(secondSingleSession)
+    view.rerender(<ChatProvider><ChatView sessionId={secondSingleSession.id} /></ChatProvider>)
+    await waitFor(() => expect(screen.getByRole('combobox')).toHaveValue(''))
+    doubles.getSession.mockResolvedValue(singleSession)
+    view.rerender(<ChatProvider><ChatView sessionId={singleSession.id} /></ChatProvider>)
+    await waitFor(() => expect(screen.getByRole('combobox')).toHaveValue('alternate'))
   })
 
   it('shows loading and then a retryable back-to-lobby state for a missing session', async () => {

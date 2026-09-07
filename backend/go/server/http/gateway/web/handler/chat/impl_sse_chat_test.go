@@ -10,7 +10,6 @@ import (
 	"github.com/alchemy-furnace/server/internal/errors"
 	"github.com/alchemy-furnace/server/internal/interface/service"
 	chatservice "github.com/alchemy-furnace/server/internal/service/chat_service"
-	"github.com/alchemy-furnace/server/internal/service/credential"
 	"github.com/alchemy-furnace/server/model"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -23,11 +22,8 @@ type sseChatStub struct {
 	service.Chat
 	session        *model.ChatSession
 	sessionErr     errors.Error
-	pattern        *model.LanguagePattern
-	patternErr     errors.Error
 	saveErr        errors.Error
 	saveErrors     map[string]errors.Error
-	patternCalls   int
 	titleCalls     int
 	generatedTitle string
 	savedRoles     []string
@@ -64,17 +60,6 @@ func (s *sseChatStub) GetSessionAgentInfo(context.Context, uuid.UUID) (*model.Ch
 	return s.session, s.sessionErr
 }
 
-func (s *sseChatStub) GetOrBuildPattern(context.Context, string) (*model.LanguagePattern, errors.Error) {
-	s.patternCalls++
-	if s.patternErr != nil {
-		return nil, s.patternErr
-	}
-	if s.pattern != nil {
-		return s.pattern, nil
-	}
-	return &model.LanguagePattern{SystemPrompt: "test system prompt"}, nil
-}
-
 func (s *sseChatStub) SaveMessage(_ context.Context, sessionUID string, role, content string) (*model.ChatMessage, errors.Error) {
 	if err := s.saveErrors[role]; err != nil {
 		return nil, err
@@ -102,10 +87,6 @@ func (s *sseChatStub) TakeLatestUserMessage(context.Context, string) (*model.Cha
 		}
 	}
 	return nil, errors.ErrorRecordNotFound("test.latest_user")
-}
-
-func (s *sseChatStub) ResolveCredentials(context.Context, string) (*credential.ModelCredentials, errors.Error) {
-	return &credential.ModelCredentials{Model: "test-model", APIKey: "must-not-leak"}, nil
 }
 
 func (s *sseChatStub) GenerateSessionTitle(context.Context, uuid.UUID, string, string) string {
@@ -149,9 +130,6 @@ func TestSSEChatMissingSessionReturnsStableSafeError(t *testing.T) {
 	}
 	if strings.Contains(body, "dao.secret") {
 		t.Fatalf("SSE body leaked internal error: %q", body)
-	}
-	if stub.patternCalls != 0 {
-		t.Fatalf("GetOrBuildPattern calls = %d, want 0 before session resolution", stub.patternCalls)
 	}
 	if len(stub.savedRoles) != 0 {
 		t.Fatalf("SaveMessage roles = %v, want none before session resolution", stub.savedRoles)
@@ -290,19 +268,16 @@ func TestSSEChatLangGraphDelegatesWithoutLegacyComposition(t *testing.T) {
 			Agent: model.DaoAgent{DaoAgentID: uuid.New().String(), Status: "active", ModelName: "test-model"},
 		},
 	}
-	w := performSSEChatBody(t, stub, sessionUID, `{"content":"hello","retry":true,"debug_prompt":true}`)
+	w := performSSEChatBody(t, stub, sessionUID, `{"content":"hello","retry":true,"debug_prompt":true,"model_name":"alternate"}`)
 
 	if stub.runConversationCalls != 1 {
 		t.Fatalf("RunConversation calls = %d, want 1", stub.runConversationCalls)
-	}
-	if stub.patternCalls != 0 {
-		t.Fatalf("GetOrBuildPattern calls = %d, want 0 (composition is service-owned)", stub.patternCalls)
 	}
 	if !strings.Contains(w.Body.String(), "event: accepted") || !strings.Contains(w.Body.String(), "event: done") {
 		t.Fatalf("SSE body = %q, want emit 透传 accepted/done", w.Body.String())
 	}
 	cmd := stub.lastCommand
-	if cmd.SessionUID != sessionUID || cmd.Content != "hello" || !cmd.Retry || !cmd.DebugPrompt {
+	if cmd.SessionUID != sessionUID || cmd.Content != "hello" || !cmd.Retry || !cmd.DebugPrompt || cmd.ModelName != "alternate" {
 		t.Fatalf("command = %+v, want session/content/retry/debug 完整透传", cmd)
 	}
 }
@@ -313,7 +288,7 @@ func TestSSEGroupLangGraphDelegatesToRunConversation(t *testing.T) {
 	stub := &sseChatStub{
 		session: &model.ChatSession{ChatSessionID: sessionUID.String(), Type: model.SessionTypeGroup},
 	}
-	w := performSSEChatBody(t, stub, sessionUID, `{"content":"报数","retry":true,"debug_prompt":true}`)
+	w := performSSEChatBody(t, stub, sessionUID, `{"content":"报数","retry":true,"debug_prompt":true,"model_name":"alternate"}`)
 
 	if stub.runConversationCalls != 1 {
 		t.Fatalf("RunConversation calls = %d, want 1", stub.runConversationCalls)
@@ -322,7 +297,7 @@ func TestSSEGroupLangGraphDelegatesToRunConversation(t *testing.T) {
 		t.Fatalf("SSE body = %q, want emit 透传 accepted/done", w.Body.String())
 	}
 	cmd := stub.lastCommand
-	if cmd.SessionUID != sessionUID || cmd.Content != "报数" || !cmd.Retry || !cmd.DebugPrompt {
+	if cmd.SessionUID != sessionUID || cmd.Content != "报数" || !cmd.Retry || !cmd.DebugPrompt || cmd.ModelName != "alternate" {
 		t.Fatalf("command = %+v, want 完整透传", cmd)
 	}
 }

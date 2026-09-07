@@ -88,6 +88,14 @@ describe('chat SSE transport boundaries', () => {
     expect(JSON.parse(String(request.body))).toEqual({ content: 'question' })
   })
 
+  it('sends the selected model without changing the default request contract', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(sseResponse('event: done\ndata: {}\n\n'))
+    vi.stubGlobal('fetch', fetchMock)
+    await streamChatMessage(SESSION_UUID, 'question', handlers(), { modelName: 'alternate' })
+    const request = fetchMock.mock.calls[0][1] as RequestInit
+    expect(JSON.parse(String(request.body))).toEqual({ content: 'question', model_name: 'alternate' })
+  })
+
   it('serializes the explicit retry contract', async () => {
     const fetchMock = vi.fn().mockResolvedValue(sseResponse('event: done\ndata: {}\n\n'))
     vi.stubGlobal('fetch', fetchMock)

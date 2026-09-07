@@ -166,7 +166,7 @@ func (s *Chat) runGroupConversation(ctx context.Context, session *model.ChatSess
 		return
 	}
 
-	req, berr := s.BuildOrchestrationRequest(ctx, session, userMessage, run)
+	req, berr := s.BuildOrchestrationRequest(ctx, session, userMessage, run, cmd.ModelName)
 	if berr != nil {
 		s.settleRun(ctx, run, model.ChatRunStatusFailed)
 		runEmit("error", turnUnavailable())
