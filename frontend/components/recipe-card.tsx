@@ -98,7 +98,7 @@ export function RecipeCard({ recipe, onCrafted }: RecipeCardProps) {
     >
       {/* 顶部：图标 + 版本 + 归档 */}
       <div className="mb-3 flex items-start justify-between gap-2">
-        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gold/15 text-gold shadow-[0_15px_30px_-12px_rgba(59,130,246,0.4)] transition-all duration-300 group-hover:scale-110">
+        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gold/15 text-gold shadow-[0_15px_30px_-12px_rgba(201,169,110,0.4)] transition-all duration-300 group-hover:scale-110">
           <BookOpen className="h-7 w-7" />
         </div>
         <div className="flex min-w-0 items-center gap-2">

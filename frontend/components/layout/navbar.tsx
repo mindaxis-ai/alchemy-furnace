@@ -79,7 +79,7 @@ export function Navbar() {
       className={cn(
         'app-drag sticky top-0 z-50 border-b transition-all duration-300',
         scrolled || open
-          ? 'border-border bg-card shadow-[0_10px_30px_-15px_rgba(30,64,100,0.15)]'
+          ? 'border-border bg-card shadow-[0_10px_30px_-15px_rgba(60,40,20,0.15)]'
           : 'border-border/60 bg-card',
       )}
     >
@@ -150,7 +150,7 @@ export function Navbar() {
         <div className="hidden items-center gap-3 lg:flex">
           <Link
             href="/chat"
-            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-[15px] font-medium text-primary-foreground shadow-[0_10px_20px_-8px_rgba(37,99,235,0.5)] transition-all duration-300 hover:bg-cinnabar/90 hover:shadow-[0_14px_24px_-8px_rgba(37,99,235,0.55)]"
+            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-[15px] font-medium text-primary-foreground shadow-[0_10px_20px_-8px_rgba(181,74,63,0.5)] transition-all duration-300 hover:bg-cinnabar/90 hover:shadow-[0_14px_24px_-8px_rgba(181,74,63,0.55)]"
           >
             <Flame className="size-4" strokeWidth={2} aria-hidden />
             {t('startCta')}

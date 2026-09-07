@@ -30,10 +30,10 @@ export function FloatCard({
         className={cn(
           'relative overflow-hidden rounded-[20px] border border-border/60',
           'bg-card/80 backdrop-blur-sm',
-          'shadow-[0_25px_50px_-12px_rgba(30,64,100,0.08)]',
+          'shadow-[0_25px_50px_-12px_rgba(60,40,20,0.08)]',
           'transition-[transform,box-shadow] duration-700 ease-out',
           'group-hover/float:-translate-y-2',
-          'group-hover/float:shadow-[0_40px_70px_-15px_rgba(30,64,100,0.16)]',
+          'group-hover/float:shadow-[0_40px_70px_-15px_rgba(60,40,20,0.16)]',
           className,
         )}
       >
@@ -43,7 +43,7 @@ export function FloatCard({
           className="pointer-events-none absolute inset-x-0 -bottom-16 h-32 opacity-0 blur-2xl transition-opacity duration-700 group-hover/float:opacity-100"
           style={{
             background:
-              'radial-gradient(60% 100% at 50% 100%, rgba(37,99,235,0.28), transparent 70%)',
+              'radial-gradient(60% 100% at 50% 100%, rgba(181,74,63,0.28), transparent 70%)',
           }}
         />
         {children}

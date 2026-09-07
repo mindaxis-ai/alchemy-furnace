@@ -243,7 +243,7 @@ export default function HomePage() {
         {/* ── 金丹阁：最新库存实例 + 丹方录 ── */}
         <section id="pills" className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
           {/* 最新金丹 spotlight */}
-          <div className="relative flex h-full flex-col overflow-hidden rounded-[20px] border border-border/70 bg-card/60 shadow-[0_25px_50px_-12px_rgba(30,64,100,0.08)]">
+          <div className="relative flex h-full flex-col overflow-hidden rounded-[20px] border border-border/70 bg-card/60 shadow-[0_25px_50px_-12px_rgba(60,40,20,0.08)]">
             <div className="relative flex h-full flex-col gap-8 p-8 md:p-10">
               <div className="flex items-center justify-between">
                 <span className="flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
@@ -372,12 +372,12 @@ export default function HomePage() {
             </div>
           </FloatCard>
 
-          <div className="relative flex h-full flex-col justify-between overflow-hidden rounded-[20px] border border-border/70 bg-card/60 p-10 shadow-[0_25px_50px_-12px_rgba(30,64,100,0.08)]">
+          <div className="relative flex h-full flex-col justify-between overflow-hidden rounded-[20px] border border-border/70 bg-card/60 p-10 shadow-[0_25px_50px_-12px_rgba(60,40,20,0.08)]">
             <div
               aria-hidden
               className="ink-fade pointer-events-none absolute -right-10 -top-10 size-52 rounded-full opacity-60"
               style={{
-                background: 'radial-gradient(circle, rgba(59,130,246,0.16), transparent 65%)',
+                background: 'radial-gradient(circle, rgba(201,169,110,0.16), transparent 65%)',
               }}
             />
             <div className="relative flex items-start justify-between gap-6">
@@ -389,7 +389,7 @@ export default function HomePage() {
                   {tCloser('body')}
                 </p>
               </div>
-              <div className="grid size-20 shrink-0 place-items-center rounded-2xl bg-primary text-primary-foreground shadow-[0_20px_40px_-12px_rgba(37,99,235,0.45)]">
+              <div className="grid size-20 shrink-0 place-items-center rounded-2xl bg-primary text-primary-foreground shadow-[0_20px_40px_-12px_rgba(181,74,63,0.45)]">
                 <span className="font-serif text-3xl font-black leading-none">
                   {tCloser('stamp')}
                 </span>

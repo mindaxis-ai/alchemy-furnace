@@ -22,7 +22,7 @@ export function NavDropdown({
   return (
     <div
       role="menu"
-      className="absolute inset-x-0 top-full border-b border-border/70 bg-card/95 shadow-[0_30px_60px_-20px_rgba(30,64,100,0.18)] backdrop-blur-md"
+      className="absolute inset-x-0 top-full border-b border-border/70 bg-card/95 shadow-[0_30px_60px_-20px_rgba(60,40,20,0.18)] backdrop-blur-md"
     >
       <div className="mx-auto grid max-w-5xl gap-1 px-6 py-6 sm:grid-cols-2">
         {items.map((item) => {

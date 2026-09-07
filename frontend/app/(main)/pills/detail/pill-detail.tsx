@@ -201,7 +201,7 @@ export default function PillItemDetailPage({ itemId }: PillItemDetailPageProps) 
 
       <div className="dao-card mb-6 p-5 md:p-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-start">
-          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-gold/15 text-gold shadow-[0_0_18px_rgba(59,130,246,0.35)]">
+          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-gold/15 text-gold shadow-[0_0_18px_rgba(201,169,110,0.35)]">
             <FlaskConical className="h-8 w-8" />
           </div>
           <div className="min-w-0 flex-1">

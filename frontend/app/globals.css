@@ -45,40 +45,40 @@
   color-scheme: light;
   --radius: 20px;
 
-  /* White surfaces with a light-blue supporting palette. */
-  --paper: #ffffff;
-  --paper-deep: #eff6ff;
-  --background: #ffffff;
-  --foreground: #17212f;
+  /* warm rice-paper off-white, NOT pure white */
+  --paper: #f7f3ed;
+  --paper-deep: #efe8dc;
+  --background: #f7f3ed;
+  --foreground: #1c1c1c;
 
-  /* Quiet, opaque surfaces keep desktop text crisp. */
-  --card: #ffffff;
-  --card-foreground: #17212f;
-  --popover: #ffffff;
-  --popover-foreground: #17212f;
+  /* cards: frosted warm glass */
+  --card: #fbf8f2;
+  --card-foreground: #1c1c1c;
+  --popover: #fbf8f2;
+  --popover-foreground: #1c1c1c;
 
-  /* Legacy domain token names remain aliases for the blue palette. */
-  --cinnabar: #2563eb;
-  --primary: #2563eb;
-  --primary-foreground: #ffffff;
+  /* cinnabar seal-stamp red */
+  --cinnabar: #b54a3f;
+  --primary: #b54a3f;
+  --primary-foreground: #fbf8f2;
 
-  /* Secondary emphasis */
-  --gold: #3b82f6;
+  /* aged gold */
+  --gold: #c9a96e;
 
-  /* Secondary text */
-  --sage: #64748b;
+  /* muted sage */
+  --sage: #6b7d73;
 
-  --secondary: #eff6ff;
-  --secondary-foreground: #17212f;
-  --muted: #f1f5f9;
-  --muted-foreground: #64748b;
-  --accent: #eaf3ff;
-  --accent-foreground: #2563eb;
-  --destructive: #dc2626;
+  --secondary: #efe8dc;
+  --secondary-foreground: #1c1c1c;
+  --muted: #ece5d8;
+  --muted-foreground: #6b7d73;
+  --accent: #f0e7d6;
+  --accent-foreground: #b54a3f;
+  --destructive: #b54a3f;
 
-  --border: #dbe7f3;
-  --input: #cbd9e8;
-  --ring: #3b82f6;
+  --border: rgba(60, 40, 20, 0.1);
+  --input: rgba(60, 40, 20, 0.14);
+  --ring: #c9a96e;
 }
 
 @layer base {
@@ -91,7 +91,12 @@
   body {
     @apply bg-background text-foreground font-sans;
     line-height: 1.8;
-
+    /* subtle rice-paper grain */
+    background-image:
+      radial-gradient(circle at 15% 20%, rgba(201, 169, 110, 0.05), transparent 45%),
+      radial-gradient(circle at 85% 75%, rgba(181, 74, 63, 0.04), transparent 45%),
+      url("data:image/svg+xml,%3Csvg viewBox='0 0 240 240' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    background-attachment: fixed;
   }
 }
 
@@ -140,18 +145,18 @@
   }
 }
 
-/* ========== dao-* 组件类（白蓝浅色风，类名与旧版一致） ========== */
+/* ========== dao-* 组件类（宣纸浅色风重定义，类名与旧版一致） ========== */
 @layer components {
-  /* 卡片 */
+  /* 卡片 - 磨砂暖白 */
   .dao-card {
     @apply rounded-[20px] border border-border/70 bg-card/80 backdrop-blur-sm;
-    @apply shadow-[0_25px_50px_-12px_rgba(30,64,100,0.08)];
+    @apply shadow-[0_25px_50px_-12px_rgba(60,40,20,0.08)];
     @apply transition-all duration-300;
   }
 
   .dao-card:hover {
     @apply border-gold/40 -translate-y-0.5;
-    @apply shadow-[0_35px_60px_-15px_rgba(30,64,100,0.14)];
+    @apply shadow-[0_35px_60px_-15px_rgba(60,40,20,0.14)];
   }
 
   /* 按钮 */
@@ -168,7 +173,7 @@
     @apply transition-all duration-200 active:scale-95;
     @apply bg-primary text-primary-foreground;
     @apply hover:bg-cinnabar/90;
-    @apply shadow-[0_15px_30px_-12px_rgba(37,99,235,0.45)];
+    @apply shadow-[0_15px_30px_-12px_rgba(181,74,63,0.45)];
   }
 
   .dao-btn-gold {
@@ -177,7 +182,7 @@
     @apply transition-all duration-200 active:scale-95;
     @apply bg-gold text-foreground;
     @apply hover:bg-gold/85;
-    @apply shadow-[0_15px_30px_-12px_rgba(59,130,246,0.5)];
+    @apply shadow-[0_15px_30px_-12px_rgba(201,169,110,0.5)];
   }
 
   .dao-btn-ghost {
