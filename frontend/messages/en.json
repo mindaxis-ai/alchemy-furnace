@@ -327,7 +327,6 @@
       "descLabel": "Description",
       "schemaTitle": "Schema Details",
       "degradedWarning": "Fallback used (LLM failed twice)",
-      "rerollCta": "Re-roll",
       "editCta": "Edit",
       "saveCta": "Save",
       "closeCta": "Close",

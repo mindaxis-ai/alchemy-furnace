@@ -327,7 +327,6 @@
       "descLabel": "简介",
       "schemaTitle": "丹方详情",
       "degradedWarning": "本次融合使用了保底方案（LLM 连续失败）",
-      "rerollCta": "换一炉",
       "editCta": "编辑",
       "saveCta": "保存入库",
       "closeCta": "关闭",

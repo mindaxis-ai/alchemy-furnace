@@ -190,12 +190,12 @@ describe('FusionPage 融合炉（两阶段：预览不消耗 → 确认原子消
     await selectTwoAndFuse(user)
 
     expect(td.previewFusion).toHaveBeenCalledTimes(1)
-    expect(td.previewFusion).toHaveBeenCalledWith([ITEM_A, ITEM_B], undefined)
+    expect(td.previewFusion).toHaveBeenCalledWith([ITEM_A, ITEM_B])
     // 预览不消耗：材料仍在融合槽中（移除按钮可点）
     expect(screen.getByRole('button', { name: 'remove 文言文丹' })).toBeInTheDocument()
   })
 
-  it('换一炉 = 重新预览（带 exclude_operator_id），保存只调 confirm', async () => {
+  it('预览后保存只调 confirm', async () => {
     const user = userEvent.setup()
     td.confirmFusion.mockResolvedValue({
       operation_id: 'op-1',
@@ -207,10 +207,6 @@ describe('FusionPage 融合炉（两阶段：预览不消耗 → 确认原子消
     render(<FusionPage />)
     await screen.findByRole('button', { name: /文言文丹/ })
     await selectTwoAndFuse(user)
-
-    // 换一炉：重新预览排除当前算子
-    await user.click(screen.getByRole('button', { name: '换一炉' }))
-    expect(td.previewFusion).toHaveBeenLastCalledWith([ITEM_A, ITEM_B], 'o-1')
 
     // 保存入库：只调 confirm（幂等 key），不调 createPill/deletePill
     await user.click(screen.getByRole('button', { name: '保存入库' }))

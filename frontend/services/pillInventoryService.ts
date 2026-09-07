@@ -120,13 +120,11 @@ export function removeEffect(key: string, agentId: string, effectId: string): Pr
 /** 融合预览：校验材料 → 模型生成 → 持久化预览（15 分钟 TTL；不消耗材料） */
 export function previewFusion(
   itemIds: string[],
-  excludeOperatorId?: string
 ): Promise<FusionPreview> {
   return request('/fusion/previews', {
     method: 'POST',
     body: JSON.stringify({
       item_ids: itemIds,
-      ...(excludeOperatorId ? { exclude_operator_id: excludeOperatorId } : {}),
     }),
   })
 }

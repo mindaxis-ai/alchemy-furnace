@@ -5,7 +5,7 @@
  * - 左 dao-card: 库存池(分页加载 + 搜索 + 卡片网格,点击 toggle 加入融合槽)
  * - 右 dao-card: 融合槽(已选卡片可移除) + 炉火动画 + [开始融合]
  * - 融合中: 卡片飞入炉中 + 火焰爆燃(forceIntensity=1)
- * - 预览完成: 弹出 FusionPreviewModal(算子徽标/血统/可编辑/换一炉/保存入库)
+ * - 预览完成: 弹出 FusionPreviewModal(算子徽标/血统/可编辑/保存入库)
  * - 保存入库: 只调用 confirm（幂等），原子消耗全部材料并产出新丹；
  *   不再前端 createPill + deletePill，也没有内置材料豁免
  */
@@ -163,12 +163,12 @@ export default function FusionPage() {
   }
 
   /** 开始融合 = 预览：校验材料 → 模型生成 → 持久化（不消耗任何材料） */
-  const doFuse = async (excludeOperatorId?: string) => {
+  const doFuse = async () => {
     if (selected.length < 2) return
     setFusing(true)
     setErrorModal(null)
     try {
-      const r = await previewFusion(selected.map((p) => p.id), excludeOperatorId)
+      const r = await previewFusion(selected.map((p) => p.id))
       setResult(r)
     } catch (e) {
       setErrorModal(e instanceof Error ? e.message : String(e))
@@ -426,7 +426,6 @@ export default function FusionPage() {
           result={result}
           parents={selected}
           saving={saving}
-          onReroll={() => doFuse(result.operator.id)}
           onSave={(edited) => handleSave(edited, false)}
           onEdit={(edited) => handleSave(edited, true)}
           onClose={() => setResult(null)}

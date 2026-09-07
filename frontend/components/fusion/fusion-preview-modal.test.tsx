@@ -58,7 +58,6 @@ function renderModal(overrides: Partial<Parameters<typeof FusionPreviewModal>[0]
     result: preview,
     parents,
     saving: false,
-    onReroll: vi.fn(),
     onSave: vi.fn(),
     onEdit: vi.fn(),
     onClose: vi.fn(),
@@ -71,6 +70,12 @@ function renderModal(overrides: Partial<Parameters<typeof FusionPreviewModal>[0]
 describe('FusionPreviewModal 融合预览弹窗', () => {
   beforeEach(() => vi.clearAllMocks())
   afterEach(() => cleanup())
+
+  it('不再提供换一炉入口', async () => {
+    renderModal()
+    await screen.findByText('不消耗材料；保存时消耗')
+    expect(screen.queryByRole('button', { name: /换一炉/ })).not.toBeInTheDocument()
+  })
 
   it('标明「不消耗材料；保存时消耗」，展示算子与材料血统', async () => {
     renderModal()
@@ -102,32 +107,13 @@ describe('FusionPreviewModal 融合预览弹窗', () => {
     const { props } = renderModal({ saving: true })
     await screen.findByText('不消耗材料；保存时消耗')
 
-    expect(screen.getByRole('button', { name: /换一炉/ })).toBeDisabled()
     expect(screen.getByRole('button', { name: '编辑' })).toBeDisabled()
     // saving 时保存按钮文案切换为「入库中…」
     expect(screen.getByRole('button', { name: /入库中/ })).toBeDisabled()
 
-    await user.click(screen.getByRole('button', { name: /换一炉/ }))
     await user.click(screen.getByRole('button', { name: '编辑' }))
-    expect(props.onReroll).not.toHaveBeenCalled()
     expect(props.onEdit).not.toHaveBeenCalled()
     expect(props.onSave).not.toHaveBeenCalled()
-  })
-
-  it('再次生成是重新预览（onReroll），提交中重复点击只触发一次', async () => {
-    const user = userEvent.setup()
-    let resolveReroll!: (v: unknown) => void
-    const onReroll = vi.fn(() => new Promise((r) => { resolveReroll = r }))
-    renderModal({ onReroll })
-    await screen.findByText('不消耗材料；保存时消耗')
-
-    const rerollBtn = screen.getByRole('button', { name: /换一炉/ })
-    await user.click(rerollBtn)
-    await user.click(rerollBtn)
-    expect(onReroll).toHaveBeenCalledTimes(1)
-
-    resolveReroll(undefined)
-    await waitFor(() => expect(onReroll).toHaveBeenCalledTimes(1))
   })
 
   it('编辑结果走 onEdit；关闭走 onClose', async () => {

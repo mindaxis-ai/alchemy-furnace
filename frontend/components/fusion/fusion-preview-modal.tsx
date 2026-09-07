@@ -4,21 +4,19 @@
  * 融合炉 - 预览弹窗（融合两阶段的第一阶段）
  * 预览由 POST /fusion/previews 持久化（15 分钟 TTL），不消耗任何材料；
  * 保存时才调用 confirm 原子消耗全部材料并产出新丹。
- * - [换一炉] onReroll：再次生成 = 重新预览（带 exclude_operator_id）
  * - [编辑] onEdit：仅编辑允许字段（名称/描述），保存后跳新丹详情；不绕回旧 createPill
  * - [保存入库] onSave：只调用 confirm（幂等），不再前端 createPill + deletePill
  * - [关闭] onClose
  */
 import { useState } from 'react'
 import { useTranslations } from 'next-intl'
-import { X, FlaskConical, AlertCircle, Loader2, RefreshCcw, Edit3, Save, ChevronDown, Info } from 'lucide-react'
+import { X, FlaskConical, AlertCircle, Loader2, Edit3, Save, ChevronDown, Info } from 'lucide-react'
 import type { FusionPreview, PillItemListItem } from '@/services/types'
 
 interface FusionPreviewModalProps {
   result: FusionPreview
   parents: PillItemListItem[]
   saving: boolean
-  onReroll: () => void
   onSave: (edited: { name: string; description: string }) => Promise<void> | void
   onEdit: (edited: { name: string; description: string }) => Promise<void> | void
   onClose: () => void
@@ -28,7 +26,6 @@ export function FusionPreviewModal({
   result,
   parents,
   saving,
-  onReroll,
   onSave,
   onEdit,
   onClose,
@@ -36,7 +33,7 @@ export function FusionPreviewModal({
   const t = useTranslations('fusion.preview')
   const [name, setName] = useState(result.name)
   const [description, setDescription] = useState(result.description)
-  const [busy, setBusy] = useState<null | 'save' | 'edit' | 'reroll'>(null)
+  const [busy, setBusy] = useState<null | 'save' | 'edit'>(null)
 
   const handleSave = async () => {
     if (busy || saving) return
@@ -48,13 +45,6 @@ export function FusionPreviewModal({
     setBusy('edit')
     try { await onEdit({ name: name.trim() || result.name, description: description.trim() }) } finally { setBusy(null) }
   }
-  const handleReroll = async () => {
-    if (busy || saving) return
-    setBusy('reroll')
-    // 再次生成 = 重新预览：等待新预览到达才解锁，防重复点击并发多次预览
-    try { await onReroll() } finally { setBusy(null) }
-  }
-
   const operator = result.operator
   const lineageNames = parents.map((p) => p.name).join(' × ')
 
@@ -131,14 +121,6 @@ export function FusionPreviewModal({
         </details>
 
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={handleReroll}
-            disabled={!!busy || saving}
-            className="dao-btn-ghost flex-1 min-w-[100px]"
-          >
-            {busy === 'reroll' ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCcw className="w-4 h-4" />}
-            {t('rerollCta')}
-          </button>
           <button
             onClick={handleEdit}
             disabled={!!busy || saving}

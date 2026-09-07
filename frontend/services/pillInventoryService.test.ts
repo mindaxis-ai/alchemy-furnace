@@ -110,15 +110,12 @@ describe('pill inventory UUID resource plumbing', () => {
     )
     vi.stubGlobal('fetch', fetchMock)
 
-    await previewFusion([ITEM_ID], AGENT_ID)
+    await previewFusion([ITEM_ID])
     await confirmFusion(KEY, PREVIEW_ID, '融合金丹')
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(fetchMock.mock.calls[0][0]).toBe('http://localhost:3000/api/v1/fusion/previews')
-    expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))).toEqual({
-      item_ids: [ITEM_ID],
-      exclude_operator_id: AGENT_ID,
-    })
+    expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))).toEqual({ item_ids: [ITEM_ID] })
     expect(fetchMock.mock.calls[1][0]).toBe('http://localhost:3000/api/v1/fusion/confirm')
     expect(JSON.parse(String((fetchMock.mock.calls[1][1] as RequestInit).body))).toEqual({
       preview_id: PREVIEW_ID,
