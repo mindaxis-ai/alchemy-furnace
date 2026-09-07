@@ -521,9 +521,13 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
           {/* 会话头:群聊显示群名 + 成员数,单聊显示道人头像 */}
           {currentSession.type === 'group' ? (
             <>
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-sage to-sage/70 flex items-center justify-center text-white font-serif font-bold text-sm flex-shrink-0">
-                <Users className="w-4 h-4" />
-              </div>
+              <EntityAvatar
+                name={currentSession.title || t('directory.untitledGroup')}
+                src={currentSession.avatar}
+                size="sm"
+                shape="circle"
+                fallback="bot"
+              />
               <div className="flex-1 min-w-0">
                 <GroupTopicEditor
                   sessionId={currentSession.id}
@@ -1309,6 +1313,7 @@ function GroupMembersPanelSession() {
   if (!chatState.currentSession || chatState.currentSession.type !== 'group') return null
   return (
     <GroupMembersPanel
+      key={chatState.currentSession.id}
       session={chatState.currentSession}
       open={open}
       onClose={() => setOpen(false)}

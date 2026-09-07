@@ -136,11 +136,15 @@ export function ConversationDirectory({ sessions, currentSessionId, onSelect }: 
               className="cursor-pointer px-3 py-2.5 transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60"
             >
               <div className="flex items-center gap-2">
-                <div className="flex shrink-0 -space-x-1.5">
-                  {(s.members ?? []).slice(0, 3).map(m => (
-                    <EntityAvatar key={m.agent_id} name={m.name} src={m.avatar} size="sm" shape="circle" />
-                  ))}
-                </div>
+                {s.avatar ? (
+                  <EntityAvatar name={s.title || t('untitledGroup')} src={s.avatar} size="sm" shape="circle" />
+                ) : (
+                  <div className="flex shrink-0 -space-x-1.5">
+                    {(s.members ?? []).slice(0, 3).map(m => (
+                      <EntityAvatar key={m.agent_id} name={m.name} src={m.avatar} size="sm" shape="circle" />
+                    ))}
+                  </div>
+                )}
                 <span className="flex-1 truncate text-sm font-medium text-foreground">
                   {s.title || t('untitledGroup')}
                 </span>

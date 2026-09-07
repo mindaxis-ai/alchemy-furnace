@@ -166,6 +166,7 @@ type ChatSession struct {
 	Type          string  `json:"type" gorm:"size:10;default:single;index;comment:会话类型: single/group"`
 	AgentID       *string `json:"agent_id" gorm:"type:text;index;comment:单聊所属道人UUID文本;群聊为NULL"`
 	Title         string  `json:"title" gorm:"size:200;comment:会话标题(空=待自动命名)"`
+	Avatar        string  `json:"avatar" gorm:"type:text;comment:群聊头像 URL 或 data URI"`
 
 	// 关联关系
 	Agent    DaoAgent        `json:"agent,omitempty" gorm:"foreignKey:AgentID;references:DaoAgentID;constraint:OnDelete:CASCADE;"`

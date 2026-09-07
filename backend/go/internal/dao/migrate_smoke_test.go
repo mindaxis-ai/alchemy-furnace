@@ -62,6 +62,19 @@ func TestAutoMigrateSQLite(t *testing.T) {
 	if avatarType != "text" {
 		t.Errorf("user_profile.avatar 数据库类型 = %q, want text", avatarType)
 	}
+	chatCols, err := db.Migrator().ColumnTypes(&model.ChatSession{})
+	if err != nil {
+		t.Fatalf("读取 chat_sessions 列类型失败: %v", err)
+	}
+	chatAvatarType := ""
+	for _, col := range chatCols {
+		if col.Name() == "avatar" {
+			chatAvatarType = strings.ToLower(col.DatabaseTypeName())
+		}
+	}
+	if chatAvatarType != "text" {
+		t.Errorf("chat_sessions.avatar 数据库类型 = %q, want text", chatAvatarType)
+	}
 
 	// 关键约束:行为档案列(language_patterns)
 	lpCols, err := db.Migrator().ColumnTypes(&model.LanguagePattern{})

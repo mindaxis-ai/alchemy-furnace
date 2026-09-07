@@ -25,10 +25,7 @@
 | 每条绑定（`agent_pills`） | 1 枚**历史**库存（`consumed_by_agent`，已服用不再作库存展示）+ 1 条已吸收能力快照（`agent_pill_effects`） |
 | 旧表本身 | **保留原样**（供回滚），不再被任何读接口使用 |
 
-迁移摘要查询：`GET /api/v1/migration-summary`（只读，不触发迁移），返回
-`migrated / is_fresh_install / legacy_pills / legacy_binds / recipes /
-available_items / history_items / effects / backup_path / completed_at`。
-未迁移库返回 `migrated=false`。
+旧版迁移摘要接口已随库存迁移完成移除。迁移结果应通过数据库迁移日志核对，不再由桌面端启动时请求。
 
 ### 预检与拒绝
 
@@ -87,7 +84,6 @@ available_items / history_items / effects / backup_path / completed_at`。
 ## 五、验证清单（升级后）
 
 - [ ] 启动日志出现「迁移前备份完成」与「迁移完成：旧定义=…」两行
-- [ ] `GET /api/v1/migration-summary` 返回 `migrated=true`，计数与旧数据吻合
 - [ ] 桌面「丹方」页可见原金丹定义（名称、内容不变）
 - [ ] 桌面「金丹库存」页：未服用金丹显示为可用；已服用金丹**不再作为库存展示**
 - [ ] 道人「已吸收能力」保留（迁移自旧绑定），移除能力不返还库存
