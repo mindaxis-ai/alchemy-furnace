@@ -55,6 +55,7 @@ type ChatAction =
   | { type: 'ADD_MESSAGE'; payload: ChatMessage }
   | { type: 'CONSUME_RECOVERY'; payload: { messageId: string } }
   | { type: 'ADD_STREAM_CHUNK'; payload: StreamChunk & { prompt_debug?: PromptDebugPayload; run_id?: string } } // 追加流式输出内容
+  | { type: 'ATTACH_PROMPT_DEBUG'; payload: { agent_id: string; prompt_debug: PromptDebugPayload } }
   | { type: 'FINISH_STREAM' }
   | { type: 'FINALIZE_STREAM' }
   | { type: 'STOP_STREAM' } // 流式输出被停止(保留部分内容)
@@ -181,6 +182,14 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
           run_id: action.payload.run_id,
           created_at: new Date().toISOString(),
         })
+      }
+      return { ...state, messages }
+    }
+    case 'ATTACH_PROMPT_DEBUG': {
+      const messages = [...state.messages]
+      const index = findStreamMessageIndex(messages, action.payload.agent_id)
+      if (index >= 0) {
+        messages[index] = { ...messages[index], prompt_debug: action.payload.prompt_debug }
       }
       return { ...state, messages }
     }
@@ -795,7 +804,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       onPromptDebug: (payload) => {
         if (!isActiveStream()) return
         if (isGroup && payload.agent_id) {
-          groupPromptDebug.set(payload.agent_id, payload)
+          if (activeSpeaker?.agent_id === payload.agent_id) {
+            dispatch({ type: 'ATTACH_PROMPT_DEBUG', payload: { agent_id: payload.agent_id, prompt_debug: payload } })
+          } else {
+            groupPromptDebug.set(payload.agent_id, payload)
+          }
         } else {
           singlePromptDebug = payload
         }

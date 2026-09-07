@@ -806,20 +806,21 @@ describe('recoverable chat history and streaming', () => {
     doubles.listSessions.mockResolvedValue({ list: [groupSession], total: 1 })
     doubles.getSession.mockResolvedValue(groupSession)
     doubles.streamChatMessage.mockImplementation(async (_sessionId: string, _content: string, handlers: StreamHandlers) => {
+      // 后端真实事件顺序: speaker_started 先于 prompt_debug。
+      handlers.onSpeakerStart?.({ agent_id: 'agent-a', agent_name: 'Alpha' })
       handlers.onPromptDebug?.({
         agent_id: 'agent-a', agent_name: 'Alpha', model: 'model-alpha',
         messages: [{ role: 'system', content: 'ALPHA_SYSTEM_PROMPT' }],
         generation: { max_tokens: 128, max_sentences: 2 },
       })
-      handlers.onSpeakerStart?.({ agent_id: 'agent-a', agent_name: 'Alpha' })
       handlers.onChunk({ agent_id: 'agent-a', agent_name: 'Alpha', content: 'alpha answer' })
       handlers.onSpeakerDone?.({ agent_id: 'agent-a', agent_name: 'Alpha', message_id: 'message-a' })
+      handlers.onSpeakerStart?.({ agent_id: 'agent-b', agent_name: 'Beta' })
       handlers.onPromptDebug?.({
         agent_id: 'agent-b', agent_name: 'Beta', model: 'model-beta',
         messages: [{ role: 'system', content: 'BETA_SYSTEM_PROMPT' }],
         generation: { max_tokens: 128, max_sentences: 2 },
       })
-      handlers.onSpeakerStart?.({ agent_id: 'agent-b', agent_name: 'Beta' })
       handlers.onChunk({ agent_id: 'agent-b', agent_name: 'Beta', content: 'beta answer' })
       handlers.onSpeakerDone?.({ agent_id: 'agent-b', agent_name: 'Beta', message_id: 'message-b' })
       handlers.onTurnDone?.({ spoke: 2 })

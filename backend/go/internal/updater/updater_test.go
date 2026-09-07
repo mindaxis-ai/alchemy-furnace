@@ -3,13 +3,33 @@
 package updater
 
 import (
+	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/alchemy-furnace/server/internal/buildinfo"
 )
+
+func TestCheckLatestDisabledForNonReleaseBuild(t *testing.T) {
+	originalVersion, originalRepo := buildinfo.Version, buildinfo.UpdateRepo
+	t.Cleanup(func() {
+		buildinfo.Version, buildinfo.UpdateRepo = originalVersion, originalRepo
+	})
+	buildinfo.Version = "dev"
+	buildinfo.UpdateRepo = "mindaxis-ai/alchemy-furnace"
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := CheckLatest(ctx)
+	if !errors.Is(err, ErrUpdateDisabled) {
+		t.Fatalf("dev build should disable update checks before network access, got %v", err)
+	}
+}
 
 func TestIsNewer(t *testing.T) {
 	for _, c := range []struct {

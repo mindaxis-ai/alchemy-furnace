@@ -21,6 +21,7 @@ vi.mock('next-intl', () => ({
 }))
 
 const availableResult: UpdateCheckResult = {
+  enabled: true,
   has_update: true,
   current_version: '1.0.0',
   latest_version: '1.2.3',
@@ -56,7 +57,11 @@ describe('UpdateDialog', () => {
   })
 
   it('shows the disabled state for dev builds', async () => {
-    td.checkUpdate.mockResolvedValue({ ...availableResult, notes: '开发构建未启用更新' })
+    td.checkUpdate.mockResolvedValue({
+      ...availableResult,
+      enabled: false,
+      notes: 'This text can be localized independently from the protocol.',
+    })
     render(<UpdateDialog onClose={() => {}} />)
 
     expect(await screen.findByText('disabled')).toBeInTheDocument()
