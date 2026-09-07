@@ -17,7 +17,7 @@ func sampleProfile() *DaoistBehaviorProfile {
 		Pills: []CompiledPillProfile{
 			{
 				PillID: "p1", Name: "古琴丹", Weight: 2.0, SortOrder: 0,
-				Description: "以古琴之道应答,论音乐与静心",
+				Description:   "以古琴之道应答,论音乐与静心",
 				ExpressionDNA: map[string]any{"vocabulary": []any{"古琴", "琴韵", "高山流水"}},
 				MentalModels: []model.JSONMap{
 					{"name": "知音", "one_liner": "先问对方所好再谈琴"},
@@ -32,9 +32,9 @@ func sampleProfile() *DaoistBehaviorProfile {
 			},
 			{
 				PillID: "p2", Name: "棋弈丹", Weight: 1.0, SortOrder: 1,
-				Description: "围棋布局之道",
+				Description:   "围棋布局之道",
 				ExpressionDNA: map[string]any{"vocabulary": []any{"围棋", "布局"}},
-				MentalModels: []model.JSONMap{{"name": "全局观", "one_liner": "先看大局再看局部"}},
+				MentalModels:  []model.JSONMap{{"name": "全局观", "one_liner": "先看大局再看局部"}},
 			},
 		},
 	}
@@ -155,5 +155,33 @@ func TestRenderSystemPromptOmitsDormantReasoningAndExamples(t *testing.T) {
 		if strings.Contains(prompt, forbidden) {
 			t.Fatalf("unexpected %s", forbidden)
 		}
+	}
+}
+
+// TestRenderSystemPromptUsesNaturalFirstPersonIdentity 防止道人退化为舞台式角色扮演：
+// 身份和丹性应被视为稳定自我，回答只保留自然对话正文。
+func TestRenderSystemPromptUsesNaturalFirstPersonIdentity(t *testing.T) {
+	prompt := RenderSystemPrompt(CompileProfile("沉稳温和", nil), "清玄")
+
+	for _, required := range []string{
+		"真实且稳定的自我",
+		"第一人称",
+		"不使用括号动作",
+		"不写神态、动作、环境或舞台旁白",
+	} {
+		if !strings.Contains(prompt, required) {
+			t.Errorf("缺少自然身份约束 %q;完整提示词:\n%s", required, prompt)
+		}
+	}
+	for _, forbidden := range []string{"AI 角色扮演助手", "扮演、模仿或 cosplay"} {
+		if strings.Contains(prompt, forbidden) {
+			t.Errorf("提示词仍含角色扮演导向 %q", forbidden)
+		}
+	}
+}
+
+func TestBehaviorProfileVersionInvalidatesRoleplayPromptCache(t *testing.T) {
+	if ProfileVersion < 2 {
+		t.Fatalf("ProfileVersion = %d, must invalidate version 1 roleplay prompts", ProfileVersion)
 	}
 }

@@ -77,7 +77,7 @@ func TestCompileProfileKeepsAllMarkers(t *testing.T) {
 // UnknownFields 继续确定性渲染,不丢数据、不静默修复
 func TestCompileProfileTypeAnomalyGoesToUnknownFields(t *testing.T) {
 	pill := markerPillInput()
-	pill.SkillSchema["mental_models"] = "not-a-list"                      // 类型异常
+	pill.SkillSchema["mental_models"] = "not-a-list"                    // 类型异常
 	pill.SkillSchema["identity_card"] = map[string]any{"name": "结构化身份"} // 类型异常
 
 	profile := CompileProfile("", []synthesis.PillInput{pill})
@@ -180,7 +180,7 @@ func TestProfileToJSONMapRoundTrip(t *testing.T) {
 	if !strings.Contains(s, "IDENTITY_MARKER") || !strings.Contains(s, "UNKNOWN_FIELD_MARKER") {
 		t.Errorf("JSONMap 往返丢失标记: %s", s)
 	}
-	if !strings.Contains(s, `"version":1`) {
+	if !strings.Contains(s, `"version":2`) {
 		t.Errorf("JSONMap 缺少 version: %s", s)
 	}
 }
