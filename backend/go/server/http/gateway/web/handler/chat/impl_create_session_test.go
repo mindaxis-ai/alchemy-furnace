@@ -21,15 +21,17 @@ import (
 // 若 handler 仍在提交后二次查询成员会立即暴露
 type createGroupStub struct {
 	service.Chat
-	session  *model.ChatSession
-	err      errors.Error
-	gotUIDs  []uuid.UUID
-	gotTitle string
+	session   *model.ChatSession
+	err       errors.Error
+	gotUIDs   []uuid.UUID
+	gotTitle  string
+	gotAvatar string
 }
 
-func (s *createGroupStub) CreateGroupSession(_ context.Context, uids []uuid.UUID, title string) (*model.ChatSession, errors.Error) {
+func (s *createGroupStub) CreateGroupSession(_ context.Context, uids []uuid.UUID, title, avatar string) (*model.ChatSession, errors.Error) {
 	s.gotUIDs = uids
 	s.gotTitle = title
+	s.gotAvatar = avatar
 	return s.session, s.err
 }
 
@@ -162,5 +164,16 @@ func TestCreateGroupSessionForwardsTitleVerbatimToService(t *testing.T) {
 	}
 	if stub.gotTitle != "  丹道夜话  " {
 		t.Fatalf("handler 应原样转发标题(不 trim), gotTitle = %q", stub.gotTitle)
+	}
+}
+
+func TestCreateGroupSessionForwardsAvatarVerbatimToService(t *testing.T) {
+	u1, u2 := uuid.New(), uuid.New()
+	session := &model.ChatSession{ChatSessionID: uuid.New().String(), Type: model.SessionTypeGroup}
+	stub := &createGroupStub{session: session}
+	body := fmt.Sprintf(`{"type":"group","member_agent_ids":[%q,%q],"avatar":" https://example.com/group.png "}`, u1, u2)
+	status, _ := performCreateSession(t, New(stub), body)
+	if status != http.StatusCreated || stub.gotAvatar != " https://example.com/group.png " {
+		t.Fatalf("status=%d avatar=%q", status, stub.gotAvatar)
 	}
 }

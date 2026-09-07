@@ -300,14 +300,14 @@ func TestCreateGroupSession(t *testing.T) {
 	svc, chats, u1, u2, u3 := newGroupTestSvc()
 	ctx := context.Background()
 
-	if _, err := svc.CreateGroupSession(ctx, []uuid.UUID{u1}, ""); err == nil {
+	if _, err := svc.CreateGroupSession(ctx, []uuid.UUID{u1}, "", ""); err == nil {
 		t.Fatal("成员不足2人应报错")
 	}
-	if _, err := svc.CreateGroupSession(ctx, []uuid.UUID{u1, u3}, ""); err == nil {
+	if _, err := svc.CreateGroupSession(ctx, []uuid.UUID{u1, u3}, "", ""); err == nil {
 		t.Fatal("含 inactive 成员应报错")
 	}
 	// 正常建群(重复 uuid 去重)
-	s, err := svc.CreateGroupSession(ctx, []uuid.UUID{u1, u2, u1}, "")
+	s, err := svc.CreateGroupSession(ctx, []uuid.UUID{u1, u2, u1}, "", "")
 	if err != nil {
 		t.Fatalf("CreateGroupSession: %v", err)
 	}
@@ -383,7 +383,7 @@ func TestListSessionsBatchesMemberLoading(t *testing.T) {
 
 func TestListSessionsLoadsCurrentGroupMembers(t *testing.T) {
 	svc, chats, u1, u2, _ := newGroupTestSvc()
-	session, err := svc.CreateGroupSession(context.Background(), []uuid.UUID{u1, u2}, "")
+	session, err := svc.CreateGroupSession(context.Background(), []uuid.UUID{u1, u2}, "", "")
 	if err != nil {
 		t.Fatalf("CreateGroupSession() error = %v", err)
 	}
@@ -449,7 +449,7 @@ func TestCreateGroupSessionRejectsInvalidMemberBeforePersistence(t *testing.T) {
 			}}
 			svc := New(chats, agents, nil, resolver, "http://unused")
 
-			session, err := svc.CreateGroupSession(context.Background(), tt.uids, "")
+			session, err := svc.CreateGroupSession(context.Background(), tt.uids, "", "")
 
 			if err == nil {
 				t.Fatalf("CreateGroupSession() error = nil, want %s", tt.wantCode)
@@ -476,7 +476,7 @@ func TestCreateGroupSessionRejectsInvalidMemberBeforePersistence(t *testing.T) {
 func TestAddAndRemoveMember(t *testing.T) {
 	svc, chats, u1, u2, _ := newGroupTestSvc()
 	ctx := context.Background()
-	s, _ := svc.CreateGroupSession(ctx, []uuid.UUID{u1, u2}, "")
+	s, _ := svc.CreateGroupSession(ctx, []uuid.UUID{u1, u2}, "", "")
 
 	// 重复邀请静默跳过
 	if err := svc.AddMembers(ctx, mustUID(t, s.ChatSessionID), []uuid.UUID{u1}); err != nil {
@@ -533,7 +533,7 @@ func TestUpdateSessionTitleValidation(t *testing.T) {
 func TestUpdateGroupAvatarValidationAndPersistence(t *testing.T) {
 	svc, chats, u1, u2, _ := newGroupTestSvc()
 	ctx := context.Background()
-	group, err := svc.CreateGroupSession(ctx, []uuid.UUID{u1, u2}, "丹道夜话")
+	group, err := svc.CreateGroupSession(ctx, []uuid.UUID{u1, u2}, "丹道夜话", "")
 	if err != nil {
 		t.Fatalf("CreateGroupSession: %v", err)
 	}
@@ -566,7 +566,7 @@ func TestUpdateGroupAvatarValidationAndPersistence(t *testing.T) {
 
 func TestCreateGroupSessionPersistsOptionalTitleAtomically(t *testing.T) {
 	svc, chats, u1, u2, _ := newGroupTestSvc()
-	session, err := svc.CreateGroupSession(context.Background(), []uuid.UUID{u1, u2}, "  丹道夜话  ")
+	session, err := svc.CreateGroupSession(context.Background(), []uuid.UUID{u1, u2}, "  丹道夜话  ", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -575,9 +575,32 @@ func TestCreateGroupSessionPersistsOptionalTitleAtomically(t *testing.T) {
 	}
 }
 
+func TestCreateGroupSessionPersistsAvatarAtomically(t *testing.T) {
+	svc, chats, u1, u2, _ := newGroupTestSvc()
+	const avatarValue = "data:image/png;base64,AAAA"
+	session, err := svc.CreateGroupSession(context.Background(), []uuid.UUID{u1, u2}, "", avatarValue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.Avatar != avatarValue || chats.sessions[session.ChatSessionID].Avatar != avatarValue {
+		t.Fatalf("avatar not persisted atomically: %+v", session)
+	}
+}
+
+func TestCreateGroupSessionRejectsInvalidAvatarBeforePersistence(t *testing.T) {
+	svc, chats, u1, u2, _ := newGroupTestSvc()
+	_, err := svc.CreateGroupSession(context.Background(), []uuid.UUID{u1, u2}, "", "javascript:alert(1)")
+	if err == nil || err.GetCode() != "service.chat.avatar_invalid" {
+		t.Fatalf("error = %v", err)
+	}
+	if chats.groupSaveCalls != 0 || len(chats.sessions) != 0 {
+		t.Fatal("invalid avatar must not persist session or members")
+	}
+}
+
 func TestCreateGroupSessionRejectsOverlongTitleBeforePersistence(t *testing.T) {
 	svc, chats, u1, u2, _ := newGroupTestSvc()
-	_, err := svc.CreateGroupSession(context.Background(), []uuid.UUID{u1, u2}, strings.Repeat("丹", 201))
+	_, err := svc.CreateGroupSession(context.Background(), []uuid.UUID{u1, u2}, strings.Repeat("丹", 201), "")
 	if err == nil || err.GetCode() != "service.chat.title_invalid" {
 		t.Fatalf("error = %v", err)
 	}

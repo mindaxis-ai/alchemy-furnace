@@ -38,7 +38,6 @@ import {
   X,
 } from 'lucide-react'
 import { useAgent } from '@/contexts/AgentContext'
-import { avatarInputMaxLength } from '@/lib/avatar-validation'
 import { chatSessionHref } from '@/lib/chat-route'
 import { useAgentEditorFlow, type AgentEffectsData } from '@/hooks/use-agent-editor-flow'
 import { isConsumedResult } from '@/hooks/use-consume-pill-operation'
@@ -50,6 +49,7 @@ import { AgentPillComposer } from '@/components/agent-pill-composer'
 import { ConsumeInventoryPillModal } from '@/components/agents/consume-inventory-pill-modal'
 import { ActionFeedback } from '@/components/interaction/action-feedback'
 import { EntityAvatar } from '@/components/avatar/entity-avatar'
+import { AvatarSourceInput, type AvatarSourceError } from '@/components/avatar-source-input'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { ApiError } from '@/services/api'
 import * as agentService from '@/services/agentService'
@@ -630,6 +630,7 @@ export default function AgentDetailPage({ agentId }: AgentDetailPageProps) {
   // 已吸收能力列表（服用快照 + effects_revision 乐观锁）；null=未加载/失败
   const [effectsData, setEffectsData] = useState<AgentEffectsData | null>(null)
   const [effectsLoadFailed, setEffectsLoadFailed] = useState(false)
+  const [avatarSourceError, setAvatarSourceError] = useState<AvatarSourceError | null>(null)
   // —— 服用金丹（库存选择弹窗 + 页内提示与保存锁定）——
   const [consumeOpen, setConsumeOpen] = useState(false)
   const [consumeSuccess, setConsumeSuccess] = useState(false)
@@ -1324,16 +1325,16 @@ export default function AgentDetailPage({ agentId }: AgentDetailPageProps) {
           </div>
 
           <div>
-            <label htmlFor="agent-avatar" className="dao-label">
-              {t('editor.avatarLabel')}
-            </label>
-            <input
-              id="agent-avatar"
+            <AvatarSourceInput
+              inputId="agent-avatar"
+              name={draft.name}
               value={draft.avatar}
-              onChange={e => flow.updateDraft({ avatar: e.target.value })}
-              placeholder={t('editor.avatarPlaceholder')}
-              maxLength={avatarInputMaxLength(draft.avatar)}
-              className="dao-input py-1.5 text-sm"
+              onChange={(value) => flow.updateDraft({ avatar: value })}
+              onError={setAvatarSourceError}
+              label={t('editor.avatarLabel')}
+              linkPlaceholder={t('editor.avatarPlaceholder')}
+              uploadLabel={t('editor.avatarUpload')}
+              previewAlt={t('editor.avatarPreviewAlt')}
             />
             <p className="text-[10px] text-sage mt-1">
               {t('editor.avatarHint')}
@@ -1343,6 +1344,15 @@ export default function AgentDetailPage({ agentId }: AgentDetailPageProps) {
                 {flow.fieldErrors.avatar === 'tooLong'
                   ? t('editor.avatarTooLong')
                   : t('editor.avatarInvalid')}
+              </p>
+            )}
+            {avatarSourceError && (
+              <p className="mt-1 text-xs text-primary">
+                {avatarSourceError === 'tooLong'
+                  ? t('editor.avatarTooLong')
+                  : avatarSourceError === 'readFailed'
+                    ? t('editor.avatarReadFailed')
+                    : t('editor.avatarInvalid')}
               </p>
             )}
           </div>

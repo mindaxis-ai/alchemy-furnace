@@ -474,6 +474,37 @@ describe('chat launch surfaces', () => {
     expect(testDoubles.push).toHaveBeenCalledWith('/chat?session=22222222-2222-4222-8222-222222222222')
   })
 
+  it('creates a group with its avatar', async () => {
+    const user = userEvent.setup()
+    testDoubles.createGroupSession.mockResolvedValueOnce(groupSession)
+    render(<ChatView />)
+
+    await user.click(screen.getByRole('button', { name: 'newSession' }))
+    await user.click(screen.getByRole('button', { name: 'mode.group' }))
+    await user.type(screen.getByLabelText('mode.avatarLabel'), 'https://example.com/group.png')
+    await user.click(screen.getByRole('button', { name: /Agent One/ }))
+    await user.click(screen.getByRole('button', { name: /Agent Two/ }))
+    await user.click(screen.getByRole('button', { name: 'mode.confirm (2)' }))
+
+    await waitFor(() => expect(testDoubles.createGroupSession).toHaveBeenCalledWith(
+      ['agent-1', 'agent-2'], undefined, 'https://example.com/group.png',
+    ))
+  })
+
+  it('blocks an invalid group avatar before creating', async () => {
+    const user = userEvent.setup()
+    render(<ChatView />)
+    await user.click(screen.getByRole('button', { name: 'newSession' }))
+    await user.click(screen.getByRole('button', { name: 'mode.group' }))
+    await user.type(screen.getByLabelText('mode.avatarLabel'), 'javascript:alert(1)')
+    await user.click(screen.getByRole('button', { name: /Agent One/ }))
+    await user.click(screen.getByRole('button', { name: /Agent Two/ }))
+    await user.click(screen.getByRole('button', { name: 'mode.confirm (2)' }))
+
+    expect(screen.getByRole('alert')).toHaveTextContent('mode.avatarInvalid')
+    expect(testDoubles.createGroupSession).not.toHaveBeenCalled()
+  })
+
   it('preserves the typed topic across a failed group launch and its retry', async () => {
     const user = userEvent.setup()
     testDoubles.createGroupSession

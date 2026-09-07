@@ -56,11 +56,12 @@ export function getMessages(sessionId: string, params: ListParams = {}): Promise
 /**
  * 建群(≥2 位道人;可选主题,首问答自动命名)
  */
-export function createGroupSession(memberAgentIds: string[], title?: string): Promise<ChatSession> {
+export function createGroupSession(memberAgentIds: string[], title?: string, avatar?: string): Promise<ChatSession> {
   return post<ChatSession>('/chat/sessions', {
     type: 'group',
     member_agent_ids: memberAgentIds,
     title: title?.trim() || undefined,
+    avatar: avatar?.trim() || undefined,
   })
 }
 

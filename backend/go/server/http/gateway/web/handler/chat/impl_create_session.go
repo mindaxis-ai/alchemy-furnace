@@ -21,6 +21,7 @@ type CreateSessionRequest struct {
 	Type           string   `json:"type"`
 	MemberAgentIDs []string `json:"member_agent_ids"`
 	Title          string   `json:"title"`
+	Avatar         string   `json:"avatar"`
 }
 
 // CreateSession 创建对话会话(single 或 group)
@@ -43,7 +44,7 @@ func (cls *Chat) CreateSession(c *gin.Context) (response.Code, any, error) {
 			}
 			uids = append(uids, uid)
 		}
-		session, err := cls.chat.CreateGroupSession(ctx, uids, body.Title)
+		session, err := cls.chat.CreateGroupSession(ctx, uids, body.Title, body.Avatar)
 		if err != nil {
 			return 0, nil, err
 		}

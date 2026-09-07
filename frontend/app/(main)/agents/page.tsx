@@ -24,7 +24,8 @@ import {
 } from 'lucide-react'
 import { useAgent } from '@/contexts/AgentContext'
 import { AgentCard } from '@/components/agent-card'
-import { avatarInputMaxLength, validateAvatarField } from '@/lib/avatar-validation'
+import { AvatarSourceInput, type AvatarSourceError } from '@/components/avatar-source-input'
+import { validateAvatarField } from '@/lib/avatar-validation'
 import * as modelService from '@/services/modelService'
 import * as distillationService from '@/services/distillationService'
 import type { ModelOption } from '@/services/modelService'
@@ -45,7 +46,7 @@ export default function AgentsPage() {
   const [name, setName] = useState('')
   const [personality, setPersonality] = useState('')
   const [avatar, setAvatar] = useState('')
-  const [avatarError, setAvatarError] = useState<'invalid' | 'tooLong' | null>(null)
+  const [avatarError, setAvatarError] = useState<AvatarSourceError | null>(null)
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([])
   const [modelName, setModelName] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
@@ -253,20 +254,16 @@ export default function AgentsPage() {
               </div>
 
               <div>
-                <label htmlFor="create-avatar" className="dao-label">
-                  {t('modal.avatarLabel')}
-                </label>
-                <input
-                  id="create-avatar"
-                  type="text"
+                <AvatarSourceInput
+                  inputId="create-avatar"
+                  name={name.trim() || t('modal.namePlaceholder')}
                   value={avatar}
-                  onChange={e => {
-                    setAvatar(e.target.value)
-                    setAvatarError(null)
-                  }}
-                  placeholder={t('modal.avatarPlaceholder')}
-                  maxLength={avatarInputMaxLength(avatar)}
-                  className="dao-input"
+                  onChange={setAvatar}
+                  onError={setAvatarError}
+                  label={t('modal.avatarLabel')}
+                  linkPlaceholder={t('modal.avatarPlaceholder')}
+                  uploadLabel={t('modal.avatarUpload')}
+                  previewAlt={t('modal.avatarPreviewAlt')}
                 />
                 <p className="text-[10px] text-sage mt-1">
                   {t('modal.avatarHint')}
@@ -275,7 +272,9 @@ export default function AgentsPage() {
                   <p className="mt-1 text-xs text-primary">
                     {avatarError === 'tooLong'
                       ? t('modal.avatarTooLong')
-                      : t('modal.avatarInvalid')}
+                      : avatarError === 'readFailed'
+                        ? t('modal.avatarReadFailed')
+                        : t('modal.avatarInvalid')}
                   </p>
                 )}
               </div>

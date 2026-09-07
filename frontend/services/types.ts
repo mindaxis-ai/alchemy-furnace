@@ -413,6 +413,7 @@ export interface CreateSessionRequest {
   type?: 'single' | 'group'
   member_agent_ids?: string[]
   title?: string
+  avatar?: string
 }
 
 // ========== 响应 ==========

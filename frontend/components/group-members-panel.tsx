@@ -12,8 +12,9 @@ import { useAgent } from '@/contexts/AgentContext'
 import { useChat } from '@/contexts/ChatContext'
 import { ProfilePopover } from '@/components/profile-popover'
 import { EntityAvatar } from '@/components/avatar/entity-avatar'
+import { AvatarSourceInput } from '@/components/avatar-source-input'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { avatarInputMaxLength, validateAvatarField } from '@/lib/avatar-validation'
+import { validateAvatarField } from '@/lib/avatar-validation'
 import type { Agent, ChatSession, GroupMember } from '@/services/types'
 
 export function GroupMembersPanel({
@@ -116,32 +117,26 @@ export function GroupMembersPanel({
         </div>
 
         <div className="space-y-2 border-b border-border/70 p-3">
-          <label htmlFor="group-avatar" className="text-xs font-medium text-foreground">
-            {t('avatarLabel')}
-          </label>
-          <div className="flex items-center gap-2">
-            <EntityAvatar
-              name={session.title || t('untitledGroup')}
-              src={avatarValue}
-              size="md"
-              shape="circle"
-              alt={t('avatarPreviewAlt')}
-            />
-            <input
-              id="group-avatar"
-              value={avatarValue}
-              onChange={(event) => {
-                setAvatarValue(event.target.value)
-                setAvatarError(null)
-              }}
-              maxLength={avatarInputMaxLength(avatarValue)}
-              placeholder={t('avatarPlaceholder')}
-              className="min-w-0 flex-1 rounded-lg border border-border/70 bg-muted px-2 py-1.5 text-xs text-foreground outline-none focus:border-gold/60"
-            />
-          </div>
+          <AvatarSourceInput
+            inputId="group-avatar"
+            name={session.title || t('untitledGroup')}
+            value={avatarValue}
+            onChange={setAvatarValue}
+            onError={(error) => setAvatarError(error
+              ? error === 'tooLong'
+                ? t('avatarTooLong')
+                : error === 'readFailed'
+                  ? t('avatarReadFailed')
+                  : t('avatarInvalid')
+              : null)}
+            label={t('avatarLabel')}
+            linkPlaceholder={t('avatarPlaceholder')}
+            uploadLabel={t('avatarUpload')}
+            previewAlt={t('avatarPreviewAlt')}
+          />
           {avatarError && <p className="text-xs text-destructive">{avatarError}</p>}
           <div className="flex gap-2">
-            <button type="button" onClick={() => setAvatarValue('')} className="flex-1 rounded-lg bg-muted py-1.5 text-xs text-muted-foreground">
+            <button type="button" onClick={() => { setAvatarValue(''); setAvatarError(null) }} className="flex-1 rounded-lg bg-muted py-1.5 text-xs text-muted-foreground">
               {t('clearAvatar')}
             </button>
             <button type="button" onClick={handleAvatarSave} disabled={savingAvatar} className="flex-1 rounded-lg bg-gold/15 py-1.5 text-xs text-gold disabled:opacity-50">
