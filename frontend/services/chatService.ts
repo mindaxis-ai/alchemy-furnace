@@ -72,6 +72,11 @@ export function renameSession(sessionId: string, title: string): Promise<ChatSes
   return put<ChatSession>(`/chat/sessions/${sessionId}`, { title })
 }
 
+/** 永久删除会话及其消息。 */
+export function deleteSession(sessionId: string): Promise<void> {
+  return del<void>(`/chat/sessions/${sessionId}`)
+}
+
 /** 更新或清空群聊头像 */
 export function updateGroupAvatar(sessionId: string, avatar: string): Promise<ChatSession> {
   return put<ChatSession>(`/chat/sessions/${sessionId}`, { avatar })

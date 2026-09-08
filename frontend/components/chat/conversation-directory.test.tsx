@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -165,5 +165,46 @@ describe('conversation directory', () => {
 
     expect(screen.getByText('unknownAgent')).toBeInTheDocument()
     expect(document.body.textContent).not.toContain('cccccccc-cccc-4ccc-8ccc-cccccccccccc')
+  })
+
+  it('confirms deletion without selecting the session row', async () => {
+    const user = userEvent.setup()
+    const onSelect = vi.fn()
+    const onDelete = vi.fn().mockResolvedValue(true)
+    render(
+      <ConversationDirectory
+        sessions={sessions}
+        currentSessionId="22222222-2222-4222-8222-222222222222"
+        onSelect={onSelect}
+        onDelete={onDelete}
+      />,
+    )
+
+    const row = screen.getByText('Alpha first').closest('li')
+    expect(row).not.toBeNull()
+    await user.click(within(row!).getByRole('button', { name: 'deleteAction' }))
+
+    expect(onSelect).not.toHaveBeenCalled()
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument()
+    expect(screen.getByText('deleteDescription')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'deleteConfirm' }))
+    expect(onDelete).toHaveBeenCalledWith('11111111-1111-4111-8111-111111111111')
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+  })
+
+  it('disables deleting the current session while it is streaming', () => {
+    render(
+      <ConversationDirectory
+        sessions={sessions}
+        currentSessionId="22222222-2222-4222-8222-222222222222"
+        deleteDisabledSessionId="22222222-2222-4222-8222-222222222222"
+        onSelect={vi.fn()}
+        onDelete={vi.fn().mockResolvedValue(true)}
+      />,
+    )
+
+    const row = screen.getByText('Alpha second').closest('li')
+    expect(within(row!).getByRole('button', { name: 'deleteAction' })).toBeDisabled()
   })
 })

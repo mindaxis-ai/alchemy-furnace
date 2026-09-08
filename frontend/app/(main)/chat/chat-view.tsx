@@ -81,7 +81,7 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
   const t = useTranslations('chatView')
   const launchFlow = useChatLaunchFlow()
 
-  const { state: chatState, dispatch, fetchSessions, loadMessages, loadOlderMessages, clearCurrent, streamMessage, renameSession, stopStream } = useChat()
+  const { state: chatState, dispatch, fetchSessions, loadMessages, loadOlderMessages, clearCurrent, streamMessage, renameSession, deleteSession, stopStream } = useChat()
   const { state: agentState, fetchAgents } = useAgent()
 
   const [input, setInput] = useState('')
@@ -233,6 +233,15 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
   const handleSelectSession = (id: string) => {
     setSidebarOpen(false)
     router.push(chatSessionHref(id))
+  }
+
+  const handleDeleteSession = async (id: string) => {
+    const deleted = await deleteSession(id)
+    if (deleted && id === activeSessionId) {
+      setSidebarOpen(false)
+      router.push('/chat')
+    }
+    return deleted
   }
 
   const handleCreateSession = async (agentId: string) => {
@@ -451,6 +460,8 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
               sessions={sessions}
               currentSessionId={currentSession?.id}
               onSelect={handleSelectSession}
+              onDelete={handleDeleteSession}
+              deleteDisabledSessionId={chatState.streaming ? currentSession?.id : undefined}
             />
           </div>
         </div>
@@ -486,6 +497,8 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
               <ConversationDirectory
                 sessions={sessions}
                 currentSessionId={currentSession?.id}
+                onDelete={handleDeleteSession}
+                deleteDisabledSessionId={chatState.streaming ? currentSession?.id : undefined}
                 onSelect={(sessionId) => {
                   setSidebarOpen(false)
                   handleSelectSession(sessionId)

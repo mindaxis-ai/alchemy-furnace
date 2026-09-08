@@ -10,6 +10,7 @@ import type { ChatSession } from '@/services/types'
 const createSession = vi.hoisted(() => vi.fn())
 const createGroupSession = vi.hoisted(() => vi.fn())
 const listSessions = vi.hoisted(() => vi.fn())
+const deleteSession = vi.hoisted(() => vi.fn())
 const push = vi.hoisted(() => vi.fn())
 
 vi.mock('@/services/chatService', async (importOriginal) => {
@@ -19,6 +20,7 @@ vi.mock('@/services/chatService', async (importOriginal) => {
     listSessions,
     createSession,
     createGroupSession,
+    deleteSession,
   }
 })
 
@@ -60,6 +62,7 @@ describe('ChatProvider session creation', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     listSessions.mockResolvedValue({ list: [], total: 0 })
+    deleteSession.mockResolvedValue(undefined)
   })
 
   it('owns list failures separately and clears them after a successful reload', async () => {
@@ -156,6 +159,66 @@ describe('ChatProvider session creation', () => {
 
     expect(result.current.state.sessions.map(session => session.id)).toEqual([groupSession.id])
     expect(result.current.state.currentSession).toEqual(groupSession)
+  })
+
+  it('removes a deleted current session and clears its conversation state', async () => {
+    createSession.mockResolvedValueOnce(singleSession)
+    const { result } = renderHook(() => useChat(), { wrapper })
+
+    await act(async () => {
+      await result.current.createSession('agent-1')
+    })
+    expect(result.current.state.currentSession?.id).toBe(singleSession.id)
+
+    await act(async () => {
+      expect(await result.current.deleteSession(singleSession.id)).toBe(true)
+    })
+
+    expect(deleteSession).toHaveBeenCalledWith(singleSession.id)
+    expect(result.current.state.sessions).toEqual([])
+    expect(result.current.state.currentSession).toBeNull()
+    expect(result.current.state.messages).toEqual([])
+    expect(result.current.state.sessionLoad.status).toBe('idle')
+  })
+
+  it('keeps local state when deleting a session fails', async () => {
+    createSession.mockResolvedValueOnce(singleSession)
+    deleteSession.mockRejectedValueOnce(new Error('删除失败'))
+    const { result } = renderHook(() => useChat(), { wrapper })
+
+    await act(async () => {
+      await result.current.createSession('agent-1')
+      expect(await result.current.deleteSession(singleSession.id)).toBe(false)
+    })
+
+    expect(result.current.state.sessions.map(session => session.id)).toEqual([singleSession.id])
+    expect(result.current.state.currentSession?.id).toBe(singleSession.id)
+    expect(result.current.state.error).toBe('删除失败')
+  })
+
+  it('does not resurrect a deleted session when an older list response arrives late', async () => {
+    createGroupSession.mockResolvedValueOnce(groupSession)
+    const pendingList = deferred<{ list: ChatSession[]; total: number }>()
+    listSessions.mockReturnValueOnce(pendingList.promise)
+    const { result } = renderHook(() => useChat(), { wrapper })
+
+    await act(async () => {
+      await result.current.createGroupSession(['agent-1', 'agent-2'])
+    })
+    let listRequest!: Promise<void>
+    act(() => {
+      listRequest = result.current.fetchSessions()
+    })
+    await act(async () => {
+      expect(await result.current.deleteSession(groupSession.id)).toBe(true)
+    })
+    await act(async () => {
+      pendingList.resolve({ list: [groupSession], total: 1 })
+      await listRequest
+    })
+
+    expect(result.current.state.sessions).toEqual([])
+    expect(result.current.state.currentSession).toBeNull()
   })
 })
 
