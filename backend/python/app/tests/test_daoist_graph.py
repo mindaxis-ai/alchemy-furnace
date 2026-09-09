@@ -56,6 +56,7 @@ class FakeCall:
     messages: list[BaseMessage]
     model_ref: ModelRef
     credential: ModelCredential
+    kwargs: dict[str, Any]
 
 
 class FakeChatModel(BaseChatModel):
@@ -82,9 +83,16 @@ class FakeChatModel(BaseChatModel):
         **kwargs: Any,
     ) -> ChatResult:
         self.calls.append(
-            FakeCall(messages=list(messages), model_ref=self.ref, credential=self.credential)
+            FakeCall(
+                messages=list(messages),
+                model_ref=self.ref,
+                credential=self.credential,
+                kwargs=dict(kwargs),
+            )
         )
         text = self.responses.pop(0)
+        if isinstance(text, BaseException):
+            raise text
         return ChatResult(generations=[ChatGeneration(message=AIMessage(content=text))])
 
 
@@ -229,7 +237,7 @@ def delta_texts(events: list[OrchestrationEvent]) -> list[str]:
 
 @pytest.mark.asyncio
 async def test_roll_call_constraint_overrides_persona(fake_gateway, roll_call_state):
-    fake_gateway.responses.append("2")
+    fake_gateway.responses.extend(["2", "2"])
     events = [event async for event in run_daoist_for_test(roll_call_state, fake_gateway)]
 
     prompt = fake_gateway.calls[0].messages
@@ -257,7 +265,7 @@ async def test_composed_persona_and_pill_prompt_reaches_real_model_input(fake_ga
         pending=["daoist"],
         speaking_plan=plan,
     )
-    fake_gateway.responses.append("1")
+    fake_gateway.responses.extend(["1", "1"])
 
     [event async for event in run_daoist_for_test(state, fake_gateway, debug_enabled=True)]
 
@@ -269,7 +277,7 @@ async def test_composed_persona_and_pill_prompt_reaches_real_model_input(fake_ga
 
 @pytest.mark.asyncio
 async def test_event_sequence_and_single_final_reply(fake_gateway, roll_call_state):
-    fake_gateway.responses.append("2")
+    fake_gateway.responses.extend(["原始草稿 2", "2"])
     events = [event async for event in run_daoist_for_test(roll_call_state, fake_gateway)]
 
     names = [e.name for e in events]
@@ -280,6 +288,7 @@ async def test_event_sequence_and_single_final_reply(fake_gateway, roll_call_sta
     assert speaker.payload == {"agent_id": "zhang", "task": ROLL_CALL_TASK}
 
     assert delta_texts(events) == ["2"]
+    assert "原始草稿" not in str([event.payload for event in events])
     final = events_of(events, "assistant_final")[0]
     assert final.payload["agent_id"] == "zhang"
     assert final.payload["reply_id"]
@@ -290,7 +299,7 @@ async def test_event_sequence_and_single_final_reply(fake_gateway, roll_call_sta
 
 @pytest.mark.asyncio
 async def test_memory_selection_keeps_only_current_agent(fake_gateway, roll_call_state):
-    fake_gateway.responses.append("2")
+    fake_gateway.responses.extend(["2", "2"])
     state = roll_call_state
     state["memory_snapshots"] = [
         memory("mem-own-1", "zhang", "他喜欢研究高考志愿填报").model_dump(),
@@ -307,7 +316,7 @@ async def test_memory_selection_keeps_only_current_agent(fake_gateway, roll_call
 
 @pytest.mark.asyncio
 async def test_history_window_and_final_user_turn_order(fake_gateway, roll_call_state):
-    fake_gateway.responses.append("2")
+    fake_gateway.responses.extend(["2", "2"])
     history = [
         MessageSnapshot(message_id=f"h{i:02d}", role="user", text=f"hist-{i:02d}")
         for i in range(25)
@@ -330,12 +339,12 @@ async def test_history_window_and_final_user_turn_order(fake_gateway, roll_call_
 
 @pytest.mark.asyncio
 async def test_prompt_debug_is_gated_and_secret_free(fake_gateway, roll_call_state):
-    fake_gateway.responses.append("2")
+    fake_gateway.responses.extend(["2", "2"])
     events = [event async for event in run_daoist_for_test(roll_call_state, fake_gateway)]
     assert "prompt_debug" not in [e.name for e in events]
 
     # 第一次运行已消耗响应；补一条再跑 debug 模式（fixture 同为函数级作用域）。
-    fake_gateway.responses.append("2")
+    fake_gateway.responses.extend(["2", "2"])
     events = [
         event
         async for event in run_daoist_for_test(roll_call_state, fake_gateway, debug_enabled=True)
@@ -356,10 +365,10 @@ async def test_prompt_debug_is_gated_and_secret_free(fake_gateway, roll_call_sta
 
 @pytest.mark.asyncio
 async def test_roll_call_retry_corrects_wrong_ordinal(fake_gateway, roll_call_state):
-    fake_gateway.responses.extend(["1", "2"])
+    fake_gateway.responses.extend(["1", "2", "2"])
     events = [event async for event in run_daoist_for_test(roll_call_state, fake_gateway)]
 
-    assert len(fake_gateway.calls) == 2
+    assert len(fake_gateway.calls) == 3
     second_prompt = fake_gateway.calls[1].messages
     # 纠错指令以追加消息进入第二次调用（role=system，含强制编号原文）。
     assert second_prompt[-1].type == "system"
@@ -368,16 +377,63 @@ async def test_roll_call_retry_corrects_wrong_ordinal(fake_gateway, roll_call_st
     assert final_content(events).strip() == "2"
     # 重试只多一次模型调用，不重启发言人回合。
     assert len(events_of(events, "speaker_started")) == 1
-    assert delta_texts(events) == ["1", "2"]
+    assert delta_texts(events) == ["2"]
     assert len(events_of(events, "assistant_final")) == 1
 
 
 @pytest.mark.asyncio
 async def test_roll_call_retry_exhaustion_keeps_last_draft(fake_gateway, roll_call_state):
-    fake_gateway.responses.extend(["1", "1", "1"])
+    fake_gateway.responses.extend(["1", "1", "1", "1"])
     events = [event async for event in run_daoist_for_test(roll_call_state, fake_gateway)]
 
     # 最多 2 次重试（合计 3 次模型调用），不无限循环。
-    assert len(fake_gateway.calls) == 3
+    assert len(fake_gateway.calls) == 4
     assert final_content(events).strip() == "1"
     assert len(events_of(events, "assistant_final")) == 1
+
+
+@pytest.mark.asyncio
+async def test_draft_is_hidden_and_both_normal_calls_use_director_token_budget(
+    fake_gateway, roll_call_state
+):
+    fake_gateway.responses.extend(["2。当然可以，下面详细说说。", "2。"])
+
+    events = [event async for event in run_daoist_for_test(roll_call_state, fake_gateway)]
+
+    dumped = str([event.payload for event in events])
+    assert "当然可以" not in dumped
+    assert final_content(events) == "2。"
+    assert len(fake_gateway.calls) == 2
+    assert [call.kwargs["max_tokens"] for call in fake_gateway.calls] == [768, 768]
+
+
+@pytest.mark.asyncio
+async def test_humanizer_exception_falls_back_to_constrained_draft(
+    fake_gateway, roll_call_state
+):
+    fake_gateway.responses.extend(["2", RuntimeError("humanizer unavailable")])
+
+    events = [event async for event in run_daoist_for_test(roll_call_state, fake_gateway)]
+
+    assert final_content(events) == "2"
+    assert len(fake_gateway.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_invalid_humanizer_output_retries_once(fake_gateway, roll_call_state):
+    fake_gateway.responses.extend(["2", "", "2"])
+
+    events = [event async for event in run_daoist_for_test(roll_call_state, fake_gateway)]
+
+    assert final_content(events) == "2"
+    assert len(fake_gateway.calls) == 3
+
+
+@pytest.mark.asyncio
+async def test_invalid_humanizer_retry_falls_back_to_draft(fake_gateway, roll_call_state):
+    fake_gateway.responses.extend(["2", "", ""])
+
+    events = [event async for event in run_daoist_for_test(roll_call_state, fake_gateway)]
+
+    assert final_content(events) == "2"
+    assert len(fake_gateway.calls) == 3

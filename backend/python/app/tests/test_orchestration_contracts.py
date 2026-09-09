@@ -205,6 +205,8 @@ def test_graph_transient_channels_are_json_safe_and_secret_free():
         validation_retries=1,
         retry_pending=True,
         draft_reply={"agent_id": "a1", "reply_id": "r1", "text": "收到"},
+        humanized_reply={"text": "收到。", "failed": False},
+        humanizer_retries=0,
         outcome=None,
     )
     dumped = json.dumps(state)

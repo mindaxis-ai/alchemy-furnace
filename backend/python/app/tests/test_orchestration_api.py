@@ -396,7 +396,7 @@ def real_client(real_service: OrchestrationService, fake_gateway: ModelGateway):
 def test_real_stream_roll_call_over_http(real_client):
     """真实运行器 HTTP 端到端：确定性报数全链路、凭据送达、响应零泄露。"""
     client, fake_gateway = real_client
-    fake_gateway.responses.extend(["1", "2", "3", "4"])
+    fake_gateway.responses.extend(["1", "1", "2", "2", "3", "3", "4", "4"])
 
     resp = client.post(STREAM_URL, json=roll_call_body())
 
@@ -413,7 +413,7 @@ def test_real_stream_roll_call_over_http(real_client):
     ]
     assert all(isinstance(p["text"], str) and p["text"] for p in finals(blocks))
     assert names[-1] == "run_completed"
-    assert len(fake_gateway.calls) == len(ROLL_CALL_AGENTS)
+    assert len(fake_gateway.calls) == len(ROLL_CALL_AGENTS) * 2
     assert {c.credential.api_key for c in fake_gateway.calls} == {SECRET}
     assert SECRET not in resp.text
     assert "api_key" not in resp.text
@@ -435,7 +435,7 @@ async def test_real_cancel_and_resume_over_seam(real_service, fake_gateway):
     """
     from app.orchestration.service import OrchestrationRunRequest
 
-    fake_gateway.responses.extend(["1", "2", "3", "4"])
+    fake_gateway.responses.extend(["1", "1", "2", "2", "3", "3", "4", "4"])
     run_id = "run-http-interrupted"
     members = [a for a, _ in ROLL_CALL_AGENTS]
     run_request = OrchestrationRunRequest.model_validate(roll_call_body(run_id=run_id))
@@ -471,7 +471,7 @@ async def test_real_cancel_and_resume_over_seam(real_service, fake_gateway):
     assert resumed_names[-1] == "run_completed"
     assert reply_ids(first_blocks).isdisjoint(reply_ids(resumed_blocks))
     assert len(reply_ids(first_blocks) | reply_ids(resumed_blocks)) == len(members)
-    assert len(fake_gateway.calls) == len(members)
+    assert len(fake_gateway.calls) == len(members) * 2
     assert {c.credential.api_key for c in fake_gateway.calls} == {SECRET}
     dumped = json.dumps([p for _, p in first_blocks + resumed_blocks], ensure_ascii=False)
     assert SECRET not in dumped

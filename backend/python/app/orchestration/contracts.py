@@ -226,6 +226,8 @@ class ConversationState(TypedDict):
     prompt_messages: NotRequired[list[dict]]
     validation_retries: NotRequired[int]
     draft_reply: NotRequired[dict]
+    humanized_reply: NotRequired[dict]
+    humanizer_retries: NotRequired[int]
     retry_pending: NotRequired[bool]
 
     # ---- 每轮共享的语义与导演通道（严格模型校验后以普通 dict 入检查点）----

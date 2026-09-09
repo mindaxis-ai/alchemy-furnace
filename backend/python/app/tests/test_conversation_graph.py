@@ -299,7 +299,9 @@ async def test_top_graph_understands_and_directs_once_for_group_turn(
             },
         }
     )
-    fake_gateway.responses.extend([semantic_json(), "1", "2", "3", "4"])
+    fake_gateway.responses.extend([
+        semantic_json(), "1", "1", "2", "2", "3", "3", "4", "4"
+    ])
     context = RuntimeContext(
         model_gateway=fake_gateway,
         credentials_by_model_ref=request.credentials,
@@ -331,7 +333,7 @@ async def test_top_graph_reuses_semantic_and_budget_channels_on_resume(
         "allow_follow_up": False,
         "max_speakers": 1,
     }
-    fake_gateway.responses.append("短答")
+    fake_gateway.responses.extend(["短答", "短答"])
     context = RuntimeContext(
         model_gateway=fake_gateway,
         credentials_by_model_ref=single_request.credentials,
@@ -342,14 +344,16 @@ async def test_top_graph_reuses_semantic_and_budget_channels_on_resume(
 
     assert result["semantic_understanding"] == state["semantic_understanding"]
     assert result["response_budget"] == state["response_budget"]
-    assert [call.model_ref.name for call in fake_gateway.calls] == ["deepseek-chat"]
+    assert [call.model_ref.name for call in fake_gateway.calls] == [
+        "deepseek-chat", "deepseek-chat"
+    ]
 
 
 @pytest.mark.asyncio
 async def test_top_graph_builds_fallback_channels_without_default_model(
     fake_gateway, single_request
 ):
-    fake_gateway.responses.append("短答")
+    fake_gateway.responses.extend(["短答", "短答"])
     context = RuntimeContext(
         model_gateway=fake_gateway,
         credentials_by_model_ref=single_request.credentials,
@@ -384,7 +388,7 @@ async def test_runtime_preserves_default_model_ref_across_resume(
 
 @pytest.mark.asyncio
 async def test_single_session_routes_daoist_without_plan(runtime, fake_gateway, single_request):
-    fake_gateway.responses.extend(["知行合一，莫问前程。"])
+    fake_gateway.responses.extend(["知行合一，莫问前程。", "知行合一，莫问前程。"])
 
     events = await collect(runtime.start(single_request))
 
@@ -397,14 +401,14 @@ async def test_single_session_routes_daoist_without_plan(runtime, fake_gateway, 
         "run_completed",
     ]
     assert events_of(events, "plan_created") == []
-    assert len(fake_gateway.calls) == 1
+    assert len(fake_gateway.calls) == 2
     assert final_replies(events)[0]["agent_id"] == "dan"
     assert events[-1].name == "run_completed"
 
 
 @pytest.mark.asyncio
 async def test_group_roll_call_plans_then_speaks_in_order(runtime, fake_gateway, group_request):
-    fake_gateway.responses.extend(["1", "2", "3", "4"])
+    fake_gateway.responses.extend(["1", "1", "2", "2", "3", "3", "4", "4"])
 
     events = await collect(runtime.start(group_request))
 
@@ -415,7 +419,7 @@ async def test_group_roll_call_plans_then_speaks_in_order(runtime, fake_gateway,
     assert events_of(events, "plan_created")[0].payload["source"] == "deterministic"
     assert final_replies(events) and all(r["text"] for r in final_replies(events))
     assert [r["agent_id"] for r in final_replies(events)] == ["zhang", "li", "jia", "shen"]
-    assert len(fake_gateway.calls) == 4
+    assert len(fake_gateway.calls) == 8
     assert names[-1] == "run_completed"
     assert events_of(events, "run_interrupted") == []
 
@@ -423,7 +427,7 @@ async def test_group_roll_call_plans_then_speaks_in_order(runtime, fake_gateway,
 @pytest.mark.asyncio
 async def test_resume_skips_completed_speakers(runtime, fake_gateway, interrupted_group_request):
     """锚点：中断后续跑同一 run，不重复已完成发言人的回复、不重发计划。"""
-    fake_gateway.responses.extend(["1", "2", "3", "4"])
+    fake_gateway.responses.extend(["1", "1", "2", "2", "3", "3", "4", "4"])
 
     first_events = await collect_until_interrupt(runtime, interrupted_group_request)
     resumed_events = await collect(runtime.resume(interrupted_group_request.run_id))
@@ -436,7 +440,7 @@ async def test_resume_skips_completed_speakers(runtime, fake_gateway, interrupte
     assert first_events[-1].name == "run_interrupted"
     assert first_events[-1].payload["reason"] == "interrupted"
     assert events_of(resumed_events, "plan_created") == []
-    assert len(fake_gateway.calls) == len(GROUP_MEMBERS)
+    assert len(fake_gateway.calls) == len(GROUP_MEMBERS) * 2
     assert resumed_events[-1].name == "run_completed"
 
 
@@ -445,7 +449,7 @@ async def test_new_message_cancels_active_run_without_inheriting_plan(
     runtime, fake_gateway, group_request, interrupted_group_request
 ):
     """新用户消息取代旧轮：活跃旧 run 以 cancelled 终止，新 run 计划不受旧计划污染。"""
-    fake_gateway.responses.extend(["1", "2", "3", "4", "备用甲", "备用乙"])
+    fake_gateway.responses.extend(["收尾", "收尾"])
 
     follow_up = OrchestrationRequest(
         run_id="run-follow-up",
@@ -489,7 +493,7 @@ async def test_new_message_cancels_active_run_without_inheriting_plan(
 async def test_checkpoint_state_contains_no_api_key(
     runtime, fake_gateway, interrupted_group_request
 ):
-    fake_gateway.responses.extend(["1", "2", "3", "4"])
+    fake_gateway.responses.extend(["1", "1", "2", "2", "3", "3", "4", "4"])
 
     events = await collect_until_interrupt(runtime, interrupted_group_request)
     assert events[-1].name == "run_interrupted"
@@ -507,14 +511,14 @@ async def test_terminal_checkpoint_cleanup_selection(
     runtime, fake_gateway, single_request, interrupted_group_request
 ):
     """终态清理：completed/interrupted 的选择性保留，续跑至完成再清理。"""
-    fake_gateway.responses.extend(["你好呀"])
+    fake_gateway.responses.extend(["你好呀", "你好呀"])
 
     # 1) 一次完整单聊 → completed 为终态，线程清理，检查点不可再读。
     await collect(runtime.start(single_request))
     assert await runtime.checkpoint_state(single_request.run_id) is None
 
     # 2) 中断的群聊 → interrupted 保留（可续跑）。
-    fake_gateway.responses.extend(["1", "2", "3", "4"])
+    fake_gateway.responses.extend(["1", "1", "2", "2", "3", "3", "4", "4"])
     first_events = await collect_until_interrupt(runtime, interrupted_group_request)
     assert first_events[-1].name == "run_interrupted"
     state = await runtime.checkpoint_state(interrupted_group_request.run_id)

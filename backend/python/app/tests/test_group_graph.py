@@ -174,8 +174,19 @@ def group_runner(fake_gateway: ModelGateway):
             memory_proposals=[],
             outcome=None,
         )
-        if response_budget is not None:
-            state["response_budget"] = response_budget
+        state["semantic_understanding"] = {
+            "source": "fallback", "intent": "task", "core_request": text[:400],
+            "emotion": "neutral", "complexity": "moderate",
+            "detail_preference": "normal", "requested_chars": None,
+            "format_preference": "plain", "wants_advice": False,
+            "wants_follow_up": False, "should_clarify": False,
+            "avoid_behaviors": ["repeat"],
+        }
+        state["response_budget"] = response_budget or {
+            "target_chars": 320, "max_chars": 800, "max_sentences": 8,
+            "max_tokens": 768, "allow_list": True, "allow_follow_up": False,
+            "max_speakers": 2,
+        }
         await build_group_graph(build_daoist_graph()).compile().ainvoke(
             dict(state), context=context
         )
@@ -211,14 +222,14 @@ def final_replies(events: list[OrchestrationEvent]) -> list[AgentReply]:
 
 @pytest.mark.asyncio
 async def test_roll_call_never_calls_supervisor(group_runner, fake_gateway):
-    fake_gateway.responses.extend(["1", "2", "3", "4"])
+    fake_gateway.responses.extend(["1", "1", "2", "2", "3", "3", "4", "4"])
     events = await group_runner("@全体成员 全体都有！报数！")
 
     # 确定性报数：全程不建 Supervisor 模型，也不产出任何模型计划。
     assert fake_gateway.supervisor_calls == 0
     assert events_of(events, "plan_created")[0].payload["source"] == "deterministic"
     # 恰好每名成员被调用一次：无重试、无重复发言人、无重复终稿。
-    assert len(fake_gateway.calls) == 4
+    assert len(fake_gateway.calls) == 8
     assert final_pairs(events) == [
         ("zhang", "1"), ("li", "2"), ("jia", "3"), ("shen", "4")
     ]
@@ -234,7 +245,11 @@ async def test_open_discussion_uses_supervisor(group_runner, fake_gateway):
             "reason": "让主咖先起头，李雪琴接梗",
         }
     )
-    fake_gateway.responses.extend([plan, "我先说说我的看法", "我补充一点"])
+    fake_gateway.responses.extend([
+        plan,
+        "我先说说我的看法", "我先说说我的看法",
+        "我补充一点", "我补充一点",
+    ])
     events = await group_runner("你们怎么看这个选择？")
 
     assert fake_gateway.supervisor_calls == 1
@@ -271,7 +286,8 @@ async def test_open_discussion_caps_supervisor_plan_by_director_budget(
             "reason": "四个人都想说",
         }
     )
-    fake_gateway.responses.extend([plan, "甲回应", "乙回应"][: max_speakers + 1])
+    replies = ["甲回应", "甲回应", "乙回应", "乙回应"][: max_speakers * 2]
+    fake_gateway.responses.extend([plan, *replies])
 
     events = await group_runner(
         "你们怎么看？", response_budget=budget(max_speakers)
@@ -286,7 +302,7 @@ async def test_open_discussion_caps_supervisor_plan_by_director_budget(
 async def test_deterministic_all_member_plan_ignores_default_speaker_cap(
     group_runner, fake_gateway
 ):
-    fake_gateway.responses.extend(["甲", "乙", "丙", "丁"])
+    fake_gateway.responses.extend(["甲", "甲", "乙", "乙", "丙", "丙", "丁", "丁"])
 
     events = await group_runner(
         "@全体成员 每人一句", response_budget=budget(1)
@@ -299,7 +315,7 @@ async def test_deterministic_all_member_plan_ignores_default_speaker_cap(
 
 @pytest.mark.asyncio
 async def test_invalid_supervisor_output_falls_back_to_primary(group_runner, fake_gateway):
-    fake_gateway.responses.extend([GARBAGE_OUTPUT, "收到"])
+    fake_gateway.responses.extend([GARBAGE_OUTPUT, "收到", "收到"])
     events = await group_runner("你们怎么看这个选择？")
 
     # Supervisor 仍被调用一次，但输出无效 → 确定性回退到主成员（不失败整轮）。
@@ -313,7 +329,7 @@ async def test_invalid_supervisor_output_falls_back_to_primary(group_runner, fak
 async def test_unavailable_default_model_falls_back_without_model_call(
     group_runner, fake_gateway, supervisor_ref
 ):
-    fake_gateway.responses.append("主成员兜底回复")
+    fake_gateway.responses.extend(["主成员兜底回复", "主成员兜底回复"])
     events = await group_runner("你们怎么看这个选择？", supervisor_ref=supervisor_ref)
 
     # 无默认模型 / 默认模型无适配器：连 Supervisor 调用都不发生，直接确定性回退。
@@ -325,7 +341,7 @@ async def test_unavailable_default_model_falls_back_without_model_call(
 @pytest.mark.asyncio
 async def test_one_daoist_failure_does_not_block_remaining(group_runner, fake_gateway):
     fake_gateway.responses.extend(
-        ["1", RuntimeError("模型超时"), "3", "4"]
+        ["1", "1", RuntimeError("模型超时"), "3", "3", "4", "4"]
     )
     events = await group_runner("@全体成员 全体都有！报数！")
 
