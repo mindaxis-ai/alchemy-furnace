@@ -33,6 +33,8 @@ Alchemy Furnace explores more than a static character sheet. How can an agent de
 - **Shape Dao Agents** — Give an agent a name, profile, avatar, base personality, model, and pill bindings, then build a conversational identity that can keep evolving.
 - **Fuse personalities** — Use weights and order to let multiple pills interact. Fusion is not just joining settings; it is a way to observe how traits coordinate, conflict, and produce something emergent.
 - **Talk and hold roundtables** — Develop a one-to-one relationship with an agent, or bring several together around a topic to see their different voices and dynamics.
+- **Understand before answering** — A semantic layer works out what the user means, then a director decides how much this turn calls for. A small question usually gets one or two sentences; analysis and execution tasks get room to develop.
+- **Keep each person's voice** — After the draft, a Humanizer pass removes stock openings, repeated summaries, forced patterns, and customer-service endings while preserving facts, numbers, conclusions, and the person's own cadence.
 - **Keep synthesis traceable** — Pills, bindings, and fusion origins are recorded. Go orchestrates and caches; the Python engine performs structured synthesis and OpenAI-compatible model calls.
 
 ## Core concepts
@@ -40,7 +42,7 @@ Alchemy Furnace explores more than a static character sheet. How can an agent de
 | Concept | Meaning |
 | --- | --- |
 | **Elixir Pill** (金丹) | A structured recipe for a language pattern or capability: an expressive style, a thinking habit, a knowledge preference, or a personality tendency. |
-| **Dao Agent** (道人) | An AI conversational individual with a base personality, identity, model, and pill bindings. |
+| **Dao Agent** (道人) | The product term for a conversational person with a name, personality, model, and pill bindings. In conversation, they are a specific person speaking as themselves. |
 | **Binding** (服丹) | Attaches a pill to an agent and tunes its influence with `weight` (0–10) and `sort_order`. |
 | **Synthesis** (合成) | Refines an agent’s base nature and bound pills into the system prompt and behavioural rules used in conversation. |
 | **Fusion Pill** (融合金丹) | A new pill distilled from several pills, retaining its source and version history. |
@@ -61,6 +63,14 @@ Your material, observations, and ideas
 ```
 
 Alchemy Furnace is a **Wails desktop application**. It runs a Go gateway, Python language engine, and static Next.js UI locally; data is stored in a SQLite file in the user configuration directory by default. Model calls use the OpenAI-compatible endpoint configured in Settings.
+
+### How a reply is made
+
+Each turn first passes through semantic understanding. Using the current message and recent conversation, it distinguishes casual chat, venting, factual questions, advice, tasks, and deeper analysis. The director turns that result into fixed limits for characters, sentences, model tokens, and group speakers. The person's model writes a draft from their personality, capabilities, dialogue examples, and the current budget. Humanizer then edits the wording without changing the answer.
+
+A normal one-to-one turn usually makes three model calls: semantic understanding, the person's draft, and Humanizer. An open-ended group conversation adds one Supervisor call to plan who should speak. Direct mentions, all-member requests, and roll calls use deterministic routing instead. If semantic understanding is unavailable, local rules take over. If Humanizer fails or damages numbers, URLs, code fences, or the length limit, the application uses the original draft constrained to the director's budget.
+
+People also know which pills they have consumed in Alchemy Furnace and answer truthfully when asked. During ordinary conversation, those records explain where capabilities came from; they do not make someone identify as a Daoist or default to archaic, cultivation-themed speech.
 
 ## Get started
 
