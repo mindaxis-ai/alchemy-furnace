@@ -28,10 +28,18 @@ from typing import Any
 from langgraph.graph import END, StateGraph
 from langgraph.runtime import Runtime
 
-from app.orchestration.contracts import ConversationState, RuntimeContext
+from app.orchestration.contracts import (
+    ConversationState,
+    ResponseBudget,
+    RuntimeContext,
+    SemanticUnderstanding,
+    UserTurnSnapshot,
+)
+from app.orchestration.director import build_response_budget
 from app.orchestration.graphs.daoist import _TRANSIENT_CHANNELS, build_daoist_graph
 from app.orchestration.graphs.group import build_group_graph
 from app.orchestration.graphs.single import build_single_graph
+from app.orchestration.semantics import analyze_semantics
 
 
 def hydrate_context(state: ConversationState) -> dict[str, Any]:
@@ -39,6 +47,36 @@ def hydrate_context(state: ConversationState) -> dict[str, Any]:
     if state.get("pending_agent_ids"):
         return {}
     return {"pending_agent_ids": [a["agent_id"] for a in state["agent_snapshots"]]}
+
+
+async def understand_turn(
+    state: ConversationState, runtime: Runtime[RuntimeContext]
+) -> dict[str, Any]:
+    """每个新用户轮只分析一次；续跑沿用检查点中的严格结构。"""
+    existing = state.get("semantic_understanding")
+    if existing is not None:
+        try:
+            SemanticUnderstanding.model_validate(existing)
+            return {}
+        except Exception:
+            pass
+    understood = await analyze_semantics(state, runtime.context)
+    return {"semantic_understanding": understood.model_dump()}
+
+
+def direct_response(state: ConversationState) -> dict[str, Any]:
+    """把校验后的语义结果换成确定性预算；续跑不重复计算。"""
+    existing = state.get("response_budget")
+    if existing is not None:
+        try:
+            ResponseBudget.model_validate(existing)
+            return {}
+        except Exception:
+            pass
+    understood = SemanticUnderstanding.model_validate(state["semantic_understanding"])
+    user_text = UserTurnSnapshot.model_validate(state["user_turn"]).text
+    budget = build_response_budget(understood, user_text, state["session_type"])
+    return {"response_budget": budget.model_dump()}
 
 
 def build_conversation_graph() -> StateGraph:
@@ -68,13 +106,21 @@ def build_conversation_graph() -> StateGraph:
             "pending_agent_ids": result.get("pending_agent_ids") or [],
             "directive": result.get("directive"),
             "speaking_plan": result.get("speaking_plan"),
+            "semantic_understanding": result.get("semantic_understanding")
+            or state.get("semantic_understanding"),
+            "response_budget": result.get("response_budget")
+            or state.get("response_budget"),
             "outcome": result.get("outcome"),
         }
 
     graph = StateGraph(state_schema=ConversationState, context_schema=RuntimeContext)
     graph.add_node("hydrate_context", hydrate_context)
+    graph.add_node("understand_turn", understand_turn)
+    graph.add_node("direct_response", direct_response)
     graph.add_node("dispatch_session", dispatch_session)
-    graph.add_edge("hydrate_context", "dispatch_session")
+    graph.add_edge("hydrate_context", "understand_turn")
+    graph.add_edge("understand_turn", "direct_response")
+    graph.add_edge("direct_response", "dispatch_session")
     graph.add_edge("dispatch_session", END)
     graph.set_entry_point("hydrate_context")
     graph.set_finish_point("dispatch_session")

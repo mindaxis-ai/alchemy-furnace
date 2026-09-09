@@ -37,6 +37,7 @@ from app.orchestration.contracts import (
     AgentSnapshot,
     ConversationState,
     Directive,
+    ResponseBudget,
     RuntimeContext,
     SpeakingPlan,
     SpeakingPlanItem,
@@ -125,6 +126,13 @@ async def supervisor(
         plan = build_fallback_plan(agents)
         source = "fallback"
     else:
+        raw_budget = state.get("response_budget")
+        if raw_budget is not None:
+            try:
+                max_speakers = ResponseBudget.model_validate(raw_budget).max_speakers
+                plan = plan.model_copy(update={"items": plan.items[:max_speakers]})
+            except Exception:
+                pass
         source = "supervisor"
     return _plan_created(runtime, state, source, plan)
 

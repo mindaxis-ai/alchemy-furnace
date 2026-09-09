@@ -144,7 +144,10 @@ def group_runner(fake_gateway: ModelGateway):
     """跑完整轮群聊并回放事件；supervisor_ref 可覆盖（None=无默认模型）。"""
 
     async def run(
-        text: str, *, supervisor_ref: ModelRef | None = SUPERVISOR_REF
+        text: str,
+        *,
+        supervisor_ref: ModelRef | None = SUPERVISOR_REF,
+        response_budget: dict[str, Any] | None = None,
     ) -> list[OrchestrationEvent]:
         collected: list[OrchestrationEvent] = []
         credentials = {m.agent_id: ModelCredential(api_key=SECRET) for m in GROUP_MEMBERS}
@@ -171,6 +174,8 @@ def group_runner(fake_gateway: ModelGateway):
             memory_proposals=[],
             outcome=None,
         )
+        if response_budget is not None:
+            state["response_budget"] = response_budget
         await build_group_graph(build_daoist_graph()).compile().ainvoke(
             dict(state), context=context
         )
@@ -238,6 +243,58 @@ async def test_open_discussion_uses_supervisor(group_runner, fake_gateway):
     names = [e.name for e in events]
     assert names.index("plan_created") < names.index("speaker_started")
     assert final_pairs(events) == [("zhang", "我先说说我的看法"), ("li", "我补充一点")]
+
+
+def budget(max_speakers: int) -> dict[str, Any]:
+    return {
+        "target_chars": 40,
+        "max_chars": 120,
+        "max_sentences": 2,
+        "max_tokens": 128,
+        "allow_list": False,
+        "allow_follow_up": False,
+        "max_speakers": max_speakers,
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("max_speakers", "expected"),
+    [(1, [("zhang", "甲回应")]), (2, [("zhang", "甲回应"), ("li", "乙回应")])],
+)
+async def test_open_discussion_caps_supervisor_plan_by_director_budget(
+    group_runner, fake_gateway, max_speakers, expected
+):
+    plan = json.dumps(
+        {
+            "items": [{"agent_id": member.agent_id} for member in GROUP_MEMBERS],
+            "reason": "四个人都想说",
+        }
+    )
+    fake_gateway.responses.extend([plan, "甲回应", "乙回应"][: max_speakers + 1])
+
+    events = await group_runner(
+        "你们怎么看？", response_budget=budget(max_speakers)
+    )
+
+    assert final_pairs(events) == expected
+    plan_items = events_of(events, "plan_created")[0].payload["plan"]["items"]
+    assert len(plan_items) == max_speakers
+
+
+@pytest.mark.asyncio
+async def test_deterministic_all_member_plan_ignores_default_speaker_cap(
+    group_runner, fake_gateway
+):
+    fake_gateway.responses.extend(["甲", "乙", "丙", "丁"])
+
+    events = await group_runner(
+        "@全体成员 每人一句", response_budget=budget(1)
+    )
+
+    assert [agent_id for agent_id, _ in final_pairs(events)] == [
+        "zhang", "li", "jia", "shen"
+    ]
 
 
 @pytest.mark.asyncio

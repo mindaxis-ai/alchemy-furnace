@@ -26,9 +26,11 @@ from app.orchestration.contracts import (
     ModelCredential,
     ModelRef,
     OrchestrationRequest,
+    RuntimeContext,
     UserTurnSnapshot,
 )
 from app.orchestration.events import OrchestrationEvent
+from app.orchestration.graphs.conversation import build_conversation_graph
 from app.orchestration.model_gateway import ModelGateway
 from app.orchestration.runtime import ConversationRuntime, RunNotFoundError
 
@@ -83,6 +85,16 @@ class FakeChatModel(BaseChatModel):
         if isinstance(item, BaseException):
             raise item
         return AIMessage(content=item)
+
+    def with_structured_output(self, schema: type[Any], **kwargs: Any):
+        model = self
+
+        class StructuredFake:
+            async def ainvoke(self, messages):
+                reply = await model.ainvoke(messages)
+                return schema.model_validate_json(str(reply.content))
+
+        return StructuredFake()
 
 
 @pytest.fixture
@@ -229,6 +241,26 @@ def all_expected_agents(events: list[OrchestrationEvent]) -> set[str]:
     return {r["agent_id"] for r in final_replies(events)}
 
 
+def semantic_json(intent="casual") -> str:
+    return json.dumps(
+        {
+            "source": "model",
+            "intent": intent,
+            "core_request": "回应当前问题",
+            "emotion": "neutral",
+            "complexity": "tiny" if intent == "casual" else "simple",
+            "detail_preference": "brief" if intent == "casual" else "normal",
+            "requested_chars": None,
+            "format_preference": "plain",
+            "wants_advice": False,
+            "wants_follow_up": False,
+            "should_clarify": False,
+            "avoid_behaviors": ["lecture", "follow_up"],
+        },
+        ensure_ascii=False,
+    )
+
+
 class CapturingRuntimeGraph:
     """只替换 LangGraph 执行边界，观察运行器给 start/resume 的真实 context。"""
 
@@ -251,6 +283,84 @@ class CapturingRuntimeGraph:
 # ---------------------------------------------------------------------------
 # 测试
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_top_graph_understands_and_directs_once_for_group_turn(
+    fake_gateway, group_request
+):
+    semantic_ref = ModelRef(provider_type="deepseek", name="semantic-model")
+    request = group_request.model_copy(
+        update={
+            "default_model_ref": semantic_ref,
+            "credentials": {
+                **group_request.credentials,
+                semantic_ref.name: ModelCredential(api_key=SECRET),
+            },
+        }
+    )
+    fake_gateway.responses.extend([semantic_json(), "1", "2", "3", "4"])
+    context = RuntimeContext(
+        model_gateway=fake_gateway,
+        credentials_by_model_ref=request.credentials,
+        default_model_ref=semantic_ref,
+    )
+
+    result = await build_conversation_graph().compile().ainvoke(
+        request.to_initial_state(), context=context
+    )
+
+    assert result["semantic_understanding"]["source"] == "model"
+    assert result["response_budget"]["max_chars"] == 120
+    assert [call.model_ref.name for call in fake_gateway.calls].count("semantic-model") == 1
+
+
+@pytest.mark.asyncio
+async def test_top_graph_reuses_semantic_and_budget_channels_on_resume(
+    fake_gateway, single_request
+):
+    semantic_ref = ModelRef(provider_type="deepseek", name="semantic-model")
+    state = single_request.to_initial_state()
+    state["semantic_understanding"] = json.loads(semantic_json())
+    state["response_budget"] = {
+        "target_chars": 40,
+        "max_chars": 120,
+        "max_sentences": 2,
+        "max_tokens": 128,
+        "allow_list": False,
+        "allow_follow_up": False,
+        "max_speakers": 1,
+    }
+    fake_gateway.responses.append("短答")
+    context = RuntimeContext(
+        model_gateway=fake_gateway,
+        credentials_by_model_ref=single_request.credentials,
+        default_model_ref=semantic_ref,
+    )
+
+    result = await build_conversation_graph().compile().ainvoke(state, context=context)
+
+    assert result["semantic_understanding"] == state["semantic_understanding"]
+    assert result["response_budget"] == state["response_budget"]
+    assert [call.model_ref.name for call in fake_gateway.calls] == ["deepseek-chat"]
+
+
+@pytest.mark.asyncio
+async def test_top_graph_builds_fallback_channels_without_default_model(
+    fake_gateway, single_request
+):
+    fake_gateway.responses.append("短答")
+    context = RuntimeContext(
+        model_gateway=fake_gateway,
+        credentials_by_model_ref=single_request.credentials,
+    )
+
+    result = await build_conversation_graph().compile().ainvoke(
+        single_request.to_initial_state(), context=context
+    )
+
+    assert result["semantic_understanding"]["source"] == "fallback"
+    assert result["response_budget"]["max_chars"] == 120
 
 
 @pytest.mark.asyncio
