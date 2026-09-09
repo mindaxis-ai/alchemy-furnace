@@ -18,7 +18,7 @@
 - Semantic understanding uses the configured default model once per user turn. A deterministic fallback must keep chat available when that call fails.
 - The director is a pure function and must not create a fourth normal model call.
 - Normal single-chat cost is three calls: semantic understanding, person draft, Humanizer. An open group discussion also keeps the existing Supervisor planning call. One validation retry is allowed only after an invalid Humanizer result.
-- “炼丹炉、道人、金丹、服丹、丹性、修炼” are product and storage metaphors. Model-visible identity prompts must describe a person, knowledge, capabilities, values, and language habits without those terms.
+- “炼丹炉、道人、金丹、服丹、丹性、修炼” are product and storage metaphors, not the person's identity. Model-visible identity prompts describe a person, knowledge, capabilities, values, and language habits. A separate factual record lists consumed pill names so the person can answer direct user questions without adopting Daoist or cultivation role-play.
 - Humanizer preserves facts, numbers, names, URLs, citations, code, conclusions, uncertainty, personality, and capability-specific voice. It may not add unsupported content.
 - Small talk defaults to 120 characters and 2 sentences at most. Explicit user length/detail requirements outrank default intent budgets.
 - Intermediate semantic text, drafts, Humanizer inputs, and credentials must not enter ordinary logs, public SSE, or business message persistence.
@@ -346,11 +346,11 @@ git commit -m "feat(orchestration): add semantic director nodes"
 **Interfaces:**
 - Produces: `behavior.SelectDialogueExamples(profile model.JSONMap, maxPairs int, maxRunes int) []behavior.DialogueExample`.
 - Produces: Go/Python `AgentSnapshot.example_dialogues` wire rows with `{user, assistant}`.
-- Produces: behavior `ProfileVersion = 3` and model-visible identity sections without alchemy-roleplay terms.
+- Produces: behavior `ProfileVersion = 3`, person-oriented identity sections, and a bounded factual pill record that does not create alchemy role-play.
 
 - [ ] **Step 1: Write failing prompt-identity tests**
 
-Render a profile named “鲁迅” with an ability record and assert the prompt contains `身份与性格`, `知识、能力与表达习惯`, and the configured personality. Assert it does not contain `道人`, `金丹`, `服丹`, `丹性`, `修炼`, `权重`, or instructions to use ancient/religious speech.
+Render a profile named “鲁迅” with an ability record and assert the prompt contains `身份与性格`, `知识、能力与表达习惯`, the configured personality, and a separate `炼丹炉中的既定记录` listing the exact consumed pill name. Assert it does not identify the person as `道人`, treat `丹性` or `修炼` as the self, expose weights/ingestion order, or instruct ancient/religious speech. A direct question about consumed pills must remain answerable from the prompt.
 
 - [ ] **Step 2: Run and verify current metaphor leakage**
 
@@ -360,7 +360,7 @@ Expected: failures because current headings and safety lines contain product met
 
 - [ ] **Step 3: Rewrite model-visible identity rendering**
 
-Set `ProfileVersion = 3`. Replace model-facing headings and prose with ordinary personhood terms. Render each enabled source as `〔知识、能力与表达特征：<name>〕` without weight or ingestion order. Preserve description, expression DNA, values, anti-patterns, honest limits, emergence rules, and conflict notes. Keep internal Go types and database field names unchanged.
+Set `ProfileVersion = 3`. Replace identity headings and prose with ordinary personhood terms. Add a separate factual record containing exact consumed pill names and instructions to mention it only when relevant or asked. Render each enabled source as `〔知识、能力与表达特征：<name without product suffix>〕` without weight or ingestion order. Preserve description, expression DNA, values, anti-patterns, honest limits, emergence rules, and conflict notes. Keep internal Go types and database field names unchanged.
 
 - [ ] **Step 4: Write failing example-selection tests**
 

@@ -22,7 +22,20 @@ import (
 type fakePattern struct{}
 
 func (fakePattern) GetOrBuildPattern(ctx context.Context, agentUID string) (*model.LanguagePattern, errors.Error) {
-	return &model.LanguagePattern{SystemPrompt: "你是道人。"}, nil
+	return &model.LanguagePattern{
+		SystemPrompt: "你是一个具体的人。",
+		BehaviorProfile: model.JSONMap{
+			"version": 3,
+			"pills": []any{
+				map[string]any{
+					"pill_id": "voice", "name": "语言能力", "weight": 1, "sort_order": 0,
+					"example_dialogues": []any{
+						map[string]any{"user": "你怎么看？", "assistant": "先看事实。"},
+					},
+				},
+			},
+		},
+	}, nil
 }
 
 type groupMemoryCall struct {

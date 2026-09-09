@@ -180,7 +180,7 @@ func TestProfileToJSONMapRoundTrip(t *testing.T) {
 	if !strings.Contains(s, "IDENTITY_MARKER") || !strings.Contains(s, "UNKNOWN_FIELD_MARKER") {
 		t.Errorf("JSONMap 往返丢失标记: %s", s)
 	}
-	if !strings.Contains(s, `"version":2`) {
+	if !strings.Contains(s, `"version":3`) {
 		t.Errorf("JSONMap 缺少 version: %s", s)
 	}
 }

@@ -18,7 +18,7 @@ import (
 )
 
 // ProfileVersion 行为档案版本;language_patterns.profile_version 不等于此值视为失效重建
-const ProfileVersion = 2
+const ProfileVersion = 3
 
 // CompiledPillProfile 单颗金丹的无损编译结果(spec §6.2)
 type CompiledPillProfile struct {
