@@ -1,0 +1,144 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="920" viewBox="0 0 1440 920" role="img" aria-labelledby="title desc">
+  <title id="title">炼丹炉会话编排架构</title>
+  <desc id="desc">一张丹炉剖面工艺图。用户消息和近期上下文从炉顶进入，依次经过语义解析层、响应导演层、回答生成层和自然表达优化层，结构化状态从右侧输出，炉壁代表回退和校验机制。</desc>
+  <defs>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M48 0H0V48" fill="none" stroke="#41534f" stroke-width="0.7" opacity="0.10"/>
+      <circle cx="0" cy="0" r="1.2" fill="#41534f" opacity="0.12"/>
+    </pattern>
+    <clipPath id="furnaceClip">
+      <path d="M180 250 C122 336 112 500 148 638 C182 767 276 821 420 821 C564 821 658 767 692 638 C728 500 718 336 660 250 Z"/>
+    </clipPath>
+    <marker id="flowArrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0 0L10 5L0 10Z" fill="#a6382c"/>
+    </marker>
+    <style>
+      .serif { font-family: "Songti SC", "STSong", "Noto Serif CJK SC", serif; }
+      .sans { font-family: "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; }
+      .mono { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+      .plate-title { font-size: 40px; font-weight: 700; fill: #202a28; letter-spacing: 3px; }
+      .plate-subtitle { font-size: 15px; fill: #58645f; letter-spacing: 0.5px; }
+      .input-label { font-size: 13px; font-weight: 700; fill: #345950; letter-spacing: 1px; }
+      .input-copy { font-size: 16px; fill: #293532; }
+      .ordinal { font-size: 55px; font-weight: 700; fill: #35554e; opacity: 0.32; }
+      .ordinal-dark { font-size: 55px; font-weight: 700; fill: #e7ece8; opacity: 0.36; }
+      .layer-kicker { font-size: 13px; font-weight: 700; fill: #64746e; letter-spacing: 1.5px; }
+      .layer-kicker-dark { font-size: 13px; font-weight: 700; fill: #c4d1cc; letter-spacing: 1.5px; }
+      .layer-title { font-size: 31px; font-weight: 700; fill: #22302d; letter-spacing: 2px; }
+      .layer-title-dark { font-size: 31px; font-weight: 700; fill: #f2f5f2; letter-spacing: 2px; }
+      .layer-copy { font-size: 15px; fill: #43524e; }
+      .layer-copy-dark { font-size: 15px; fill: #dce5e1; }
+      .rail-heading { font-size: 13px; font-weight: 700; fill: #a6382c; letter-spacing: 2px; }
+      .rail-title { font-size: 20px; font-weight: 700; fill: #26312e; }
+      .rail-code { font-size: 13px; fill: #45645c; }
+      .rail-copy { font-size: 14px; fill: #5a6460; }
+      .safety-label { font-size: 13px; font-weight: 700; fill: #9a2f27; letter-spacing: 1.5px; }
+      .safety-title { font-size: 14px; font-weight: 700; fill: #27332f; }
+      .safety-copy { font-size: 13px; fill: #5e6864; }
+    </style>
+  </defs>
+
+  <rect width="1440" height="920" fill="#e4e8e3"/>
+  <rect width="1440" height="920" fill="url(#grid)"/>
+  <path d="M0 118H1440" stroke="#697873" stroke-width="1"/>
+  <rect x="0" y="0" width="12" height="920" fill="#315b52"/>
+  <rect x="12" y="0" width="4" height="920" fill="#9b7b44"/>
+
+  <text x="66" y="65" class="serif plate-title">会话编排架构</text>
+  <text x="68" y="94" class="sans plate-subtitle">丹炉剖面工艺图 · 四层职责通过结构化状态连接</text>
+  <text x="1368" y="49" text-anchor="end" class="mono" font-size="12" fill="#3d5750">LANGGRAPH / PLATE 01</text>
+  <text x="1368" y="74" text-anchor="end" class="sans" font-size="13" fill="#69736f">炼丹炉桌面端</text>
+
+  <text x="172" y="151" class="sans input-label">当前输入</text>
+  <text x="172" y="178" class="sans input-copy">用户消息</text>
+  <text x="508" y="151" class="sans input-label">语境依据</text>
+  <text x="508" y="178" class="sans input-copy">近期对话与明确约束</text>
+  <path d="M242 187V207H420" fill="none" stroke="#3c5e56" stroke-width="1.5"/>
+  <path d="M588 187V207H420V224" fill="none" stroke="#3c5e56" stroke-width="1.5" marker-end="url(#flowArrow)"/>
+  <text x="920" y="160" class="sans rail-heading">结构化状态</text>
+  <path d="M920 174H1368" stroke="#315b52" stroke-width="2"/>
+
+  <g clip-path="url(#furnaceClip)">
+    <path d="M110 250H730V397 Q420 421 110 397Z" fill="#edf0ec"/>
+    <path d="M110 397 Q420 421 730 397V527 Q420 551 110 527Z" fill="#d5ded9"/>
+    <path d="M110 527 Q420 551 730 527V657 Q420 681 110 657Z" fill="#a9c0b8"/>
+    <path d="M110 657 Q420 681 730 657V835H110Z" fill="#48665e"/>
+    <path d="M120 397 Q420 421 720 397" fill="none" stroke="#72837d" stroke-width="1.5"/>
+    <path d="M120 527 Q420 551 720 527" fill="none" stroke="#72837d" stroke-width="1.5"/>
+    <path d="M120 657 Q420 681 720 657" fill="none" stroke="#72837d" stroke-width="1.5"/>
+    <path d="M420 250V806" stroke="#9a2f27" stroke-width="2" opacity="0.50" stroke-dasharray="3 9"/>
+  </g>
+
+  <path d="M180 250 C122 336 112 500 148 638 C182 767 276 821 420 821 C564 821 658 767 692 638 C728 500 718 336 660 250" fill="none" stroke="#4c544f" stroke-width="12" stroke-linecap="round"/>
+  <path d="M194 261 C145 344 137 497 170 628 C201 744 285 795 420 795 C555 795 639 744 670 628 C703 497 695 344 646 261" fill="none" stroke="#9b7b44" stroke-width="2" opacity="0.85"/>
+  <ellipse cx="420" cy="249" rx="247" ry="32" fill="#e4e8e3" stroke="#4c544f" stroke-width="10"/>
+  <ellipse cx="420" cy="249" rx="213" ry="17" fill="#bccac4" stroke="#9b7b44" stroke-width="2"/>
+  <path d="M292 221 Q420 178 548 221" fill="none" stroke="#4c544f" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="420" cy="181" r="13" fill="#a6382c"/>
+  <path d="M420 194V224" stroke="#4c544f" stroke-width="5"/>
+  <path d="M230 791L177 868H292L320 813" fill="#4c544f"/>
+  <path d="M610 791L663 868H548L520 813" fill="#4c544f"/>
+  <path d="M190 844H650" stroke="#9b7b44" stroke-width="2"/>
+
+  <text x="166" y="360" class="serif ordinal">壹</text>
+  <text x="250" y="301" class="sans layer-kicker">意图建模</text>
+  <text x="250" y="342" class="serif layer-title">语义解析层</text>
+  <text x="250" y="375" class="sans layer-copy">理解这一轮真正要解决的问题，识别意图、情绪与约束。</text>
+
+  <text x="166" y="488" class="serif ordinal">贰</text>
+  <text x="250" y="431" class="sans layer-kicker">策略与预算</text>
+  <text x="250" y="472" class="serif layer-title">响应导演层</text>
+  <text x="250" y="505" class="sans layer-copy">确定回答尺度、结构许可、Token 预算与群聊发言范围。</text>
+
+  <text x="174" y="617" class="serif ordinal">叁</text>
+  <text x="258" y="561" class="sans layer-kicker">人物约束生成</text>
+  <text x="258" y="602" class="serif layer-title">回答生成层</text>
+  <text x="258" y="635" class="sans layer-copy">结合性格、金丹、记忆与既定事实，生成有内容的原稿。</text>
+
+  <text x="203" y="754" class="serif ordinal-dark">肆</text>
+  <text x="287" y="690" class="sans layer-kicker-dark">HUMANIZER</text>
+  <text x="287" y="731" class="serif layer-title-dark">自然表达优化层</text>
+  <text x="287" y="764" class="sans layer-copy-dark">按约束清理模板化表达，并要求保持人物声音与原意。</text>
+
+  <path d="M695 337H880" stroke="#315b52" stroke-width="1.5"/>
+  <rect x="875" y="332" width="10" height="10" fill="#a6382c"/>
+  <text x="920" y="311" class="sans rail-title">结构化语义</text>
+  <text x="920" y="338" class="mono rail-code">SemanticUnderstanding</text>
+  <text x="920" y="365" class="sans rail-copy">意图 · 情绪 · 复杂度 · 细节偏好 · 格式约束</text>
+
+  <path d="M705 467H880" stroke="#315b52" stroke-width="1.5"/>
+  <rect x="875" y="462" width="10" height="10" fill="#a6382c"/>
+  <text x="920" y="441" class="sans rail-title">确定性响应预算</text>
+  <text x="920" y="468" class="mono rail-code">ResponseBudget</text>
+  <text x="920" y="495" class="sans rail-copy">目标字数 · 句数上限 · Token · 列表许可 · 发言人数</text>
+
+  <path d="M704 597H880" stroke="#315b52" stroke-width="1.5"/>
+  <rect x="875" y="592" width="10" height="10" fill="#a6382c"/>
+  <text x="920" y="571" class="sans rail-title">人物原稿</text>
+  <text x="920" y="598" class="mono rail-code">draft_reply</text>
+  <text x="920" y="625" class="sans rail-copy">人物身份 · 金丹能力 · 记忆 · 任务 · 当前预算</text>
+
+  <path d="M675 727H880" stroke="#315b52" stroke-width="1.5"/>
+  <rect x="875" y="722" width="10" height="10" fill="#a6382c"/>
+  <text x="920" y="701" class="sans rail-title">经机械校验的自然终稿</text>
+  <text x="920" y="728" class="mono rail-code">AgentReply</text>
+  <text x="920" y="755" class="sans rail-copy">数字 · 网址 · 代码结构 · 篇幅 · 提示安全</text>
+  <path d="M920 783H1295" stroke="#a6382c" stroke-width="2" marker-end="url(#flowArrow)"/>
+  <text x="1310" y="789" class="sans" font-size="15" font-weight="700" fill="#9a2f27">流式发送</text>
+
+  <path d="M66 858H1368" stroke="#66736e" stroke-width="1"/>
+  <text x="66" y="886" class="sans safety-label">炉壁保护</text>
+  <rect x="170" y="875" width="7" height="7" fill="#a6382c"/>
+  <text x="194" y="883" class="sans safety-title">语义异常</text>
+  <text x="266" y="883" class="sans safety-copy">本地规则接管</text>
+  <rect x="390" y="875" width="7" height="7" fill="#a6382c"/>
+  <text x="414" y="883" class="sans safety-title">调用异常</text>
+  <text x="486" y="883" class="sans safety-copy">立即尝试原稿</text>
+  <rect x="610" y="875" width="7" height="7" fill="#a6382c"/>
+  <text x="634" y="883" class="sans safety-title">润色越界</text>
+  <text x="706" y="883" class="sans safety-copy">最多重试一次</text>
+  <rect x="830" y="875" width="7" height="7" fill="#a6382c"/>
+  <text x="854" y="883" class="sans safety-title">回退原稿</text>
+  <text x="926" y="883" class="sans safety-copy">校验失败则本轮终止</text>
+  <text x="1368" y="910" text-anchor="end" class="sans" font-size="13" fill="#53615c">人物设定不参与语义解析和预算决策</text>
+</svg>

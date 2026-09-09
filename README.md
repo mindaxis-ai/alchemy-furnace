@@ -8,6 +8,7 @@
   <p>
     <a href="#why-alchemy-furnace">Why Alchemy Furnace</a> ·
     <a href="#what-it-does">What it does</a> ·
+    <a href="#conversation-orchestration">Conversation architecture</a> ·
     <a href="#get-started">Get started</a> ·
     <a href="#local-development">Development</a>
   </p>
@@ -33,9 +34,26 @@ Alchemy Furnace explores more than a static character sheet. How can an agent de
 - **Shape Dao Agents** — Give an agent a name, profile, avatar, base personality, model, and pill bindings, then build a conversational identity that can keep evolving.
 - **Fuse personalities** — Use weights and order to let multiple pills interact. Fusion is not just joining settings; it is a way to observe how traits coordinate, conflict, and produce something emergent.
 - **Talk and hold roundtables** — Develop a one-to-one relationship with an agent, or bring several together around a topic to see their different voices and dynamics.
-- **Understand before answering** — A semantic layer works out what the user means, then a director decides how much this turn calls for. A small question usually gets one or two sentences; analysis and execution tasks get room to develop.
-- **Keep each person's voice** — After the draft, a Humanizer pass removes stock openings, repeated summaries, forced patterns, and customer-service endings while preserving facts, numbers, conclusions, and the person's own cadence.
+- **Orchestrate conversation in layers** — Each turn passes through semantic understanding, response direction, persona-aware generation, and natural language refinement. Small questions stay short. Complex tasks receive more room. Persona and pill capabilities shape drafting and voice refinement, but do not participate in intent analysis or length decisions.
+- **Validate the final reply** — Humanizer removes stock openings, repeated summaries, forced patterns, and customer-service endings while being instructed to preserve the person's meaning and voice. Deterministic checks cover mechanically verifiable invariants such as numbers, URLs, code, response limits, and prompt leakage before any reply is sent.
 - **Keep synthesis traceable** — Pills, bindings, and fusion origins are recorded. Go orchestrates and caches; the Python engine performs structured synthesis and OpenAI-compatible model calls.
+
+## Conversation orchestration
+
+![Alchemy Furnace conversation orchestration architecture](docs/assets/conversation-orchestration.en.svg)
+
+Alchemy Furnace divides reply production into four stages with separate responsibilities. `SemanticUnderstanding` and `ResponseBudget` move through LangGraph as structured state, so the person's model does not have to infer intent, control length, and maintain a persona in the same step.
+
+1. **Semantic understanding** combines the current message with recent dialogue. It identifies intent, task type, affect, explicit constraints, and unresolved ambiguity, then returns a structured semantic result.
+2. **Response direction** applies deterministic policy to that result. It sets the target length, hard character and sentence limits, model Token budget, list permission, and group speaker allocation.
+3. **Persona-aware generation** produces the substantive answer within that budget. Its prompt context contains the persona, pill capabilities, memory, dialogue examples, established facts, and other information relevant to content generation.
+4. **Natural language refinement** uses Humanizer to edit expression under explicit constraints. It is instructed to remove templated openings, forced parallel structures, repeated conclusions, and customer-service closers while retaining facts, position, numbers, URLs, code structure, and the person's own cadence. Final deterministic checks cover only properties the program can verify mechanically.
+
+A normal one-to-one turn usually makes three model calls: semantic understanding, the person's draft, and natural language refinement. The director is deterministic local code and does not add another model call. An open-ended group conversation adds one Supervisor call to choose speakers. Direct mentions, all-member requests, and roll calls use deterministic routing.
+
+If semantic understanding is unavailable, local rules produce the semantic result and response budget. Humanizer output must pass final validation. A returned edit that changes a protected number or URL, breaks a code fence, leaks a prompt, or exceeds the budget is retried at most once. A Humanizer call error skips that retry and immediately attempts the constrained persona draft. The fallback draft is validated too; if it is still unsafe, the turn fails instead of sending it.
+
+People know which pills they have consumed in Alchemy Furnace and answer truthfully when asked. In ordinary conversation, pills supply capabilities and expressive tendencies. They do not make someone identify as a Daoist or default to archaic, cultivation-themed speech.
 
 ## Core concepts
 
@@ -63,14 +81,6 @@ Your material, observations, and ideas
 ```
 
 Alchemy Furnace is a **Wails desktop application**. It runs a Go gateway, Python language engine, and static Next.js UI locally; data is stored in a SQLite file in the user configuration directory by default. Model calls use the OpenAI-compatible endpoint configured in Settings.
-
-### How a reply is made
-
-Each turn first passes through semantic understanding. Using the current message and recent conversation, it distinguishes casual chat, venting, factual questions, advice, tasks, and deeper analysis. The director turns that result into fixed limits for characters, sentences, model tokens, and group speakers. The person's model writes a draft from their personality, capabilities, dialogue examples, and the current budget. Humanizer then edits the wording without changing the answer.
-
-A normal one-to-one turn usually makes three model calls: semantic understanding, the person's draft, and Humanizer. An open-ended group conversation adds one Supervisor call to plan who should speak. Direct mentions, all-member requests, and roll calls use deterministic routing instead. If semantic understanding is unavailable, local rules take over. If Humanizer fails or damages numbers, URLs, code fences, or the length limit, the application uses the original draft constrained to the director's budget.
-
-People also know which pills they have consumed in Alchemy Furnace and answer truthfully when asked. During ordinary conversation, those records explain where capabilities came from; they do not make someone identify as a Daoist or default to archaic, cultivation-themed speech.
 
 ## Get started
 

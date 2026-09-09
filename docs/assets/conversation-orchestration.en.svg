@@ -1,0 +1,144 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="920" viewBox="0 0 1440 920" role="img" aria-labelledby="title desc">
+  <title id="title">Alchemy Furnace conversation orchestration architecture</title>
+  <desc id="desc">A technical cutaway of a furnace. The user message and recent context enter at the top, pass through semantic understanding, response direction, persona-aware generation, and natural language refinement, then leave as a validated reply. The vessel wall represents validation and fallback controls.</desc>
+  <defs>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M48 0H0V48" fill="none" stroke="#41534f" stroke-width="0.7" opacity="0.10"/>
+      <circle cx="0" cy="0" r="1.2" fill="#41534f" opacity="0.12"/>
+    </pattern>
+    <clipPath id="furnaceClip">
+      <path d="M180 250 C122 336 112 500 148 638 C182 767 276 821 420 821 C564 821 658 767 692 638 C728 500 718 336 660 250 Z"/>
+    </clipPath>
+    <marker id="flowArrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0 0L10 5L0 10Z" fill="#a6382c"/>
+    </marker>
+    <style>
+      .serif { font-family: Georgia, "Times New Roman", serif; }
+      .sans { font-family: Inter, "Segoe UI", Arial, sans-serif; }
+      .mono { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+      .plate-title { font-size: 40px; font-weight: 700; fill: #202a28; letter-spacing: 0.5px; }
+      .plate-subtitle { font-size: 15px; fill: #58645f; letter-spacing: 0.3px; }
+      .input-label { font-size: 12px; font-weight: 700; fill: #345950; letter-spacing: 1.4px; }
+      .input-copy { font-size: 16px; fill: #293532; }
+      .ordinal { font-size: 52px; font-weight: 700; fill: #35554e; opacity: 0.32; }
+      .ordinal-dark { font-size: 52px; font-weight: 700; fill: #e7ece8; opacity: 0.36; }
+      .layer-kicker { font-size: 12px; font-weight: 700; fill: #64746e; letter-spacing: 1.4px; }
+      .layer-kicker-dark { font-size: 12px; font-weight: 700; fill: #c4d1cc; letter-spacing: 1.4px; }
+      .layer-title { font-size: 28px; font-weight: 700; fill: #22302d; }
+      .layer-title-dark { font-size: 28px; font-weight: 700; fill: #f2f5f2; }
+      .layer-copy { font-size: 14px; fill: #43524e; }
+      .layer-copy-dark { font-size: 14px; fill: #dce5e1; }
+      .rail-heading { font-size: 12px; font-weight: 700; fill: #a6382c; letter-spacing: 2px; }
+      .rail-title { font-size: 19px; font-weight: 700; fill: #26312e; }
+      .rail-code { font-size: 13px; fill: #45645c; }
+      .rail-copy { font-size: 14px; fill: #5a6460; }
+      .safety-label { font-size: 12px; font-weight: 700; fill: #9a2f27; letter-spacing: 1.5px; }
+      .safety-title { font-size: 13px; font-weight: 700; fill: #27332f; }
+      .safety-copy { font-size: 13px; fill: #5e6864; }
+    </style>
+  </defs>
+
+  <rect width="1440" height="920" fill="#e4e8e3"/>
+  <rect width="1440" height="920" fill="url(#grid)"/>
+  <path d="M0 118H1440" stroke="#697873" stroke-width="1"/>
+  <rect x="0" y="0" width="12" height="920" fill="#315b52"/>
+  <rect x="12" y="0" width="4" height="920" fill="#9b7b44"/>
+
+  <text x="66" y="65" class="serif plate-title">Conversation orchestration</text>
+  <text x="68" y="94" class="sans plate-subtitle">Furnace cutaway · four responsibilities connected by structured state</text>
+  <text x="1368" y="49" text-anchor="end" class="mono" font-size="12" fill="#3d5750">LANGGRAPH / PLATE 01</text>
+  <text x="1368" y="74" text-anchor="end" class="sans" font-size="13" fill="#69736f">ALCHEMY FURNACE DESKTOP</text>
+
+  <text x="172" y="151" class="sans input-label">CURRENT INPUT</text>
+  <text x="172" y="178" class="sans input-copy">User message</text>
+  <text x="508" y="151" class="sans input-label">CONTEXT</text>
+  <text x="508" y="178" class="sans input-copy">Recent dialogue and explicit constraints</text>
+  <path d="M242 187V207H420" fill="none" stroke="#3c5e56" stroke-width="1.5"/>
+  <path d="M588 187V207H420V224" fill="none" stroke="#3c5e56" stroke-width="1.5" marker-end="url(#flowArrow)"/>
+  <text x="920" y="160" class="sans rail-heading">STRUCTURED STATE</text>
+  <path d="M920 174H1368" stroke="#315b52" stroke-width="2"/>
+
+  <g clip-path="url(#furnaceClip)">
+    <path d="M110 250H730V397 Q420 421 110 397Z" fill="#edf0ec"/>
+    <path d="M110 397 Q420 421 730 397V527 Q420 551 110 527Z" fill="#d5ded9"/>
+    <path d="M110 527 Q420 551 730 527V657 Q420 681 110 657Z" fill="#a9c0b8"/>
+    <path d="M110 657 Q420 681 730 657V835H110Z" fill="#48665e"/>
+    <path d="M120 397 Q420 421 720 397" fill="none" stroke="#72837d" stroke-width="1.5"/>
+    <path d="M120 527 Q420 551 720 527" fill="none" stroke="#72837d" stroke-width="1.5"/>
+    <path d="M120 657 Q420 681 720 657" fill="none" stroke="#72837d" stroke-width="1.5"/>
+    <path d="M420 250V806" stroke="#9a2f27" stroke-width="2" opacity="0.50" stroke-dasharray="3 9"/>
+  </g>
+
+  <path d="M180 250 C122 336 112 500 148 638 C182 767 276 821 420 821 C564 821 658 767 692 638 C728 500 718 336 660 250" fill="none" stroke="#4c544f" stroke-width="12" stroke-linecap="round"/>
+  <path d="M194 261 C145 344 137 497 170 628 C201 744 285 795 420 795 C555 795 639 744 670 628 C703 497 695 344 646 261" fill="none" stroke="#9b7b44" stroke-width="2" opacity="0.85"/>
+  <ellipse cx="420" cy="249" rx="247" ry="32" fill="#e4e8e3" stroke="#4c544f" stroke-width="10"/>
+  <ellipse cx="420" cy="249" rx="213" ry="17" fill="#bccac4" stroke="#9b7b44" stroke-width="2"/>
+  <path d="M292 221 Q420 178 548 221" fill="none" stroke="#4c544f" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="420" cy="181" r="13" fill="#a6382c"/>
+  <path d="M420 194V224" stroke="#4c544f" stroke-width="5"/>
+  <path d="M230 791L177 868H292L320 813" fill="#4c544f"/>
+  <path d="M610 791L663 868H548L520 813" fill="#4c544f"/>
+  <path d="M190 844H650" stroke="#9b7b44" stroke-width="2"/>
+
+  <text x="168" y="360" class="serif ordinal">I</text>
+  <text x="225" y="301" class="sans layer-kicker">INTENT MODELING</text>
+  <text x="225" y="342" class="serif layer-title">Semantic understanding</text>
+  <text x="225" y="375" class="sans layer-copy">Resolves the user's intent, affect, constraints, and ambiguity.</text>
+
+  <text x="162" y="488" class="serif ordinal">II</text>
+  <text x="225" y="431" class="sans layer-kicker">POLICY AND BUDGET</text>
+  <text x="225" y="472" class="serif layer-title">Response direction</text>
+  <text x="225" y="505" class="sans layer-copy">Sets length, structure, token budget, and group speaker scope.</text>
+
+  <text x="156" y="617" class="serif ordinal">III</text>
+  <text x="225" y="561" class="sans layer-kicker">PERSONA-CONSTRAINED DRAFTING</text>
+  <text x="225" y="602" class="serif layer-title">Persona-aware generation</text>
+  <text x="225" y="635" class="sans layer-copy">Uses persona, pill skills, memory, task, and established facts.</text>
+
+  <text x="183" y="754" class="serif ordinal-dark">IV</text>
+  <text x="253" y="690" class="sans layer-kicker-dark">HUMANIZER</text>
+  <text x="253" y="731" class="serif layer-title-dark">Natural refinement</text>
+  <text x="253" y="764" class="sans layer-copy-dark">Edits templates; instructed to retain voice and meaning.</text>
+
+  <path d="M695 337H880" stroke="#315b52" stroke-width="1.5"/>
+  <rect x="875" y="332" width="10" height="10" fill="#a6382c"/>
+  <text x="920" y="311" class="sans rail-title">Interpreted turn</text>
+  <text x="920" y="338" class="mono rail-code">SemanticUnderstanding</text>
+  <text x="920" y="365" class="sans rail-copy">intent · emotion · complexity · detail · format</text>
+
+  <path d="M705 467H880" stroke="#315b52" stroke-width="1.5"/>
+  <rect x="875" y="462" width="10" height="10" fill="#a6382c"/>
+  <text x="920" y="441" class="sans rail-title">Deterministic response budget</text>
+  <text x="920" y="468" class="mono rail-code">ResponseBudget</text>
+  <text x="920" y="495" class="sans rail-copy">target · sentence cap · tokens · list permission · speakers</text>
+
+  <path d="M704 597H880" stroke="#315b52" stroke-width="1.5"/>
+  <rect x="875" y="592" width="10" height="10" fill="#a6382c"/>
+  <text x="920" y="571" class="sans rail-title">Persona-faithful draft</text>
+  <text x="920" y="598" class="mono rail-code">draft_reply</text>
+  <text x="920" y="625" class="sans rail-copy">identity · pills · memory · task · current budget</text>
+
+  <path d="M675 727H880" stroke="#315b52" stroke-width="1.5"/>
+  <rect x="875" y="722" width="10" height="10" fill="#a6382c"/>
+  <text x="920" y="701" class="sans rail-title">Mechanically validated reply</text>
+  <text x="920" y="728" class="mono rail-code">AgentReply</text>
+  <text x="920" y="755" class="sans rail-copy">numbers · URLs · code · length · prompt safety</text>
+  <path d="M920 783H1295" stroke="#a6382c" stroke-width="2" marker-end="url(#flowArrow)"/>
+  <text x="1310" y="789" class="sans" font-size="15" font-weight="700" fill="#9a2f27">STREAM</text>
+
+  <path d="M66 858H1368" stroke="#66736e" stroke-width="1"/>
+  <text x="66" y="886" class="sans safety-label">VESSEL WALL</text>
+  <rect x="184" y="875" width="7" height="7" fill="#a6382c"/>
+  <text x="208" y="883" class="sans safety-title">Semantic failure</text>
+  <text x="321" y="883" class="sans safety-copy">local rules take over</text>
+  <rect x="485" y="875" width="7" height="7" fill="#a6382c"/>
+  <text x="509" y="883" class="sans safety-title">Call failure</text>
+  <text x="586" y="883" class="sans safety-copy">try draft immediately</text>
+  <rect x="742" y="875" width="7" height="7" fill="#a6382c"/>
+  <text x="766" y="883" class="sans safety-title">Invalid edit</text>
+  <text x="840" y="883" class="sans safety-copy">retry once at most</text>
+  <rect x="988" y="875" width="7" height="7" fill="#a6382c"/>
+  <text x="1012" y="883" class="sans safety-title">Fallback draft</text>
+  <text x="1110" y="883" class="sans safety-copy">validate or fail</text>
+  <text x="1368" y="910" text-anchor="end" class="sans" font-size="13" fill="#53615c">Persona does not participate in semantic analysis or budgeting</text>
+</svg>
