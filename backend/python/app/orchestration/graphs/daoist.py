@@ -10,10 +10,10 @@
 - 机械任务约束逐字进入系统提示（prompts.compile_messages 原样保留任务文本）。
 - 凭据只经 RuntimeContext 进 ModelGateway 构造模型；节点状态、检查点与事件
   永不携带凭据。事件经 _emit 统一走 redact_event_payload 后才投递。
-- 发言事件顺序：speaker_started（compile 阶段，恰一次）→ assistant_delta（每次
-  模型调用）→ assistant_final（恰一次，validate 通过或重试耗尽后）。
-  当前阶段重试耗尽保留最后一稿（道人不出声会拖垮 UI 回合），后续 Task 的
-  群聊收敛层再裁决单道人的机械失败。
+- 发言事件顺序：speaker_started（compile 阶段，恰一次）→ assistant_delta
+  → assistant_final（终稿各恰一次）。草稿与 Humanizer 中间结果不对外发送。
+- 报数草稿重试耗尽时按计划编号确定性修正；任何候选终稿仍需
+  通过字数、代码、提示词泄露和机械任务校验，无安全回退时宁可失败。
 """
 
 from __future__ import annotations
@@ -41,6 +41,7 @@ from app.orchestration.contracts import (
 )
 from app.orchestration.events import OrchestrationEvent, redact_event_payload
 from app.orchestration.humanizer import (
+    HUMANIZER_SYSTEM_PROMPT,
     build_humanizer_messages,
     constrain_to_budget,
     validate_humanized,
@@ -266,6 +267,11 @@ def validate_draft(
             ],
         }
 
+    if _violates_ordinal(state):
+        repaired = dict(state["draft_reply"])
+        repaired["text"] = str(_roll_call_ordinal(state))
+        return {"draft_reply": repaired, "retry_pending": False}
+
     return {"retry_pending": False}
 
 
@@ -323,23 +329,42 @@ def validate_final_reply(
         if understanding.requested_chars is not None
         else 0
     )
+    compiled_system = next(
+        (
+            str(row.get("content", ""))
+            for row in state.get("prompt_messages", [])
+            if row.get("role") == "system"
+        ),
+        agent.system_prompt,
+    )
+    protected_text = HUMANIZER_SYSTEM_PROMPT + "\n" + compiled_system
     validation = validate_humanized(
         draft_text,
         candidate,
         budget,
         minimum_chars=minimum_chars,
-        protected_text=agent.system_prompt,
+        protected_text=protected_text,
     )
     # 草稿已通过确定性报数校验时，Humanizer 不得改号或添字。
-    ordinal_valid = _violates_ordinal(state) or not _violates_ordinal_text(
-        state, candidate
-    )
+    ordinal_valid = not _violates_ordinal_text(state, candidate)
     candidate_valid = validation.valid and ordinal_valid
     retries = int(state.get("humanizer_retries", 0))
     if not failed and not candidate_valid and retries < 1:
         return {"humanizer_retries": retries + 1, "retry_pending": True}
 
-    text = candidate if candidate_valid else constrain_to_budget(draft_text, budget)
+    if candidate_valid:
+        text = candidate
+    else:
+        text = constrain_to_budget(draft_text, budget)
+        fallback_validation = validate_humanized(
+            draft_text,
+            text,
+            budget,
+            minimum_chars=minimum_chars,
+            protected_text=protected_text,
+        )
+        if not fallback_validation.valid or _violates_ordinal_text(state, text):
+            raise ValueError("no safe final reply")
     if not text.strip():
         raise ValueError("empty final reply")
     reply = AgentReply(

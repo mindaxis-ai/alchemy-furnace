@@ -383,13 +383,13 @@ async def test_roll_call_retry_corrects_wrong_ordinal(fake_gateway, roll_call_st
 
 
 @pytest.mark.asyncio
-async def test_roll_call_retry_exhaustion_keeps_last_draft(fake_gateway, roll_call_state):
-    fake_gateway.responses.extend(["1", "1", "1", "1"])
+async def test_roll_call_retry_exhaustion_repairs_to_assigned_number(fake_gateway, roll_call_state):
+    fake_gateway.responses.extend(["1", "1", "1", "1", "1"])
     events = [event async for event in run_daoist_for_test(roll_call_state, fake_gateway)]
 
-    # 最多 2 次重试（合计 3 次模型调用），不无限循环。
-    assert len(fake_gateway.calls) == 4
-    assert final_content(events).strip() == "1"
+    # 草稿最多重试 2 次，耗尽后按确定性计划修正，不落库错号。
+    assert len(fake_gateway.calls) == 5
+    assert final_content(events).strip() == "2"
     assert len(events_of(events, "assistant_final")) == 1
 
 
@@ -503,3 +503,48 @@ async def test_humanizer_system_prompt_leak_retries_before_emission(fake_gateway
     assert final_content(events) == "我直接说看法。"
     assert protected not in str([event.payload for event in events])
     assert len(fake_gateway.calls) == 3
+
+
+@pytest.mark.asyncio
+async def test_leaking_fallback_draft_is_never_emitted(fake_gateway):
+    protected = "以下内容已经是你掌握的知识、能力与表达习惯。"
+    state = build_state(
+        agents=[agent("person", "阿衡", system_prompt=protected)],
+        user_text="你怎么看？",
+    )
+    fake_gateway.responses.extend([protected, RuntimeError("humanizer unavailable")])
+
+    with pytest.raises(ValueError, match="no safe final reply"):
+        _ = [event async for event in run_daoist_for_test(state, fake_gateway)]
+
+
+@pytest.mark.asyncio
+async def test_too_short_explicit_length_fallback_is_never_emitted(fake_gateway):
+    state = build_state(agents=[agent("writer", "写作者")], user_text="请写800字")
+    state["semantic_understanding"] = SemanticUnderstanding(
+        source="model",
+        intent="task",
+        core_request="写800字介绍",
+        emotion="neutral",
+        complexity="moderate",
+        detail_preference="detailed",
+        requested_chars=800,
+        format_preference="creative",
+        wants_advice=False,
+        wants_follow_up=False,
+        should_clarify=False,
+        avoid_behaviors=["repeat"],
+    ).model_dump()
+    state["response_budget"] = ResponseBudget(
+        target_chars=800,
+        max_chars=960,
+        max_sentences=12,
+        max_tokens=1600,
+        allow_list=True,
+        allow_follow_up=False,
+        max_speakers=1,
+    ).model_dump()
+    fake_gateway.responses.extend(["草稿也太短", "太短", "还是太短"])
+
+    with pytest.raises(ValueError, match="no safe final reply"):
+        _ = [event async for event in run_daoist_for_test(state, fake_gateway)]

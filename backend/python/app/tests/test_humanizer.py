@@ -11,6 +11,7 @@ from app.orchestration.contracts import (
     SemanticUnderstanding,
 )
 from app.orchestration.humanizer import (
+    HUMANIZER_SYSTEM_PROMPT,
     build_humanizer_messages,
     constrain_to_budget,
     validate_humanized,
@@ -124,6 +125,19 @@ def test_validate_humanized_rejects_person_system_prompt_leakage():
         leaked,
         budget(),
         protected_text=leaked,
+    )
+
+    assert got.valid is False
+    assert got.reason == "prompt_leak"
+
+
+def test_validate_humanized_rejects_humanizer_instruction_leakage():
+    leaked = HUMANIZER_SYSTEM_PROMPT.splitlines()[0]
+    got = validate_humanized(
+        "我直接回答你。",
+        leaked,
+        budget(),
+        protected_text=HUMANIZER_SYSTEM_PROMPT,
     )
 
     assert got.valid is False
