@@ -176,7 +176,7 @@ func TestSynthesizeRendersLosslessPrompt(t *testing.T) {
 	if !strings.Contains(result.SystemPrompt, "V2_MARKER") {
 		t.Error("recipe_id 单独应取当前版本 v2")
 	}
-	if !strings.Contains(result.SystemPrompt, "〔涌现规则〕") || !strings.Contains(result.SystemPrompt, "涌现规则甲") {
+	if !strings.Contains(result.SystemPrompt, "〔综合表达规则〕") || !strings.Contains(result.SystemPrompt, "涌现规则甲") {
 		t.Error("涌现规则必须渲染进提示词")
 	}
 	if result.Degraded {
@@ -201,7 +201,7 @@ func TestSynthesizeDegradesOnCombineError(t *testing.T) {
 		t.Errorf("降级标记错误: %+v", result)
 	}
 	assertTrialPromptMarkers(t, result.SystemPrompt)
-	if strings.Contains(result.SystemPrompt, "〔涌现规则〕") {
+	if strings.Contains(result.SystemPrompt, "〔综合表达规则〕") {
 		t.Error("失败路径不应有涌现规则子节")
 	}
 }

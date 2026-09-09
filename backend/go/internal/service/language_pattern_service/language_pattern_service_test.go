@@ -299,7 +299,7 @@ func TestGetOrBuildPatternSuccessPersistsLossless(t *testing.T) {
 	if len(saved.EmergenceRules) != 2 {
 		t.Errorf("EmergenceRules = %+v", saved.EmergenceRules)
 	}
-	if !strings.Contains(saved.SystemPrompt, "〔冲突调和〕") || !strings.Contains(saved.SystemPrompt, "句式相冲") {
+	if !strings.Contains(saved.SystemPrompt, "〔内在张力与取舍〕") || !strings.Contains(saved.SystemPrompt, "句式相冲") {
 		t.Error("冲突调和建议必须渲染")
 	}
 	assertPromptHasAllMarkers(t, saved.SystemPrompt)
@@ -330,7 +330,7 @@ func TestGetOrBuildPatternDegradedNotPersisted(t *testing.T) {
 		t.Error("降级结果不得落库")
 	}
 	assertPromptHasAllMarkers(t, got.SystemPrompt)
-	if strings.Contains(got.SystemPrompt, "〔涌现规则〕") {
+	if strings.Contains(got.SystemPrompt, "〔综合表达规则〕") {
 		t.Error("降级路径不应有涌现规则子节")
 	}
 }
