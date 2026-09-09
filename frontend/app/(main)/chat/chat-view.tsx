@@ -17,7 +17,7 @@
  *
  * SSE：fetch POST + ReadableStream；停止 = AbortController 中断连接
  */
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react'
 import { useTranslations } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -143,9 +143,15 @@ export function ChatView({ sessionId }: { sessionId?: string }) {
   // 仅当后端明确"无可创建"(can_create_single=false)时锁死入口;
   // loading/error 仍可打开选择器查看道人,但名单为空时所有发起都被禁用
   const creationBlocked = readiness !== null && !readiness.can_create_single
-  const openAgentSelect = useCallback(() => {
-    if (!creationBlocked) setShowAgentSelect(true)
+  // 窗口快捷键可在 DOM 已更新、effect 尚未重绑的短暂窗口到达；
+  // ref 让稳定监听器始终读当前门禁，不使用上一帧的闭包值。
+  const creationBlockedRef = useRef(creationBlocked)
+  useLayoutEffect(() => {
+    creationBlockedRef.current = creationBlocked
   }, [creationBlocked])
+  const openAgentSelect = useCallback(() => {
+    if (!creationBlockedRef.current) setShowAgentSelect(true)
+  }, [])
 
   // T4 快捷键 ⌘N: desktop-guards 在 window 派发 alchemy:new-session → 与按钮共用同一 readiness 门禁
   useEffect(() => {
