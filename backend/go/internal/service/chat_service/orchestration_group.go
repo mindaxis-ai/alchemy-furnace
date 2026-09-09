@@ -285,16 +285,24 @@ func (st *langGraphGroupState) consume(e orchestration.Event) error {
 		st.emit("speaker_done", GroupSpeakerPayload{AgentID: p.AgentID, AgentName: pt.name, AgentAvatar: pt.avatar, MessageID: messageID})
 	case "prompt_debug":
 		var p struct {
-			AgentID  string                 `json:"agent_id"`
-			ModelRef orchestration.ModelRef `json:"model_ref"`
-			Messages []map[string]string    `json:"messages"`
+			AgentID        string                 `json:"agent_id"`
+			ModelRef       orchestration.ModelRef `json:"model_ref"`
+			Messages       []map[string]string    `json:"messages"`
+			ResponseBudget struct {
+				MaxTokens    int `json:"max_tokens"`
+				MaxSentences int `json:"max_sentences"`
+				MaxChars     int `json:"max_chars"`
+			} `json:"response_budget"`
 		}
 		if json.Unmarshal(e.Payload, &p) == nil {
 			name := ""
 			if pt, ok := st.participants[p.AgentID]; ok {
 				name = pt.name
 			}
-			st.emit("prompt_debug", service.NewPromptDebugPayload(p.AgentID, name, p.ModelRef.Name, p.Messages, service.GenerationOptions{}))
+			st.emit("prompt_debug", service.NewPromptDebugPayload(p.AgentID, name, p.ModelRef.Name, p.Messages, service.GenerationOptions{
+				MaxTokens:    p.ResponseBudget.MaxTokens,
+				MaxSentences: p.ResponseBudget.MaxSentences,
+			}))
 		}
 	case "memory_proposed":
 		var p memoryProposalPayload

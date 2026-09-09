@@ -199,6 +199,9 @@ def compile_prompt(
                 "task": task,
                 "model_ref": agent.model_ref.model_dump(),
                 "messages": prompt_rows,
+                "response_budget": ResponseBudget.model_validate(
+                    state["response_budget"]
+                ).model_dump(),
             },
         )
     return {"prompt_messages": prompt_rows}

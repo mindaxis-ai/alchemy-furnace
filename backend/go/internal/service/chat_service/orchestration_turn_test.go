@@ -225,7 +225,7 @@ func TestLangGraphSingleMapsDeltasToPublicChunks(t *testing.T) {
 // 单聊调试面板展开报错的回归锚点)。
 func TestLangGraphSingleForwardsPromptDebugWhenEnabled(t *testing.T) {
 	stream := []turnEvent{
-		{"prompt_debug", `{"agent_id":"a1","model_ref":{"provider_type":"deepseek","name":"deepseek-v4-flash"},"messages":[{"role":"system","content":"人设"}]}`},
+		{"prompt_debug", `{"agent_id":"a1","model_ref":{"provider_type":"deepseek","name":"deepseek-v4-flash"},"messages":[{"role":"system","content":"人设"}],"response_budget":{"max_tokens":128,"max_sentences":2,"max_chars":120}}`},
 		{"assistant_final", `{"reply_id":"r1","text":"答"}`},
 		{"run_completed", `{}`},
 	}
@@ -244,14 +244,30 @@ func TestLangGraphSingleForwardsPromptDebugWhenEnabled(t *testing.T) {
 	if p.AgentID != "a1" || len(p.Messages) != 1 || p.Messages[0]["content"] != "人设" {
 		t.Fatalf("payload identity/messages broken: %+v", p)
 	}
-	if p.Generation.MaxTokens != 0 || p.Generation.MaxSentences != 0 {
-		t.Fatalf("generation = %+v, want zero-valued presence (LangGraph 无预算概念)", p.Generation)
+	if p.Generation.MaxTokens != 128 || p.Generation.MaxSentences != 2 {
+		t.Fatalf("generation = %+v, want director budget 128/2", p.Generation)
 	}
 	if strings.Contains(raw, `"model_ref"`) || strings.Contains(raw, `"task"`) {
 		t.Fatalf("internal shape leaked to public SSE: %s", raw)
 	}
 	if !strings.Contains(string(result.CapturedRequest), `"debug_enabled":true`) {
 		t.Fatalf("request body must carry debug_enabled=true, got %s", result.CapturedRequest)
+	}
+}
+
+func TestLangGraphSinglePromptDebugMissingBudgetDefaultsToZero(t *testing.T) {
+	stream := []turnEvent{
+		{"prompt_debug", `{"agent_id":"a1","model_ref":{"name":"model"},"messages":[]}`},
+		{"assistant_final", `{"reply_id":"r1","text":"答"}`},
+		{"run_completed", `{}`},
+	}
+	result := runLangGraphSingleCmd(t, stream, service.ConversationCommand{Content: "请回答", DebugPrompt: true}, nil)
+	var p service.PromptDebugPayload
+	if err := json.Unmarshal([]byte(result.PromptDebug[0]), &p); err != nil {
+		t.Fatalf("prompt_debug payload: %v", err)
+	}
+	if p.Generation.MaxTokens != 0 || p.Generation.MaxSentences != 0 {
+		t.Fatalf("generation = %+v, want backward-compatible zero values", p.Generation)
 	}
 }
 

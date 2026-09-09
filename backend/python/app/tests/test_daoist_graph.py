@@ -354,6 +354,7 @@ async def test_prompt_debug_is_gated_and_secret_free(fake_gateway, roll_call_sta
     payload = debug[0].payload
     assert payload["agent_id"] == "zhang"
     assert "不得插入考研建议" in payload["messages"][0]["content"]
+    assert payload["response_budget"] == roll_call_state["response_budget"]
 
     # 凭据到达网关（运行期边界允许），但任何事件负载都不携带。
     assert fake_gateway.calls[0].credential.api_key == SECRET
