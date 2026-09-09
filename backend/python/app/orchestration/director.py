@@ -100,3 +100,27 @@ def build_response_budget(
         allow_follow_up=allow_follow_up,
         max_speakers=max_speakers,
     )
+
+
+def per_speaker_budget(
+    total: ResponseBudget, speaker_count: int
+) -> ResponseBudget:
+    """把群聊本轮总预算均分给已选发言人；单人对话原样保留。"""
+
+    count = max(1, speaker_count)
+    if count == 1:
+        return total.model_copy()
+    return total.model_copy(
+        update={
+            "target_chars": max(1, total.target_chars // count),
+            "max_chars": (
+                0 if total.max_chars == 0 else max(1, total.max_chars // count)
+            ),
+            "max_sentences": (
+                0
+                if total.max_sentences == 0
+                else max(1, total.max_sentences // count)
+            ),
+            "max_tokens": max(32, total.max_tokens // count),
+        }
+    )

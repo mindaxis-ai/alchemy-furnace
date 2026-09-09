@@ -46,6 +46,7 @@ class FakeCall:
     messages: list[BaseMessage]
     model_ref: ModelRef
     credential: ModelCredential
+    kwargs: dict[str, Any]
 
 
 class _StructuredFake:
@@ -86,7 +87,12 @@ class FakeChatModel(BaseChatModel):
         **kwargs: Any,
     ) -> ChatResult:
         self.calls.append(
-            FakeCall(messages=list(messages), model_ref=self.ref, credential=self.credential)
+            FakeCall(
+                messages=list(messages),
+                model_ref=self.ref,
+                credential=self.credential,
+                kwargs=dict(kwargs),
+            )
         )
         item = self.responses.pop(0)
         if isinstance(item, BaseException):
@@ -258,6 +264,10 @@ async def test_open_discussion_uses_supervisor(group_runner, fake_gateway):
     names = [e.name for e in events]
     assert names.index("plan_created") < names.index("speaker_started")
     assert final_pairs(events) == [("zhang", "我先说说我的看法"), ("li", "我补充一点")]
+    person_calls = [
+        call for call in fake_gateway.calls if call.model_ref != SUPERVISOR_REF
+    ]
+    assert [call.kwargs["max_tokens"] for call in person_calls] == [384] * 4
 
 
 def budget(max_speakers: int) -> dict[str, Any]:

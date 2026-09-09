@@ -69,7 +69,19 @@ def fallback_understanding(user_text: str) -> SemanticUnderstanding:
     elif _contains(text, ("难过", "伤心", "失落")):
         emotion = "sad"
 
-    if _contains(text, ("代码", "函数", "脚本", "json", "sql", "api")):
+    code_artifact_signals = (
+        "写代码",
+        "生成代码",
+        "代码实现",
+        "实现函数",
+        "写函数",
+        "写脚本",
+        "sql 查询",
+        "sql语句",
+        "json 格式",
+        "json文件",
+    )
+    if intent == "task" and _contains(text, code_artifact_signals):
         format_preference = "code"
     elif _contains(text, ("步骤", "一步步")):
         format_preference = "steps"

@@ -41,6 +41,13 @@ def test_fallback_extracts_explicit_character_request():
     assert got.detail_preference == "detailed"
 
 
+def test_fallback_does_not_treat_a_question_about_api_as_a_code_artifact():
+    got = fallback_understanding("什么是 API Key")
+
+    assert got.intent == "factual"
+    assert got.format_preference == "plain"
+
+
 @pytest.mark.parametrize("text", ["写79字", "写8001字"])
 def test_fallback_ignores_out_of_contract_character_request(text):
     assert fallback_understanding(text).requested_chars is None

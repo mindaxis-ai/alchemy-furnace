@@ -19,9 +19,21 @@ _URL_RE = re.compile(r"https?://[^\s<>\"'，。；：！？]+")
 _NUMBER_RE = re.compile(r"(?<![0-9])\d+(?:\.\d+)?%?(?![0-9])")
 _SENTENCE_END_RE = re.compile(r"[。！？!?]+|\.(?=\s|$)")
 _LIST_LINE_RE = re.compile(r"^\s*(?:[-*+] |\d+[.)、]\s*)")
+_FENCED_CODE_RE = re.compile(r"```[^\n]*\n?.*?```", re.DOTALL)
+_INLINE_CODE_RE = re.compile(r"(?<!`)`[^`\n]+`(?!`)")
+_PROMPT_HEADER_RE = re.compile(
+    r"【(?:安全与真实性边界|身份与性格|炼丹炉中的既定记录|知识、能力与表达习惯|扩展字段)】"
+)
 
 HumanizeReason = Literal[
-    "ok", "empty", "length", "sentences", "url", "number", "code_fence"
+    "ok",
+    "empty",
+    "length",
+    "sentences",
+    "url",
+    "number",
+    "code_fence",
+    "prompt_leak",
 ]
 
 
@@ -80,24 +92,47 @@ def _sentence_count(text: str) -> int:
 
 
 def validate_humanized(
-    draft_text: str, final_text: str, budget: ResponseBudget
+    draft_text: str,
+    final_text: str,
+    budget: ResponseBudget,
+    *,
+    minimum_chars: int = 0,
+    protected_text: str = "",
 ) -> HumanizeValidation:
     """不做语义推断，只检查可机械证明的破坏与越界。"""
 
     if not final_text.strip():
         return HumanizeValidation(False, "empty")
+    if minimum_chars > 0 and len(final_text) < minimum_chars:
+        return HumanizeValidation(False, "length")
     if budget.max_chars > 0 and len(final_text) > budget.max_chars:
         return HumanizeValidation(False, "length")
     if budget.max_sentences > 0 and _sentence_count(final_text) > budget.max_sentences:
         return HumanizeValidation(False, "sentences")
+    if final_text.count("```") % 2 != 0:
+        return HumanizeValidation(False, "code_fence")
+    protected_code = [
+        *_FENCED_CODE_RE.findall(draft_text),
+        *_INLINE_CODE_RE.findall(draft_text),
+    ]
+    if any(snippet not in final_text for snippet in protected_code):
+        return HumanizeValidation(False, "code_fence")
     if not _urls(draft_text).issubset(_urls(final_text)):
         return HumanizeValidation(False, "url")
     if not set(_NUMBER_RE.findall(draft_text)).issubset(
         set(_NUMBER_RE.findall(final_text))
     ):
         return HumanizeValidation(False, "number")
-    if final_text.count("```") % 2 != 0:
-        return HumanizeValidation(False, "code_fence")
+    if _PROMPT_HEADER_RE.search(final_text):
+        return HumanizeValidation(False, "prompt_leak")
+    for line in protected_text.splitlines():
+        protected_line = line.strip()
+        if len(protected_line) < 16 or protected_line.startswith(
+            ("姓名：", "已服用金丹：")
+        ):
+            continue
+        if protected_line in final_text:
+            return HumanizeValidation(False, "prompt_leak")
     return HumanizeValidation(True, "ok")
 
 

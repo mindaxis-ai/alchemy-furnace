@@ -95,6 +95,7 @@ def test_humanizer_prompt_removes_ai_habits_and_preserves_voice_and_facts():
         ("见 https://example.test", "没有链接", "url"),
         ("版本是 3.14，共 2026 份", "版本更新了", "number"),
         ("```python\nprint(1)\n```", "```python\nprint(1)", "code_fence"),
+        ("```python\nprint(1)\n```", "```python\nprint(2)\n```", "code_fence"),
     ],
 )
 def test_validate_humanized_rejects_broken_or_changed_output(draft, final, reason):
@@ -107,6 +108,26 @@ def test_validate_humanized_accepts_preserved_compact_reply():
     draft = "详情见 https://example.test，版本 2026。"
     final = "版本 2026，见 https://example.test。"
     assert validate_humanized(draft, final, budget()).valid is True
+
+
+def test_validate_humanized_rejects_explicit_length_that_is_far_too_short():
+    got = validate_humanized("原稿" * 350, "太短了", budget(max_chars=960), minimum_chars=640)
+
+    assert got.valid is False
+    assert got.reason == "length"
+
+
+def test_validate_humanized_rejects_person_system_prompt_leakage():
+    leaked = "以下内容已经是你掌握的知识、能力与表达习惯。"
+    got = validate_humanized(
+        "我直接回答你。",
+        leaked,
+        budget(),
+        protected_text=leaked,
+    )
+
+    assert got.valid is False
+    assert got.reason == "prompt_leak"
 
 
 def test_code_artifact_is_not_character_truncated():

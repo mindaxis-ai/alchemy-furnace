@@ -44,6 +44,7 @@ from app.orchestration.contracts import (
     UserTurnSnapshot,
 )
 from app.orchestration.directives import build_deterministic_plan, classify_directive
+from app.orchestration.director import per_speaker_budget
 from app.orchestration.events import OrchestrationEvent, redact_event_payload
 from app.orchestration.graphs.daoist import _TRANSIENT_CHANNELS
 from app.orchestration.supervisor import build_fallback_plan, plan_with_supervisor
@@ -175,6 +176,8 @@ def build_group_graph(daoist_graph: StateGraph) -> StateGraph:
         done = {r["agent_id"] for r in state.get("replies", [])}
         new_replies: list[dict[str, Any]] = []
         remaining: list[str] = []
+        shared_budget = ResponseBudget.model_validate(state["response_budget"])
+        speaker_budget = per_speaker_budget(shared_budget, len(items))
         for index, item in enumerate(items):
             # 先让出事件循环再查旗标：取消请求（用户停止/新轮取代）只能在
             # await 点落进 token——让出后检查，取消恰好落在发言人边界。
@@ -189,6 +192,7 @@ def build_group_graph(daoist_graph: StateGraph) -> StateGraph:
             }
             fresh["pending_agent_ids"] = [item.agent_id]
             fresh["replies"] = []
+            fresh["response_budget"] = speaker_budget.model_dump()
             try:
                 result = await compiled_daoist.ainvoke(fresh, context=runtime.context)
             except Exception:

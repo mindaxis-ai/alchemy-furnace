@@ -129,6 +129,18 @@ def _violates_ordinal(state: ConversationState) -> bool:
     return bool(not match or int(match.group(1)) != ordinal)
 
 
+def _violates_ordinal_text(state: ConversationState, text: str) -> bool:
+    """任意候选回复是否改动了报数任务的唯一编号。"""
+    ordinal = _roll_call_ordinal(state)
+    if ordinal is None:
+        return False
+    match = _ORDINAL_PREFIX_RE.match(text)
+    if not match or int(match.group(1)) != ordinal:
+        return True
+    remainder = text[match.end() :].strip()
+    return remainder not in ("", "。", ".", "！", "!")
+
+
 def _to_messages(prompt_messages: list[dict]) -> list[BaseMessage]:
     return [_MESSAGE_TYPES[m["role"]](content=m["content"]) for m in prompt_messages]
 
@@ -303,12 +315,31 @@ def validate_final_reply(
     candidate = str(humanized.get("text", ""))
     failed = bool(humanized.get("failed"))
     budget = ResponseBudget.model_validate(state["response_budget"])
-    validation = validate_humanized(draft_text, candidate, budget)
+    understanding = SemanticUnderstanding.model_validate(
+        state["semantic_understanding"]
+    )
+    minimum_chars = (
+        budget.target_chars * 4 // 5
+        if understanding.requested_chars is not None
+        else 0
+    )
+    validation = validate_humanized(
+        draft_text,
+        candidate,
+        budget,
+        minimum_chars=minimum_chars,
+        protected_text=agent.system_prompt,
+    )
+    # 草稿已通过确定性报数校验时，Humanizer 不得改号或添字。
+    ordinal_valid = _violates_ordinal(state) or not _violates_ordinal_text(
+        state, candidate
+    )
+    candidate_valid = validation.valid and ordinal_valid
     retries = int(state.get("humanizer_retries", 0))
-    if not failed and not validation.valid and retries < 1:
+    if not failed and not candidate_valid and retries < 1:
         return {"humanizer_retries": retries + 1, "retry_pending": True}
 
-    text = candidate if validation.valid else constrain_to_budget(draft_text, budget)
+    text = candidate if candidate_valid else constrain_to_budget(draft_text, budget)
     if not text.strip():
         raise ValueError("empty final reply")
     reply = AgentReply(

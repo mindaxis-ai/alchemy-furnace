@@ -5,7 +5,7 @@ import inspect
 import pytest
 
 from app.orchestration.contracts import SemanticUnderstanding
-from app.orchestration.director import build_response_budget
+from app.orchestration.director import build_response_budget, per_speaker_budget
 
 
 def understanding(intent, **updates):
@@ -102,3 +102,25 @@ def test_director_has_no_personality_or_proactivity_input():
     assert list(inspect.signature(build_response_budget).parameters) == [
         "understanding", "user_text", "session_type"
     ]
+
+
+def test_group_budget_is_split_across_selected_speakers():
+    total = build_response_budget(understanding("task"), "请两个人回答", "group")
+
+    each = per_speaker_budget(total, 2)
+
+    assert each.target_chars == 160
+    assert each.max_chars == 400
+    assert each.max_sentences == 4
+    assert each.max_tokens == 384
+
+
+def test_code_budget_remains_unbounded_by_characters_when_split():
+    total = build_response_budget(
+        understanding("task", format_preference="code"), "请两个人写代码", "group"
+    )
+
+    each = per_speaker_budget(total, 2)
+
+    assert each.max_chars == 0
+    assert each.max_sentences == 0
