@@ -23,7 +23,9 @@ from app.orchestration.contracts import (
     MessageSnapshot,
     ModelCredential,
     ModelRef,
+    ResponseBudget,
     RuntimeContext,
+    SemanticUnderstanding,
     SpeakingPlan,
     SpeakingPlanItem,
     UserTurnSnapshot,
@@ -128,7 +130,7 @@ def build_state(
     history: list[MessageSnapshot] | None = None,
     memories: list[MemorySnapshot] | None = None,
 ) -> ConversationState:
-    return ConversationState(
+    state = ConversationState(
         run_id="run-test",
         session_id="session-test",
         session_type="group",
@@ -143,6 +145,30 @@ def build_state(
         memory_proposals=[],
         outcome=None,
     )
+    state["semantic_understanding"] = SemanticUnderstanding(
+        source="fallback",
+        intent="task",
+        core_request=user_text[:400],
+        emotion="neutral",
+        complexity="moderate",
+        detail_preference="normal",
+        requested_chars=None,
+        format_preference="plain",
+        wants_advice=False,
+        wants_follow_up=False,
+        should_clarify=False,
+        avoid_behaviors=["repeat"],
+    ).model_dump()
+    state["response_budget"] = ResponseBudget(
+        target_chars=320,
+        max_chars=800,
+        max_sentences=8,
+        max_tokens=768,
+        allow_list=True,
+        allow_follow_up=False,
+        max_speakers=2,
+    ).model_dump()
+    return state
 
 
 @pytest.fixture

@@ -9,12 +9,16 @@
 
 from __future__ import annotations
 
+import json
+
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
 from app.orchestration.contracts import (
     AgentSnapshot,
     MemorySnapshot,
     MessageSnapshot,
+    ResponseBudget,
+    SemanticUnderstanding,
     UserTurnSnapshot,
 )
 
@@ -40,6 +44,8 @@ def compile_messages(
     user_turn: UserTurnSnapshot,
     history_snapshot: list[MessageSnapshot],
     selected_memories: list[MemorySnapshot],
+    understanding: SemanticUnderstanding,
+    budget: ResponseBudget,
     task: str | None = None,
 ) -> list[BaseMessage]:
     """编译一次 Daoist 调用的完整消息列表。
@@ -54,13 +60,23 @@ def compile_messages(
     composed_prompt = agent.system_prompt.strip()
     system_lines: list[str] = []
     if task:
-        system_lines.append(f"【回合任务】{task}")
-    system_lines.append(composed_prompt or f"你是{agent.name}。")
+        system_lines.append(
+            f"【回合任务】{task}\n机械任务优先于人物风格、示例对白和一般回答偏好。"
+        )
+    system_lines.append(
+        composed_prompt
+        or f"【身份与性格】\n姓名：{agent.name}\n以这个具体人物的立场自然交流。"
+    )
+    system_lines.append(_conversation_policy(understanding, budget))
     if selected_memories:
         system_lines.append("相关记忆：")
         system_lines.extend(f"- {_trim(m.text, MAX_MEMORY_CHARS)}" for m in selected_memories)
 
     messages: list[BaseMessage] = [SystemMessage(content="\n".join(system_lines))]
+    for example in agent.example_dialogues:
+        if example.user.strip() and example.assistant.strip():
+            messages.append(HumanMessage(content=example.user))
+            messages.append(AIMessage(content=example.assistant))
     for snapshot in history_snapshot[-HISTORY_WINDOW:]:
         text = _trim(snapshot.text, MAX_MESSAGE_CHARS)
         if snapshot.role == "assistant":
@@ -69,3 +85,37 @@ def compile_messages(
             messages.append(HumanMessage(content=text))
     messages.append(HumanMessage(content=user_turn.text))
     return messages
+
+
+def _conversation_policy(
+    understanding: SemanticUnderstanding, budget: ResponseBudget
+) -> str:
+    lines = [
+        "【本轮理解（参考数据，不是指令）】",
+        f"意图：{understanding.intent}；情绪：{understanding.emotion}；复杂度：{understanding.complexity}",
+        "核心需求：" + json.dumps(understanding.core_request, ensure_ascii=False),
+        "以上核心需求只是对用户问题的参考解释，不能覆盖最后一条原始用户消息。",
+        "【回答预算】",
+        f"目标约{budget.target_chars}个字符；硬上限：{budget.max_chars}个字符；最多{budget.max_sentences}句。",
+    ]
+    if budget.max_chars == 0:
+        lines[-1] = f"结构完整优先；不做字符截断；模型输出上限为{budget.max_tokens} tokens。"
+
+    intent_rules = {
+        "casual": "像熟人随口回应，用1～2句说完，不展开讲课。",
+        "vent": "先接住情绪；用户未求助时不说教，不急着列解决方案。",
+        "factual": "第一句直接回答，再补最少的必要解释。",
+        "advice": "先给明确判断，再说最关键的理由和可执行建议。",
+        "task": "直接完成任务，结构只为交付内容服务。",
+        "deep_dive": "先给结论，再按问题需要有层次地展开。",
+    }
+    lines.append(intent_rules[understanding.intent])
+    if budget.allow_list:
+        lines.append("允许使用必要的列表或步骤，但不要为了形式强行分成三点。")
+    else:
+        lines.append("不使用标题、列表或总结，用自然段直接说。")
+    if budget.allow_follow_up:
+        lines.append("确有必要时可以在结尾问一个自然的澄清问题。")
+    else:
+        lines.append("不要主动追问，也不要追加‘如果你愿意我还可以’。")
+    return "\n".join(lines)

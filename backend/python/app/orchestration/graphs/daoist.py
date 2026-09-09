@@ -32,7 +32,9 @@ from app.orchestration.contracts import (
     MemorySnapshot,
     MessageSnapshot,
     ModelCredential,
+    ResponseBudget,
     RuntimeContext,
+    SemanticUnderstanding,
     UserTurnSnapshot,
 )
 from app.orchestration.events import OrchestrationEvent, redact_event_payload
@@ -164,6 +166,10 @@ def compile_prompt(
             MessageSnapshot.model_validate(m) for m in state["history_snapshot"]
         ],
         selected_memories=memories,
+        understanding=SemanticUnderstanding.model_validate(
+            state["semantic_understanding"]
+        ),
+        budget=ResponseBudget.model_validate(state["response_budget"]),
         task=task,
     )
     # 顺序约定：speaker_started 恰一次且先于任何模型产物（重试不重发）。
