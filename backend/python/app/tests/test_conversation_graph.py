@@ -14,6 +14,7 @@
 import asyncio
 import json
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -25,9 +26,11 @@ from app.orchestration.contracts import (
     ModelCredential,
     ModelRef,
     OrchestrationRequest,
+    RuntimeContext,
     UserTurnSnapshot,
 )
 from app.orchestration.events import OrchestrationEvent
+from app.orchestration.graphs.conversation import build_conversation_graph
 from app.orchestration.model_gateway import ModelGateway
 from app.orchestration.runtime import ConversationRuntime, RunNotFoundError
 
@@ -82,6 +85,16 @@ class FakeChatModel(BaseChatModel):
         if isinstance(item, BaseException):
             raise item
         return AIMessage(content=item)
+
+    def with_structured_output(self, schema: type[Any], **kwargs: Any):
+        model = self
+
+        class StructuredFake:
+            async def ainvoke(self, messages):
+                reply = await model.ainvoke(messages)
+                return schema.model_validate_json(str(reply.content))
+
+        return StructuredFake()
 
 
 @pytest.fixture
@@ -228,14 +241,154 @@ def all_expected_agents(events: list[OrchestrationEvent]) -> set[str]:
     return {r["agent_id"] for r in final_replies(events)}
 
 
+def semantic_json(intent="casual") -> str:
+    return json.dumps(
+        {
+            "source": "model",
+            "intent": intent,
+            "core_request": "回应当前问题",
+            "emotion": "neutral",
+            "complexity": "tiny" if intent == "casual" else "simple",
+            "detail_preference": "brief" if intent == "casual" else "normal",
+            "requested_chars": None,
+            "format_preference": "plain",
+            "wants_advice": False,
+            "wants_follow_up": False,
+            "should_clarify": False,
+            "avoid_behaviors": ["lecture", "follow_up"],
+        },
+        ensure_ascii=False,
+    )
+
+
+class CapturingRuntimeGraph:
+    """只替换 LangGraph 执行边界，观察运行器给 start/resume 的真实 context。"""
+
+    def __init__(self) -> None:
+        self.contexts = []
+        self.values: dict[str, Any] = {}
+
+    async def ainvoke(self, state, *, config, context):
+        self.contexts.append(context)
+        outcome = "interrupted" if len(self.contexts) == 1 else "completed"
+        if outcome == "interrupted":
+            context.cancellation.cancel("interrupted")
+        self.values = {**state, "outcome": outcome}
+        return self.values
+
+    async def aget_state(self, config):
+        return SimpleNamespace(values=self.values)
+
+
 # ---------------------------------------------------------------------------
 # 测试
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
+async def test_top_graph_understands_and_directs_once_for_group_turn(
+    fake_gateway, group_request
+):
+    semantic_ref = ModelRef(provider_type="deepseek", name="semantic-model")
+    request = group_request.model_copy(
+        update={
+            "default_model_ref": semantic_ref,
+            "credentials": {
+                **group_request.credentials,
+                semantic_ref.name: ModelCredential(api_key=SECRET),
+            },
+        }
+    )
+    fake_gateway.responses.extend([
+        semantic_json(), "1", "1", "2", "2", "3", "3", "4", "4"
+    ])
+    context = RuntimeContext(
+        model_gateway=fake_gateway,
+        credentials_by_model_ref=request.credentials,
+        default_model_ref=semantic_ref,
+    )
+
+    result = await build_conversation_graph().compile().ainvoke(
+        request.to_initial_state(), context=context
+    )
+
+    assert result["semantic_understanding"]["source"] == "model"
+    assert result["response_budget"]["max_chars"] == 120
+    assert [call.model_ref.name for call in fake_gateway.calls].count("semantic-model") == 1
+
+
+@pytest.mark.asyncio
+async def test_top_graph_reuses_semantic_and_budget_channels_on_resume(
+    fake_gateway, single_request
+):
+    semantic_ref = ModelRef(provider_type="deepseek", name="semantic-model")
+    state = single_request.to_initial_state()
+    state["semantic_understanding"] = json.loads(semantic_json())
+    state["response_budget"] = {
+        "target_chars": 40,
+        "max_chars": 120,
+        "max_sentences": 2,
+        "max_tokens": 128,
+        "allow_list": False,
+        "allow_follow_up": False,
+        "max_speakers": 1,
+    }
+    fake_gateway.responses.extend(["短答", "短答"])
+    context = RuntimeContext(
+        model_gateway=fake_gateway,
+        credentials_by_model_ref=single_request.credentials,
+        default_model_ref=semantic_ref,
+    )
+
+    result = await build_conversation_graph().compile().ainvoke(state, context=context)
+
+    assert result["semantic_understanding"] == state["semantic_understanding"]
+    assert result["response_budget"] == state["response_budget"]
+    assert [call.model_ref.name for call in fake_gateway.calls] == [
+        "deepseek-chat", "deepseek-chat"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_top_graph_builds_fallback_channels_without_default_model(
+    fake_gateway, single_request
+):
+    fake_gateway.responses.extend(["短答", "短答"])
+    context = RuntimeContext(
+        model_gateway=fake_gateway,
+        credentials_by_model_ref=single_request.credentials,
+    )
+
+    result = await build_conversation_graph().compile().ainvoke(
+        single_request.to_initial_state(), context=context
+    )
+
+    assert result["semantic_understanding"]["source"] == "fallback"
+    assert result["response_budget"]["max_chars"] == 120
+
+
+@pytest.mark.asyncio
+async def test_runtime_preserves_default_model_ref_across_resume(
+    runtime, single_request, monkeypatch
+):
+    graph = CapturingRuntimeGraph()
+
+    async def use_capturing_graph():
+        runtime._graph = graph
+
+    monkeypatch.setattr(runtime, "_ensure_saver", use_capturing_graph)
+
+    default_ref = ModelRef(provider_type="deepseek", name="semantic-model")
+    request = single_request.model_copy(update={"default_model_ref": default_ref})
+    await collect(runtime.start(request))
+    await collect(runtime.resume(request.run_id))
+
+    assert [ctx.default_model_ref for ctx in graph.contexts] == [default_ref, default_ref]
+
+
+@pytest.mark.asyncio
 async def test_single_session_routes_daoist_without_plan(runtime, fake_gateway, single_request):
-    fake_gateway.responses.extend(["知行合一，莫问前程。"])
+    fake_gateway.responses.extend(["知行合一，莫问前程。", "知行合一，莫问前程。"])
 
     events = await collect(runtime.start(single_request))
 
@@ -248,14 +401,14 @@ async def test_single_session_routes_daoist_without_plan(runtime, fake_gateway, 
         "run_completed",
     ]
     assert events_of(events, "plan_created") == []
-    assert len(fake_gateway.calls) == 1
+    assert len(fake_gateway.calls) == 2
     assert final_replies(events)[0]["agent_id"] == "dan"
     assert events[-1].name == "run_completed"
 
 
 @pytest.mark.asyncio
 async def test_group_roll_call_plans_then_speaks_in_order(runtime, fake_gateway, group_request):
-    fake_gateway.responses.extend(["1", "2", "3", "4"])
+    fake_gateway.responses.extend(["1", "1", "2", "2", "3", "3", "4", "4"])
 
     events = await collect(runtime.start(group_request))
 
@@ -266,7 +419,7 @@ async def test_group_roll_call_plans_then_speaks_in_order(runtime, fake_gateway,
     assert events_of(events, "plan_created")[0].payload["source"] == "deterministic"
     assert final_replies(events) and all(r["text"] for r in final_replies(events))
     assert [r["agent_id"] for r in final_replies(events)] == ["zhang", "li", "jia", "shen"]
-    assert len(fake_gateway.calls) == 4
+    assert len(fake_gateway.calls) == 8
     assert names[-1] == "run_completed"
     assert events_of(events, "run_interrupted") == []
 
@@ -274,7 +427,7 @@ async def test_group_roll_call_plans_then_speaks_in_order(runtime, fake_gateway,
 @pytest.mark.asyncio
 async def test_resume_skips_completed_speakers(runtime, fake_gateway, interrupted_group_request):
     """锚点：中断后续跑同一 run，不重复已完成发言人的回复、不重发计划。"""
-    fake_gateway.responses.extend(["1", "2", "3", "4"])
+    fake_gateway.responses.extend(["1", "1", "2", "2", "3", "3", "4", "4"])
 
     first_events = await collect_until_interrupt(runtime, interrupted_group_request)
     resumed_events = await collect(runtime.resume(interrupted_group_request.run_id))
@@ -287,7 +440,7 @@ async def test_resume_skips_completed_speakers(runtime, fake_gateway, interrupte
     assert first_events[-1].name == "run_interrupted"
     assert first_events[-1].payload["reason"] == "interrupted"
     assert events_of(resumed_events, "plan_created") == []
-    assert len(fake_gateway.calls) == len(GROUP_MEMBERS)
+    assert len(fake_gateway.calls) == len(GROUP_MEMBERS) * 2
     assert resumed_events[-1].name == "run_completed"
 
 
@@ -296,7 +449,7 @@ async def test_new_message_cancels_active_run_without_inheriting_plan(
     runtime, fake_gateway, group_request, interrupted_group_request
 ):
     """新用户消息取代旧轮：活跃旧 run 以 cancelled 终止，新 run 计划不受旧计划污染。"""
-    fake_gateway.responses.extend(["1", "2", "3", "4", "备用甲", "备用乙"])
+    fake_gateway.responses.extend(["收尾", "收尾"])
 
     follow_up = OrchestrationRequest(
         run_id="run-follow-up",
@@ -340,7 +493,7 @@ async def test_new_message_cancels_active_run_without_inheriting_plan(
 async def test_checkpoint_state_contains_no_api_key(
     runtime, fake_gateway, interrupted_group_request
 ):
-    fake_gateway.responses.extend(["1", "2", "3", "4"])
+    fake_gateway.responses.extend(["1", "1", "2", "2", "3", "3", "4", "4"])
 
     events = await collect_until_interrupt(runtime, interrupted_group_request)
     assert events[-1].name == "run_interrupted"
@@ -358,14 +511,14 @@ async def test_terminal_checkpoint_cleanup_selection(
     runtime, fake_gateway, single_request, interrupted_group_request
 ):
     """终态清理：completed/interrupted 的选择性保留，续跑至完成再清理。"""
-    fake_gateway.responses.extend(["你好呀"])
+    fake_gateway.responses.extend(["你好呀", "你好呀"])
 
     # 1) 一次完整单聊 → completed 为终态，线程清理，检查点不可再读。
     await collect(runtime.start(single_request))
     assert await runtime.checkpoint_state(single_request.run_id) is None
 
     # 2) 中断的群聊 → interrupted 保留（可续跑）。
-    fake_gateway.responses.extend(["1", "2", "3", "4"])
+    fake_gateway.responses.extend(["1", "1", "2", "2", "3", "3", "4", "4"])
     first_events = await collect_until_interrupt(runtime, interrupted_group_request)
     assert first_events[-1].name == "run_interrupted"
     state = await runtime.checkpoint_state(interrupted_group_request.run_id)

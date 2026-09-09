@@ -1030,7 +1030,13 @@
       "singleCount": "{count} 场",
       "groupMeta": "{count} 位道人",
       "emptySingle": "暂无对谈",
-      "emptyGroup": "暂无围炉论道"
+      "emptyGroup": "暂无围炉论道",
+      "deleteAction": "删除会话",
+      "deleteTitle": "删除这场会话？",
+      "deleteDescription": "“{title}”及其中的全部消息将被永久删除，此操作无法撤销。",
+      "deleteConfirm": "确认删除",
+      "deleteCancel": "取消",
+      "deleteStreamingDisabled": "请先停止当前回复，再删除会话"
     },
     "topic": {
       "rename": "修改主题",

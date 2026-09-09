@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/alchemy-furnace/server/internal/behavior"
 	"github.com/alchemy-furnace/server/internal/service/orchestration"
 	"github.com/alchemy-furnace/server/model"
 	"github.com/google/uuid"
@@ -91,14 +92,21 @@ func (s *Chat) BuildOrchestrationRequest(ctx context.Context, session *model.Cha
 			return req, fmt.Errorf("编排快照构建道人语言模式失败: %w", patternErr)
 		}
 		systemPrompt := ""
+		examples := []orchestration.DialogueExample{}
 		if pattern != nil {
 			systemPrompt = pattern.SystemPrompt
+			for _, example := range behavior.SelectDialogueExamples(pattern.BehaviorProfile, 2, 400) {
+				examples = append(examples, orchestration.DialogueExample{
+					User: example.User, Assistant: example.Assistant,
+				})
+			}
 		}
 		agentID := got.DaoAgentID
 		req.Agents = append(req.Agents, orchestration.Agent{
-			AgentID:      agentID,
-			Name:         got.Name,
-			SystemPrompt: systemPrompt,
+			AgentID:          agentID,
+			Name:             got.Name,
+			SystemPrompt:     systemPrompt,
+			ExampleDialogues: examples,
 			ModelRef: orchestration.ModelRef{
 				ProviderType: creds.ProviderType,
 				Name:         creds.Model,

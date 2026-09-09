@@ -22,7 +22,20 @@ import (
 type fakePattern struct{}
 
 func (fakePattern) GetOrBuildPattern(ctx context.Context, agentUID string) (*model.LanguagePattern, errors.Error) {
-	return &model.LanguagePattern{SystemPrompt: "你是道人。"}, nil
+	return &model.LanguagePattern{
+		SystemPrompt: "你是一个具体的人。",
+		BehaviorProfile: model.JSONMap{
+			"version": 3,
+			"pills": []any{
+				map[string]any{
+					"pill_id": "voice", "name": "语言能力", "weight": 1, "sort_order": 0,
+					"example_dialogues": []any{
+						map[string]any{"user": "你怎么看？", "assistant": "先看事实。"},
+					},
+				},
+			},
+		},
+	}, nil
 }
 
 type groupMemoryCall struct {
@@ -270,7 +283,7 @@ func TestLangGraphGroupFailedSpeakerContinuesTurn(t *testing.T) {
 func TestLangGraphGroupPromptDebugAssociatesSpeaker(t *testing.T) {
 	z := langGraphGroupAgentIDs[0]
 	stream := []turnEvent{
-		{"prompt_debug", fmt.Sprintf(`{"agent_id":%q,"task":"报数","model_ref":{"name":"test-model"},"messages":[{"role":"system","content":"人设"}]}`, z)},
+		{"prompt_debug", fmt.Sprintf(`{"agent_id":%q,"task":"报数","model_ref":{"name":"test-model"},"messages":[{"role":"system","content":"人设"}],"response_budget":{"max_tokens":256,"max_sentences":3,"max_chars":220}}`, z)},
 		{"speaker_started", fmt.Sprintf(`{"agent_id":%q,"task":"报数"}`, z)},
 		{"assistant_final", fmt.Sprintf(`{"agent_id":%q,"reply_id":"reply-1","text":"1"}`, z)},
 		{"run_completed", `{}`},
@@ -288,6 +301,9 @@ func TestLangGraphGroupPromptDebugAssociatesSpeaker(t *testing.T) {
 	}
 	if len(p.Messages) != 1 || p.Messages[0]["content"] != "人设" {
 		t.Fatalf("prompt debug messages = %#v, want 原文转发", p.Messages)
+	}
+	if p.Generation.MaxTokens != 256 || p.Generation.MaxSentences != 3 {
+		t.Fatalf("generation = %+v, want director budget 256/3", p.Generation)
 	}
 }
 

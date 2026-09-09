@@ -1030,7 +1030,13 @@
       "singleCount": "{count} talks",
       "groupMeta": "{count} daoists",
       "emptySingle": "No solo talks yet",
-      "emptyGroup": "No group discussions yet"
+      "emptyGroup": "No group discussions yet",
+      "deleteAction": "Delete conversation",
+      "deleteTitle": "Delete this conversation?",
+      "deleteDescription": "“{title}” and all of its messages will be permanently deleted. This cannot be undone.",
+      "deleteConfirm": "Delete",
+      "deleteCancel": "Cancel",
+      "deleteStreamingDisabled": "Stop the current response before deleting this conversation"
     },
     "topic": {
       "rename": "Edit topic",

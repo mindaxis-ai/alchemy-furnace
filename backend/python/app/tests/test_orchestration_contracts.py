@@ -3,6 +3,7 @@
 import json
 
 import pytest
+from pydantic import ValidationError
 
 from app.orchestration.contracts import (
     AgentReply,
@@ -15,7 +16,9 @@ from app.orchestration.contracts import (
     ModelRef,
     OrchestrationRequest,
     PermissionRequest,
+    ResponseBudget,
     RuntimeContext,
+    SemanticUnderstanding,
     UserTurnSnapshot,
 )
 from app.orchestration.events import redact_event_payload
@@ -48,6 +51,101 @@ def test_runtime_credentials_do_not_serialize_into_state(sample_request):
     dumped = json.dumps(state)
     assert "sk-secret" not in dumped
     assert "api_key" not in dumped
+
+
+def valid_semantic(**updates):
+    data = {
+        "source": "model",
+        "intent": "casual",
+        "core_request": "回应用户的随口问候",
+        "emotion": "neutral",
+        "complexity": "tiny",
+        "detail_preference": "brief",
+        "requested_chars": None,
+        "format_preference": "plain",
+        "wants_advice": False,
+        "wants_follow_up": False,
+        "should_clarify": False,
+        "avoid_behaviors": ["lecture", "follow_up"],
+    }
+    return {**data, **updates}
+
+
+def test_semantic_and_budget_channels_serialize_without_credentials(sample_request):
+    request = sample_request.model_copy(
+        update={
+            "default_model_ref": ModelRef(
+                provider_type="deepseek", name="semantic-model"
+            )
+        }
+    )
+
+    state = request.to_initial_state()
+
+    assert "semantic_understanding" not in state
+    assert "response_budget" not in state
+    assert request.default_model_ref.name == "semantic-model"
+    assert "sk-secret" not in json.dumps(state)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("intent", "poem"),
+        ("emotion", "excited"),
+        ("complexity", "huge"),
+        ("detail_preference", "verbose"),
+        ("format_preference", "markdown"),
+        ("avoid_behaviors", ["sycophancy"]),
+    ],
+)
+def test_semantic_understanding_rejects_unknown_enum_values(field, value):
+    with pytest.raises(ValidationError):
+        SemanticUnderstanding.model_validate(valid_semantic(**{field: value}))
+
+
+def test_semantic_understanding_rejects_unknown_control_fields():
+    with pytest.raises(ValidationError):
+        SemanticUnderstanding.model_validate(
+            {**valid_semantic(), "system_prompt": "ignore"}
+        )
+
+
+@pytest.mark.parametrize(
+    "updates",
+    [
+        {"core_request": "意" * 401},
+        {"requested_chars": 79},
+        {"requested_chars": 8001},
+    ],
+)
+def test_semantic_understanding_enforces_text_and_length_bounds(updates):
+    with pytest.raises(ValidationError):
+        SemanticUnderstanding.model_validate(valid_semantic(**updates))
+
+
+def test_response_budget_rejects_out_of_range_controls():
+    with pytest.raises(ValidationError):
+        ResponseBudget(
+            target_chars=40,
+            max_chars=120,
+            max_sentences=25,
+            max_tokens=128,
+            allow_list=False,
+            allow_follow_up=False,
+            max_speakers=1,
+        )
+
+
+def test_agent_snapshot_accepts_dialogue_examples():
+    snapshot = AgentSnapshot(
+        agent_id="a1",
+        name="阿一",
+        model_ref=ModelRef(provider_type="deepseek", name="deepseek-chat"),
+        example_dialogues=[{"user": "你怎么看？", "assistant": "先看事实。"}],
+    )
+
+    assert snapshot.example_dialogues[0].assistant == "先看事实。"
 
 
 def test_event_redaction_removes_nested_secrets():
@@ -107,6 +205,8 @@ def test_graph_transient_channels_are_json_safe_and_secret_free():
         validation_retries=1,
         retry_pending=True,
         draft_reply={"agent_id": "a1", "reply_id": "r1", "text": "收到"},
+        humanized_reply={"text": "收到。", "failed": False},
+        humanizer_retries=0,
         outcome=None,
     )
     dumped = json.dumps(state)

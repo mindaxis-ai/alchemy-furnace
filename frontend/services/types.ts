@@ -308,7 +308,7 @@ export interface PromptDebugPayload {
   agent_avatar?: string
   model: string
   messages: Array<{ role: string; content: string }>
-  /** LangGraph 运行期已无预算概念(legacy GenerationOptions 契约遗留),后端恒为 0 或缺失;UI 仅在非零时展示。 */
+  /** 导演层预算在新引擎中按需返回；旧引擎可能为 0 或缺失，UI 仅在非零时展示。 */
   generation?: {
     max_tokens: number
     max_sentences: number

@@ -38,6 +38,7 @@ const testDoubles = vi.hoisted(() => ({
   clearCurrent: vi.fn(),
   streamMessage: vi.fn(),
   renameSession: vi.fn(),
+  deleteSession: vi.fn(),
   stopStream: vi.fn(),
   chatDispatch: vi.fn(),
   fetchAgents: vi.fn(),
@@ -110,6 +111,7 @@ vi.mock('@/contexts/ChatContext', () => ({
     createSession: testDoubles.createSession,
     createGroupSession: testDoubles.createGroupSession,
     renameSession: testDoubles.renameSession,
+    deleteSession: testDoubles.deleteSession,
     stopStream: testDoubles.stopStream,
   }),
 }))
@@ -658,6 +660,21 @@ describe('chat launch surfaces', () => {
     expect(screen.getAllByRole('img', { name: 'Agent One' }).length).toBeGreaterThan(0)
     // 页头与目录绝不渲染会话 UUID
     expect(screen.queryByText(/11111111/)).not.toBeInTheDocument()
+  })
+
+  it('returns to the chat lobby after deleting the open session', async () => {
+    const user = userEvent.setup()
+    const current = { ...singleSession, title: '待删除会话', agent_name: 'Agent One' }
+    testDoubles.chatState.sessions = [current]
+    testDoubles.chatState.currentSession = current
+    testDoubles.deleteSession.mockResolvedValueOnce(true)
+    render(<ChatView sessionId={current.id} />)
+
+    await user.click(screen.getAllByRole('button', { name: 'deleteAction' })[0])
+    await user.click(screen.getByRole('button', { name: 'deleteConfirm' }))
+
+    expect(testDoubles.deleteSession).toHaveBeenCalledWith(current.id)
+    expect(testDoubles.push).toHaveBeenCalledWith('/chat')
   })
 
   it('selects the group tab by default when the current session is a group', () => {

@@ -225,12 +225,8 @@ def test_stream_rejects_malformed_body(client: TestClient, fake_runtime: FakeRun
     assert resp.status_code == 422
 
 
-def test_stream_accepts_default_model_ref_seam(client: TestClient, fake_runtime: FakeRuntime):
-    """default_model_ref seam：运输层接受并解析会话默认模型（Supervisor 导演用）。
-
-    消费缺口（RuntimeContext 注入）记录在 service 层 docstring——契约扩展前
-    不得静默丢字段，收到即打 warning 便于察觉回退。
-    """
+def test_stream_preserves_default_model_ref_for_runtime(client: TestClient, fake_runtime: FakeRuntime):
+    """默认模型是正式契约字段，供语义层和 Supervisor 共用。"""
     body = roll_call_body()
     body["default_model_ref"] = {"provider_type": "deepseek", "name": "deepseek-reasoner"}
     resp = client.post(STREAM_URL, json=body)
@@ -238,6 +234,7 @@ def test_stream_accepts_default_model_ref_seam(client: TestClient, fake_runtime:
     received = fake_runtime.start_calls[0]
     assert isinstance(received, OrchestrationRunRequest)
     assert received.default_model_ref == ModelRef(provider_type="deepseek", name="deepseek-reasoner")
+    assert received.to_runtime_request().default_model_ref == received.default_model_ref
 
 
 def test_stream_sanitizes_unexpected_errors(client: TestClient, fake_runtime: FakeRuntime):
@@ -399,7 +396,7 @@ def real_client(real_service: OrchestrationService, fake_gateway: ModelGateway):
 def test_real_stream_roll_call_over_http(real_client):
     """真实运行器 HTTP 端到端：确定性报数全链路、凭据送达、响应零泄露。"""
     client, fake_gateway = real_client
-    fake_gateway.responses.extend(["1", "2", "3", "4"])
+    fake_gateway.responses.extend(["1", "1", "2", "2", "3", "3", "4", "4"])
 
     resp = client.post(STREAM_URL, json=roll_call_body())
 
@@ -416,7 +413,7 @@ def test_real_stream_roll_call_over_http(real_client):
     ]
     assert all(isinstance(p["text"], str) and p["text"] for p in finals(blocks))
     assert names[-1] == "run_completed"
-    assert len(fake_gateway.calls) == len(ROLL_CALL_AGENTS)
+    assert len(fake_gateway.calls) == len(ROLL_CALL_AGENTS) * 2
     assert {c.credential.api_key for c in fake_gateway.calls} == {SECRET}
     assert SECRET not in resp.text
     assert "api_key" not in resp.text
@@ -438,7 +435,7 @@ async def test_real_cancel_and_resume_over_seam(real_service, fake_gateway):
     """
     from app.orchestration.service import OrchestrationRunRequest
 
-    fake_gateway.responses.extend(["1", "2", "3", "4"])
+    fake_gateway.responses.extend(["1", "1", "2", "2", "3", "3", "4", "4"])
     run_id = "run-http-interrupted"
     members = [a for a, _ in ROLL_CALL_AGENTS]
     run_request = OrchestrationRunRequest.model_validate(roll_call_body(run_id=run_id))
@@ -474,7 +471,7 @@ async def test_real_cancel_and_resume_over_seam(real_service, fake_gateway):
     assert resumed_names[-1] == "run_completed"
     assert reply_ids(first_blocks).isdisjoint(reply_ids(resumed_blocks))
     assert len(reply_ids(first_blocks) | reply_ids(resumed_blocks)) == len(members)
-    assert len(fake_gateway.calls) == len(members)
+    assert len(fake_gateway.calls) == len(members) * 2
     assert {c.credential.api_key for c in fake_gateway.calls} == {SECRET}
     dumped = json.dumps([p for _, p in first_blocks + resumed_blocks], ensure_ascii=False)
     assert SECRET not in dumped

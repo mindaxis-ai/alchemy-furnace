@@ -40,7 +40,7 @@ func sampleProfile() *DaoistBehaviorProfile {
 	}
 }
 
-// TestRenderSystemPromptPartitions 完整档案渲染:四分区 + 姓名/性格 + 六个标记
+// TestRenderSystemPromptPartitions 完整档案渲染:人物分区 + 姓名/性格 + 六个标记
 // (Task 6:心智模型/决策启发式/示例对话移出永久区,仅档案侧仍保留)
 // + 涌现规则与冲突调和子节(spec §14.1 的确定性最终提示词断言)
 func TestRenderSystemPromptPartitions(t *testing.T) {
@@ -53,7 +53,7 @@ func TestRenderSystemPromptPartitions(t *testing.T) {
 
 	prompt := RenderSystemPrompt(profile, "测试道人")
 
-	for _, section := range []string{"【安全与真实性边界】", "【道人身份】", "【永久丹性核心】", "【扩展字段】"} {
+	for _, section := range []string{"【安全与真实性边界】", "【身份与性格】", "【知识、能力与表达习惯】", "【扩展字段】"} {
 		if !strings.Contains(prompt, section) {
 			t.Errorf("缺少分区 %s;完整提示词:\n%s", section, prompt)
 		}
@@ -72,10 +72,10 @@ func TestRenderSystemPromptPartitions(t *testing.T) {
 			t.Errorf("提示词缺少标记 %s", marker)
 		}
 	}
-	if !strings.Contains(prompt, "〔涌现规则〕") || !strings.Contains(prompt, "按场景切换文白比例") {
-		t.Error("涌现规则必须渲染进【永久丹性核心】(否则不进实际聊天)")
+	if !strings.Contains(prompt, "〔综合表达规则〕") || !strings.Contains(prompt, "按场景切换文白比例") {
+		t.Error("涌现规则必须渲染进【知识、能力与表达习惯】")
 	}
-	if !strings.Contains(prompt, "〔冲突调和〕") || !strings.Contains(prompt, "正式程度相冲") {
+	if !strings.Contains(prompt, "〔内在张力与取舍〕") || !strings.Contains(prompt, "正式程度相冲") {
 		t.Error("冲突调和建议必须渲染")
 	}
 }
@@ -100,7 +100,7 @@ func TestRenderSystemPromptOmitsEmergenceSectionsWhenEmpty(t *testing.T) {
 	profile := CompileProfile("", []synthesis.PillInput{markerPillInput()})
 
 	prompt := RenderSystemPrompt(profile, "")
-	if strings.Contains(prompt, "〔涌现规则〕") || strings.Contains(prompt, "〔冲突调和〕") {
+	if strings.Contains(prompt, "〔综合表达规则〕") || strings.Contains(prompt, "〔内在张力与取舍〕") {
 		t.Error("无涌现层时不应输出空子节")
 	}
 }
@@ -142,7 +142,7 @@ func TestRenderSystemPromptTreatsPillsAsInternalizedTraits(t *testing.T) {
 	if strings.Contains(prompt, "每轮回答都必须体现") {
 		t.Fatal("不得强迫每轮表演全部丹性")
 	}
-	if !strings.Contains(prompt, "已经成为你的自然性格") {
+	if !strings.Contains(prompt, "已经是你掌握的知识、能力与表达习惯") {
 		t.Fatal("缺少内化语义")
 	}
 }
@@ -180,8 +180,40 @@ func TestRenderSystemPromptUsesNaturalFirstPersonIdentity(t *testing.T) {
 	}
 }
 
+func TestRenderSystemPromptPresentsAPersonWithoutProductMetaphors(t *testing.T) {
+	profile := CompileProfile("冷峻、克制、善用反讽", []synthesis.PillInput{
+		{
+			ID: "ability-1", Name: "鲁迅语言风格丹", Weight: 2, SortOrder: 1,
+			SkillSchema: model.JSONMap{
+				"description":    "熟悉现代文学与社会批评",
+				"expression_dna": model.JSONMap{"tone": "犀利"},
+			},
+		},
+	})
+
+	prompt := RenderSystemPrompt(profile, "鲁迅")
+
+	for _, required := range []string{
+		"【身份与性格】", "姓名：鲁迅", "冷峻、克制、善用反讽",
+		"【炼丹炉中的既定记录】", "已服用金丹：鲁迅语言风格丹",
+		"有哪些金丹时如实回答", "【知识、能力与表达习惯】",
+		"鲁迅语言风格", "熟悉现代文学与社会批评",
+	} {
+		if !strings.Contains(prompt, required) {
+			t.Errorf("提示词缺少人物信息 %q;完整提示词:\n%s", required, prompt)
+		}
+	}
+	for _, forbidden := range []string{
+		"你是道人", "道人身份", "丹性是你真实且稳定的自我", "修炼口吻", "权重", "第 1 服",
+	} {
+		if strings.Contains(prompt, forbidden) {
+			t.Errorf("模型可见提示词泄露产品隐喻 %q;完整提示词:\n%s", forbidden, prompt)
+		}
+	}
+}
+
 func TestBehaviorProfileVersionInvalidatesRoleplayPromptCache(t *testing.T) {
-	if ProfileVersion < 2 {
-		t.Fatalf("ProfileVersion = %d, must invalidate version 1 roleplay prompts", ProfileVersion)
+	if ProfileVersion != 3 {
+		t.Fatalf("ProfileVersion = %d, want 3 to invalidate product-metaphor prompts", ProfileVersion)
 	}
 }

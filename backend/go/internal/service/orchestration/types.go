@@ -52,12 +52,19 @@ type Credential struct {
 	BaseURL string `json:"base_url,omitempty"`
 }
 
-// Agent 编排参与道人快照。SystemPrompt 已由语言模式服务合成人设与启用金丹效果。
+// DialogueExample 人物的完整示例对白。
+type DialogueExample struct {
+	User      string `json:"user"`
+	Assistant string `json:"assistant"`
+}
+
+// Agent 编排参与人物快照。SystemPrompt 已由语言模式服务合成人格与能力效果。
 type Agent struct {
-	AgentID      string   `json:"agent_id"`
-	Name         string   `json:"name"`
-	SystemPrompt string   `json:"system_prompt"`
-	ModelRef     ModelRef `json:"model_ref"`
+	AgentID          string            `json:"agent_id"`
+	Name             string            `json:"name"`
+	SystemPrompt     string            `json:"system_prompt"`
+	ModelRef         ModelRef          `json:"model_ref"`
+	ExampleDialogues []DialogueExample `json:"example_dialogues"`
 }
 
 // Memory 道人记忆快照(镜像 MemorySnapshot;图只选择注入,不改写)。

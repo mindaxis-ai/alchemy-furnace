@@ -8,47 +8,30 @@
   async generator，错误要等首迭代才抛，HTTP 层已 200 无法改判 404，
   因此续跑端点必须先走本预检。
 
-**default_model_ref seam（记录在案，Task 8 报告）**：
-OrchestrationRunRequest 已能携带会话默认模型 ref（Supervisor 导演语义：
-RuntimeContext.default_model_ref 就为此预留），但 OrchestrationRequest
-（契约层，Task 2 定版）无此字段，runtime.start 的 RuntimeContext 组装
-（Task 7 定版）也只透传契约字段——当前该 ref 无法注入运行上下文，群聊开放
-讨论会确定性回退到主道人模型。运输层在此接受并解析（请求合法、可序列化），
-收到非空值打 warning 便于察觉回退；真正的接线需契约层与 runtime 同步扩展
-（Task 12 default_model 全量接线）。Supervisor 凭据不受影响：可按
-credentials 键（= ref.name）随请求送达，不进本 seam。
+default_model_ref 是正式契约字段，由运行器注入 RuntimeContext，供每轮语义
+理解和群聊 Supervisor 共用；它不进入图状态或检查点。
 """
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from typing import AsyncIterator
 
-from app.orchestration.contracts import ModelRef, OrchestrationRequest
+from app.orchestration.contracts import OrchestrationRequest
 from app.orchestration.events import OrchestrationEvent
 from app.orchestration.model_gateway import ModelGateway
 from app.orchestration.runtime import ConversationRuntime, RunNotFoundError
-
-logger = logging.getLogger(__name__)
 
 #: interrupted 语义（runtime 模块常量；此处避免引私有名，只做语义比对）。
 _RESUMABLE_OUTCOME = "interrupted"
 
 
 class OrchestrationRunRequest(OrchestrationRequest):
-    """内部编排 API 请求体：契约请求 + 传输层补充字段。
-
-    default_model_ref：会话「当前配置的默认模型」引用（Supervisor 导演用），
-    见模块 docstring 的 seam 记录——运输层接受并解析，消费在后续契约扩展。
-    """
-
-    default_model_ref: ModelRef | None = None
+    """内部编排 API 请求体；保留独立类型以稳定端点签名。"""
 
     def to_runtime_request(self) -> OrchestrationRequest:
-        """剥掉传输层字段，落成运行器/契约层的 OrchestrationRequest。"""
-        data = self.model_dump(exclude={"default_model_ref"})
-        return OrchestrationRequest.model_validate(data)
+        """转成运行器契约，完整保留默认模型引用。"""
+        return OrchestrationRequest.model_validate(self.model_dump())
 
 
 class OrchestrationService:
@@ -70,14 +53,7 @@ class OrchestrationService:
         )
 
     async def start(self, run_request: OrchestrationRunRequest) -> AsyncIterator[OrchestrationEvent]:
-        """开始一次新 run。default_model_ref seam：收到即记录，契约扩展前回退。"""
-        if run_request.default_model_ref is not None:
-            logger.warning(
-                "default_model_ref 已收到但契约层尚不透传 (run_id=%s, ref=%s)——"
-                "开放讨论将回退到主道人模型；Task 12 契约扩展接线",
-                run_request.run_id,
-                run_request.default_model_ref.name,
-            )
+        """开始一次新 run。"""
         async for event in self._runtime.start(run_request.to_runtime_request()):
             yield event
 

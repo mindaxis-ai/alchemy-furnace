@@ -41,7 +41,7 @@ from typing import Any, AsyncIterator
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from app.core.config import settings
-from app.orchestration.contracts import OrchestrationRequest, RuntimeContext
+from app.orchestration.contracts import ModelRef, OrchestrationRequest, RuntimeContext
 from app.orchestration.events import OrchestrationEvent
 from app.orchestration.graphs.conversation import build_conversation_graph
 from app.orchestration.model_gateway import ModelGateway
@@ -95,6 +95,7 @@ class _RunRecord:
     thread_ids: list[str]
     token: CancellationToken
     credentials: dict[str, Any]
+    default_model_ref: ModelRef | None
     debug_enabled: bool
     task: asyncio.Task | None = None
 
@@ -177,6 +178,7 @@ class ConversationRuntime:
             thread_ids=[thread],
             token=token,
             credentials=dict(request.credentials),
+            default_model_ref=request.default_model_ref,
             debug_enabled=request.debug_enabled,
         )
         self._runs[run_id] = rec
@@ -184,6 +186,7 @@ class ConversationRuntime:
         context = RuntimeContext(
             model_gateway=self._model_gateway,
             credentials_by_model_ref=request.credentials,
+            default_model_ref=request.default_model_ref,
             debug_enabled=request.debug_enabled,
             event_sink=lambda event: queue.put_nowait(event),
             cancellation=token,
@@ -226,6 +229,7 @@ class ConversationRuntime:
         context = RuntimeContext(
             model_gateway=self._model_gateway,
             credentials_by_model_ref=rec.credentials,
+            default_model_ref=rec.default_model_ref,
             debug_enabled=rec.debug_enabled,
             event_sink=lambda event: queue.put_nowait(event),
             cancellation=token,

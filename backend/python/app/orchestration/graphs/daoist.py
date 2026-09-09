@@ -1,17 +1,19 @@
 """可复用 DaoistGraph：单道人的完整发言链路（设计文档 §4 子图）。
 
-链路：select_memories → compile_prompt → invoke_model → validate_reply → propose_memory
-      invoke_model ←──────────────────────┘（报数校验失败仅对本道人重试 ≤2 次）
+链路：select_memories → compile_prompt → invoke_model → validate_draft
+      invoke_model ←──────────────────────────────┘（机械失败重试 ≤2 次）
+      validate_draft → humanize_reply → validate_final_reply → propose_memory
+                       humanize_reply ←──────────────┘（无效改写重试 ≤1 次）
 
 子图边界（设计文档 §4/§10）：
 - 只执行单次发言任务，不决定计划/轮次/收敛；单聊一次运行，群聊每道人一次运行。
 - 机械任务约束逐字进入系统提示（prompts.compile_messages 原样保留任务文本）。
 - 凭据只经 RuntimeContext 进 ModelGateway 构造模型；节点状态、检查点与事件
   永不携带凭据。事件经 _emit 统一走 redact_event_payload 后才投递。
-- 发言事件顺序：speaker_started（compile 阶段，恰一次）→ assistant_delta（每次
-  模型调用）→ assistant_final（恰一次，validate 通过或重试耗尽后）。
-  当前阶段重试耗尽保留最后一稿（道人不出声会拖垮 UI 回合），后续 Task 的
-  群聊收敛层再裁决单道人的机械失败。
+- 发言事件顺序：speaker_started（compile 阶段，恰一次）→ assistant_delta
+  → assistant_final（终稿各恰一次）。草稿与 Humanizer 中间结果不对外发送。
+- 报数草稿重试耗尽时按计划编号确定性修正；任何候选终稿仍需
+  通过字数、代码、提示词泄露和机械任务校验，无安全回退时宁可失败。
 """
 
 from __future__ import annotations
@@ -32,10 +34,18 @@ from app.orchestration.contracts import (
     MemorySnapshot,
     MessageSnapshot,
     ModelCredential,
+    ResponseBudget,
     RuntimeContext,
+    SemanticUnderstanding,
     UserTurnSnapshot,
 )
 from app.orchestration.events import OrchestrationEvent, redact_event_payload
+from app.orchestration.humanizer import (
+    HUMANIZER_SYSTEM_PROMPT,
+    build_humanizer_messages,
+    constrain_to_budget,
+    validate_humanized,
+)
 from app.orchestration.prompts import MAX_MEMORIES, MAX_MEMORY_CHARS, compile_messages
 
 #: 报数回复校验：回复必须以整数开头（任务模板要求「开头并原样保留」）。
@@ -69,6 +79,8 @@ _TRANSIENT_CHANNELS = (
     "prompt_messages",
     "validation_retries",
     "draft_reply",
+    "humanized_reply",
+    "humanizer_retries",
     "retry_pending",
 )
 
@@ -118,6 +130,18 @@ def _violates_ordinal(state: ConversationState) -> bool:
     return bool(not match or int(match.group(1)) != ordinal)
 
 
+def _violates_ordinal_text(state: ConversationState, text: str) -> bool:
+    """任意候选回复是否改动了报数任务的唯一编号。"""
+    ordinal = _roll_call_ordinal(state)
+    if ordinal is None:
+        return False
+    match = _ORDINAL_PREFIX_RE.match(text)
+    if not match or int(match.group(1)) != ordinal:
+        return True
+    remainder = text[match.end() :].strip()
+    return remainder not in ("", "。", ".", "！", "!")
+
+
 def _to_messages(prompt_messages: list[dict]) -> list[BaseMessage]:
     return [_MESSAGE_TYPES[m["role"]](content=m["content"]) for m in prompt_messages]
 
@@ -164,6 +188,10 @@ def compile_prompt(
             MessageSnapshot.model_validate(m) for m in state["history_snapshot"]
         ],
         selected_memories=memories,
+        understanding=SemanticUnderstanding.model_validate(
+            state["semantic_understanding"]
+        ),
+        budget=ResponseBudget.model_validate(state["response_budget"]),
         task=task,
     )
     # 顺序约定：speaker_started 恰一次且先于任何模型产物（重试不重发）。
@@ -184,6 +212,9 @@ def compile_prompt(
                 "task": task,
                 "model_ref": agent.model_ref.model_dump(),
                 "messages": prompt_rows,
+                "response_budget": ResponseBudget.model_validate(
+                    state["response_budget"]
+                ).model_dump(),
             },
         )
     return {"prompt_messages": prompt_rows}
@@ -203,9 +234,9 @@ async def invoke_model(
         ctx.credentials_by_model_ref.get(agent.agent_id) or ModelCredential(),
     )
     messages = _to_messages(state["prompt_messages"])
-    reply = await model.ainvoke(messages)
+    budget = ResponseBudget.model_validate(state["response_budget"])
+    reply = await model.ainvoke(messages, max_tokens=budget.max_tokens)
     text = reply.content if isinstance(reply.content, str) else str(reply.content)
-    _emit(runtime, state["run_id"], "assistant_delta", {"agent_id": agent.agent_id, "text": text})
     return {
         "draft_reply": {
             "agent_id": agent.agent_id,
@@ -215,17 +246,14 @@ async def invoke_model(
     }
 
 
-def validate_reply(
+def validate_draft(
     state: ConversationState, runtime: Runtime[RuntimeContext]
 ) -> dict[str, Any] | None:
-    """校验草稿并裁决重试：违反编号 → 打 retry_pending + 追加纠错消息；否则终稿入 replies。
+    """校验草稿并裁决机械重试；通过后只交给 Humanizer，不对外发出。
 
     retry_pending 是条件边的唯一依据——节点与路由不各自推算预算，
     避免「重试耗尽但无人收尾」的分叉（一次发言最多 MAX_VALIDATION_RETRIES 次重试）。
     """
-    agent = _current_agent(state)
-    draft = state.get("draft_reply", {})
-    text = str(draft.get("text", ""))
     retries = int(state.get("validation_retries", 0))
 
     if _violates_ordinal(state) and retries < MAX_VALIDATION_RETRIES:
@@ -239,7 +267,106 @@ def validate_reply(
             ],
         }
 
-    # 通过校验，或重试耗尽保留最后一稿：发恰一条 assistant_final 并落 replies。
+    if _violates_ordinal(state):
+        repaired = dict(state["draft_reply"])
+        repaired["text"] = str(_roll_call_ordinal(state))
+        return {"draft_reply": repaired, "retry_pending": False}
+
+    return {"retry_pending": False}
+
+
+def _route_after_validate(state: ConversationState) -> Literal["retry", "proceed"]:
+    """条件边只读取节点已经作出的重试裁决。"""
+    return "retry" if state.get("retry_pending") else "proceed"
+
+
+async def humanize_reply(
+    state: ConversationState, runtime: Runtime[RuntimeContext]
+) -> dict[str, Any]:
+    """用当前人物自己的模型做表达编辑；异常标记后由最终节点回退原稿。"""
+    ctx = runtime.context
+    agent = _current_agent(state)
+    budget = ResponseBudget.model_validate(state["response_budget"])
+    understanding = SemanticUnderstanding.model_validate(
+        state["semantic_understanding"]
+    )
+    draft_text = str(state.get("draft_reply", {}).get("text", ""))
+    messages = build_humanizer_messages(
+        agent,
+        understanding,
+        budget,
+        UserTurnSnapshot.model_validate(state["user_turn"]).text,
+        draft_text,
+    )
+    try:
+        model: BaseChatModel = ctx.model_gateway.create(
+            agent.model_ref,
+            ctx.credentials_by_model_ref.get(agent.agent_id) or ModelCredential(),
+        )
+        reply = await model.ainvoke(messages, max_tokens=budget.max_tokens)
+        text = reply.content if isinstance(reply.content, str) else str(reply.content)
+        return {"humanized_reply": {"text": text, "failed": False}}
+    except Exception:
+        return {"humanized_reply": {"text": "", "failed": True}}
+
+
+def validate_final_reply(
+    state: ConversationState, runtime: Runtime[RuntimeContext]
+) -> dict[str, Any]:
+    """校验 Humanizer 结果；最多重试一次，随后按预算回退人物原稿。"""
+    agent = _current_agent(state)
+    draft = state.get("draft_reply", {})
+    draft_text = str(draft.get("text", ""))
+    humanized = state.get("humanized_reply", {})
+    candidate = str(humanized.get("text", ""))
+    failed = bool(humanized.get("failed"))
+    budget = ResponseBudget.model_validate(state["response_budget"])
+    understanding = SemanticUnderstanding.model_validate(
+        state["semantic_understanding"]
+    )
+    minimum_chars = (
+        budget.target_chars * 4 // 5
+        if understanding.requested_chars is not None
+        else 0
+    )
+    compiled_system = next(
+        (
+            str(row.get("content", ""))
+            for row in state.get("prompt_messages", [])
+            if row.get("role") == "system"
+        ),
+        agent.system_prompt,
+    )
+    protected_text = HUMANIZER_SYSTEM_PROMPT + "\n" + compiled_system
+    validation = validate_humanized(
+        draft_text,
+        candidate,
+        budget,
+        minimum_chars=minimum_chars,
+        protected_text=protected_text,
+    )
+    # 草稿已通过确定性报数校验时，Humanizer 不得改号或添字。
+    ordinal_valid = not _violates_ordinal_text(state, candidate)
+    candidate_valid = validation.valid and ordinal_valid
+    retries = int(state.get("humanizer_retries", 0))
+    if not failed and not candidate_valid and retries < 1:
+        return {"humanizer_retries": retries + 1, "retry_pending": True}
+
+    if candidate_valid:
+        text = candidate
+    else:
+        text = constrain_to_budget(draft_text, budget)
+        fallback_validation = validate_humanized(
+            draft_text,
+            text,
+            budget,
+            minimum_chars=minimum_chars,
+            protected_text=protected_text,
+        )
+        if not fallback_validation.valid or _violates_ordinal_text(state, text):
+            raise ValueError("no safe final reply")
+    if not text.strip():
+        raise ValueError("empty final reply")
     reply = AgentReply(
         reply_id=draft["reply_id"],
         run_id=state["run_id"],
@@ -249,19 +376,16 @@ def validate_reply(
     _emit(
         runtime,
         state["run_id"],
+        "assistant_delta",
+        {"agent_id": agent.agent_id, "text": reply.text},
+    )
+    _emit(
+        runtime,
+        state["run_id"],
         "assistant_final",
-        {
-            "agent_id": agent.agent_id,
-            "reply_id": reply.reply_id,
-            "text": reply.text,
-        },
+        {"agent_id": agent.agent_id, "reply_id": reply.reply_id, "text": reply.text},
     )
     return {"retry_pending": False, "replies": [reply.model_dump()]}
-
-
-def _route_after_validate(state: ConversationState) -> Literal["retry", "proceed"]:
-    """条件边：validate_reply 自己裁决重试，路由只读裁决结果。"""
-    return "retry" if state.get("retry_pending") else "proceed"
 
 
 def propose_memory(state: ConversationState) -> None:
@@ -284,16 +408,24 @@ def build_daoist_graph() -> StateGraph:
     graph.add_node("select_memories", select_memories)
     graph.add_node("compile_prompt", compile_prompt)
     graph.add_node("invoke_model", invoke_model)
-    graph.add_node("validate_reply", validate_reply)
+    graph.add_node("validate_draft", validate_draft)
+    graph.add_node("humanize_reply", humanize_reply)
+    graph.add_node("validate_final_reply", validate_final_reply)
     graph.add_node("propose_memory", propose_memory)
 
     graph.add_edge("select_memories", "compile_prompt")
     graph.add_edge("compile_prompt", "invoke_model")
-    graph.add_edge("invoke_model", "validate_reply")
+    graph.add_edge("invoke_model", "validate_draft")
     graph.add_conditional_edges(
-        "validate_reply",
+        "validate_draft",
         _route_after_validate,
-        {"retry": "invoke_model", "proceed": "propose_memory"},
+        {"retry": "invoke_model", "proceed": "humanize_reply"},
+    )
+    graph.add_edge("humanize_reply", "validate_final_reply")
+    graph.add_conditional_edges(
+        "validate_final_reply",
+        _route_after_validate,
+        {"retry": "humanize_reply", "proceed": "propose_memory"},
     )
     graph.add_edge("propose_memory", END)
 

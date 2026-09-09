@@ -73,6 +73,7 @@ type ChatAction =
   | { type: 'UPDATE_SESSION_MEMBERS'; payload: { sessionId: string; members: import('@/services/types').GroupMember[] } }
   | { type: 'ADD_SESSION'; payload: ChatSession }
   | { type: 'UPSERT_SESSION'; payload: ChatSession }
+  | { type: 'REMOVE_SESSION'; payload: { sessionId: string } }
   | { type: 'SET_LOADING'; payload: boolean }
   | { type: 'SET_STREAMING'; payload: boolean }
   | { type: 'SET_ERROR'; payload: string | null }
@@ -312,6 +313,24 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
         ...state,
         sessions: [action.payload, ...state.sessions.filter(session => session.id !== action.payload.id)],
       }
+    case 'REMOVE_SESSION': {
+      const deletingCurrent = state.currentSession?.id === action.payload.sessionId
+      if (!deletingCurrent) {
+        return { ...state, sessions: state.sessions.filter(session => session.id !== action.payload.sessionId) }
+      }
+      return {
+        ...state,
+        sessions: state.sessions.filter(session => session.id !== action.payload.sessionId),
+        currentSession: null,
+        messages: [],
+        loading: false,
+        streaming: false,
+        currentSpeaker: null,
+        interruptedRunId: null,
+        sessionLoad: { status: 'idle' },
+        history: { page: 1, pageSize: 200, total: 0, hasOlder: false, loadingOlder: false, olderError: null },
+      }
+    }
     case 'SET_LOADING':
       return { ...state, loading: action.payload }
     case 'SET_STREAMING':
@@ -432,6 +451,7 @@ interface ChatContextType {
   createSession: (agentId: string, title?: string) => Promise<ChatSession>
   createGroupSession: (memberAgentIds: string[], title?: string, avatar?: string) => Promise<ChatSession>
   renameSession: (sessionId: string, title: string) => Promise<ChatSession | null>
+  deleteSession: (sessionId: string) => Promise<boolean>
   updateGroupAvatar: (sessionId: string, avatar: string) => Promise<ChatSession | null>
   inviteMembers: (sessionId: string, agentIds: string[]) => Promise<void>
   kickMember: (sessionId: string, agentId: string) => Promise<void>
@@ -467,6 +487,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const sessionListRequestRef = useRef(0)
   const sessionMutationVersionRef = useRef(0)
   const sessionMutationByIDRef = useRef(new Map<string, number>())
+  // 已成功删除的 UUID 作为本地墓碑，过滤删除前发出的迟到列表响应。
+  const deletedSessionIDsRef = useRef(new Set<string>())
   const interruptedRunRef = useRef<string | null>(null)
 
   const markSessionMutation = useCallback((sessionId: string) => {
@@ -499,15 +521,16 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     try {
       const data = await chatService.listSessions()
       if (requestId !== sessionListRequestRef.current) return
+      const remote = (data.list || []).filter(session => !deletedSessionIDsRef.current.has(session.id))
       const preserveIds = new Set<string>()
       for (const [sessionId, version] of sessionMutationByIDRef.current) {
         if (version > startedAtVersion) preserveIds.add(sessionId)
       }
       if (currentSessionRef.current) preserveIds.add(currentSessionRef.current.id)
       if (preserveIds.size > 0) {
-        dispatch({ type: 'MERGE_SESSIONS', payload: { remote: data.list || [], preserveIds: [...preserveIds] } })
+        dispatch({ type: 'MERGE_SESSIONS', payload: { remote, preserveIds: [...preserveIds] } })
       } else {
-        dispatch({ type: 'SET_SESSIONS', payload: data.list || [] })
+        dispatch({ type: 'SET_SESSIONS', payload: remote })
       }
     } catch (error) {
       if (requestId !== sessionListRequestRef.current) return
@@ -560,6 +583,27 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '改名失败' })
       return null
+    }
+  }, [markSessionMutation])
+
+  /** 永久删除会话；成功后才更新本地状态，失败时保留现场供重试。 */
+  const deleteSession = useCallback(async (sessionId: string): Promise<boolean> => {
+    try {
+      await chatService.deleteSession(sessionId)
+      deletedSessionIDsRef.current.add(sessionId)
+      markSessionMutation(sessionId)
+      if (currentSessionRef.current?.id === sessionId) {
+        sessionLoadRequestRef.current += 1
+        streamGenerationRef.current += 1
+        currentSessionRef.current = null
+        chatService.stopStream()
+      }
+      sessionsRef.current = sessionsRef.current.filter(session => session.id !== sessionId)
+      dispatch({ type: 'REMOVE_SESSION', payload: { sessionId } })
+      return true
+    } catch (error) {
+      dispatch({ type: 'SET_ERROR', payload: error instanceof Error ? error.message : '删除会话失败' })
+      return false
     }
   }, [markSessionMutation])
 
@@ -933,6 +977,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         createSession,
         createGroupSession,
         renameSession,
+        deleteSession,
         updateGroupAvatar,
         inviteMembers,
         kickMember,

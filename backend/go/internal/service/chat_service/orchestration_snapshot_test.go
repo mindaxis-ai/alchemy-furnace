@@ -124,8 +124,11 @@ func TestBuildOrchestrationRequestPreservesMemberOrderAndProviderType(t *testing
 		t.Fatalf("model name = %q, want deepseek", req.Agents[0].ModelRef.Name)
 	}
 	for _, agent := range req.Agents {
-		if !strings.Contains(agent.SystemPrompt, "你是道人") {
-			t.Fatalf("agent %s system prompt = %q, want composed personality and pill prompt", agent.Name, agent.SystemPrompt)
+		if !strings.Contains(agent.SystemPrompt, "具体的人") {
+			t.Fatalf("agent %s system prompt = %q, want person-oriented prompt", agent.Name, agent.SystemPrompt)
+		}
+		if len(agent.ExampleDialogues) != 1 || agent.ExampleDialogues[0].Assistant != "先看事实。" {
+			t.Fatalf("agent %s examples = %+v, want selected voice example", agent.Name, agent.ExampleDialogues)
 		}
 	}
 	if strings.Join(req.UserTurn.Mentions, ",") != byName["zhang"].DaoAgentID {

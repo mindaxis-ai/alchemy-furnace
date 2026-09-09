@@ -21,7 +21,7 @@ from typing import (
     operator,
 )
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 if TYPE_CHECKING:  # 仅类型检查；实际类由 Task 3+ 图模块提供
     from orchestration.events import OrchestrationEvent
@@ -45,6 +45,50 @@ class ModelCredential(BaseModel):
 
     api_key: str | None = None
     base_url: str | None = None
+
+
+class DialogueExample(BaseModel):
+    """人物的短示例对白，只提供语感，不携带控制字段。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    user: str
+    assistant: str
+
+
+class SemanticUnderstanding(BaseModel):
+    """语义模型的严格结构化输出；自由文本只保留受限的需求摘要。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    source: Literal["model", "fallback"]
+    intent: Literal["casual", "vent", "factual", "advice", "task", "deep_dive"]
+    core_request: str = Field(max_length=400)
+    emotion: Literal["neutral", "positive", "sad", "frustrated", "angry", "anxious"]
+    complexity: Literal["tiny", "simple", "moderate", "complex"]
+    detail_preference: Literal["brief", "normal", "detailed"]
+    requested_chars: int | None = Field(default=None, ge=80, le=8000)
+    format_preference: Literal["plain", "list", "steps", "code", "creative"]
+    wants_advice: bool
+    wants_follow_up: bool
+    should_clarify: bool
+    avoid_behaviors: list[
+        Literal["lecture", "repeat", "summary", "list", "follow_up"]
+    ]
+
+
+class ResponseBudget(BaseModel):
+    """导演层给生成与最终校验共同使用的硬预算。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    target_chars: int = Field(ge=1, le=8000)
+    max_chars: int = Field(ge=0, le=8000)
+    max_sentences: int = Field(ge=0, le=24)
+    max_tokens: int = Field(ge=32, le=4096)
+    allow_list: bool
+    allow_follow_up: bool
+    max_speakers: int = Field(ge=1, le=32)
 
 
 class UserTurnSnapshot(BaseModel):
@@ -73,6 +117,7 @@ class AgentSnapshot(BaseModel):
     name: str
     system_prompt: str = ""
     model_ref: ModelRef
+    example_dialogues: list[DialogueExample] = Field(default_factory=list)
 
 
 class MemorySnapshot(BaseModel):
@@ -181,7 +226,13 @@ class ConversationState(TypedDict):
     prompt_messages: NotRequired[list[dict]]
     validation_retries: NotRequired[int]
     draft_reply: NotRequired[dict]
+    humanized_reply: NotRequired[dict]
+    humanizer_retries: NotRequired[int]
     retry_pending: NotRequired[bool]
+
+    # ---- 每轮共享的语义与导演通道（严格模型校验后以普通 dict 入检查点）----
+    semantic_understanding: NotRequired[dict]
+    response_budget: NotRequired[dict]
 
     outcome: RunOutcome | None
 
@@ -202,6 +253,7 @@ class OrchestrationRequest(BaseModel):
     agent_snapshots: list[AgentSnapshot]
     memory_snapshots: list[MemorySnapshot]
     credentials: dict[str, ModelCredential]
+    default_model_ref: ModelRef | None = None
     debug_enabled: bool = False
 
     def to_initial_state(self) -> ConversationState:

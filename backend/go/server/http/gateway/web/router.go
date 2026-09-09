@@ -126,6 +126,7 @@ func Register(r *gin.Engine, isDesktop bool, guards ...gin.HandlerFunc) error {
 		chatGroup.GET("/sessions/:uuid", router.Wrapper(chatHandler.GetSession))
 		chatGroup.GET("/sessions/:uuid/messages", router.WrapperPage(chatHandler.GetMessages))
 		chatGroup.PUT("/sessions/:uuid", router.Wrapper(chatHandler.UpdateSession))
+		chatGroup.DELETE("/sessions/:uuid", router.Wrapper(chatHandler.DeleteSession))
 		chatGroup.POST("/sessions/:uuid/members", router.Wrapper(chatHandler.AddMembers))
 		chatGroup.DELETE("/sessions/:uuid/members/:agent_uuid", router.Wrapper(chatHandler.RemoveMember))
 		chatGroup.POST("/sse/:uuid", chatHandler.SSEChat)                // RAW: 自行写出标准 SSE 事件(单/群分流)
