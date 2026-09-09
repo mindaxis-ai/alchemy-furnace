@@ -14,6 +14,7 @@
 import asyncio
 import json
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -228,9 +229,47 @@ def all_expected_agents(events: list[OrchestrationEvent]) -> set[str]:
     return {r["agent_id"] for r in final_replies(events)}
 
 
+class CapturingRuntimeGraph:
+    """只替换 LangGraph 执行边界，观察运行器给 start/resume 的真实 context。"""
+
+    def __init__(self) -> None:
+        self.contexts = []
+        self.values: dict[str, Any] = {}
+
+    async def ainvoke(self, state, *, config, context):
+        self.contexts.append(context)
+        outcome = "interrupted" if len(self.contexts) == 1 else "completed"
+        if outcome == "interrupted":
+            context.cancellation.cancel("interrupted")
+        self.values = {**state, "outcome": outcome}
+        return self.values
+
+    async def aget_state(self, config):
+        return SimpleNamespace(values=self.values)
+
+
 # ---------------------------------------------------------------------------
 # 测试
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_runtime_preserves_default_model_ref_across_resume(
+    runtime, single_request, monkeypatch
+):
+    graph = CapturingRuntimeGraph()
+
+    async def use_capturing_graph():
+        runtime._graph = graph
+
+    monkeypatch.setattr(runtime, "_ensure_saver", use_capturing_graph)
+
+    default_ref = ModelRef(provider_type="deepseek", name="semantic-model")
+    request = single_request.model_copy(update={"default_model_ref": default_ref})
+    await collect(runtime.start(request))
+    await collect(runtime.resume(request.run_id))
+
+    assert [ctx.default_model_ref for ctx in graph.contexts] == [default_ref, default_ref]
 
 
 @pytest.mark.asyncio

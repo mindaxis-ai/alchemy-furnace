@@ -225,12 +225,8 @@ def test_stream_rejects_malformed_body(client: TestClient, fake_runtime: FakeRun
     assert resp.status_code == 422
 
 
-def test_stream_accepts_default_model_ref_seam(client: TestClient, fake_runtime: FakeRuntime):
-    """default_model_ref seam：运输层接受并解析会话默认模型（Supervisor 导演用）。
-
-    消费缺口（RuntimeContext 注入）记录在 service 层 docstring——契约扩展前
-    不得静默丢字段，收到即打 warning 便于察觉回退。
-    """
+def test_stream_preserves_default_model_ref_for_runtime(client: TestClient, fake_runtime: FakeRuntime):
+    """默认模型是正式契约字段，供语义层和 Supervisor 共用。"""
     body = roll_call_body()
     body["default_model_ref"] = {"provider_type": "deepseek", "name": "deepseek-reasoner"}
     resp = client.post(STREAM_URL, json=body)
@@ -238,6 +234,7 @@ def test_stream_accepts_default_model_ref_seam(client: TestClient, fake_runtime:
     received = fake_runtime.start_calls[0]
     assert isinstance(received, OrchestrationRunRequest)
     assert received.default_model_ref == ModelRef(provider_type="deepseek", name="deepseek-reasoner")
+    assert received.to_runtime_request().default_model_ref == received.default_model_ref
 
 
 def test_stream_sanitizes_unexpected_errors(client: TestClient, fake_runtime: FakeRuntime):
