@@ -15,7 +15,7 @@ openai==1.109.1
 httpx==0.28.1
 
 # 环境变量
-python-dotenv==1.0.1
+python-dotenv==1.2.2
 
 # 测试
 pytest==9.1.1
