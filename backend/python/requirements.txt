@@ -24,7 +24,7 @@ pytest-asyncio==1.4.0
 # LangGraph 编排（与运行时 3.12 打包同步钉死）
 langgraph==0.6.11
 langgraph-checkpoint-sqlite==2.0.11
-langchain-core==0.3.86
+langchain-core==1.3.3
 langchain-openai==0.3.35
 langchain-deepseek==0.1.4
 langchain-ollama==0.3.10
